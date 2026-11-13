@@ -17,7 +17,8 @@ lib/
   brew_drivers/        portable chip drivers on hal buses: PCF8574, MCP23008, CST8xx touch
   brew_drivers_esp32/  ESP-IDF drivers: I2C, GPIO, PCNT encoder, LEDC backlight, esp_lcd RGB + QSPI
                        panels, UART, NVS, DS18B20
-  brew_ui/             the UI (C): views, ring, digit animation, menu wheel, history scrub, renderers
+  brew_ui/             the UI (C): brew_model (state + rules, no LVGL) drawn by a layout
+                       (layout_round: ring, digit animation, menu wheel, history scrub)
   brew_fonts_<size>/   Inter (weights 360/450/560) + Tabler icons, per panel size (360, 480)
   brew_app/            UiBridge (brew_ui <-> controller), LVGL port, ESP32 display runtime
 boards/                one folder per board: pins + which drivers (the only board-specific code)
@@ -67,6 +68,16 @@ brew_ui_press();                       // knob push (taps on the screen already 
 ```
 
 The controller decides cooling, heating and idle: a `ControlLaw` proposes and `OutputGuard` enforces the interlock, per-relay minimum on/off times (cool min off doubles as the compressor delay, counted from power-up too) and the heat↔cool gap before the relays switch. Boards use `ChamberDefaults` (in `brew/control.h`): `HysteresisLaw` with 0.5 °F heat and cool differentials (heat comes on at target − 0.5 and runs to the target, like an Inkbird's HD/CD), a 5 min compressor delay and a 10 min heat↔cool gap. The old ±0.3 °F `DeadbandLaw` is still there; the web harness compares the two. The UI only shows the result: it picks the background (blue, orange, purple or grey), the status sentence, and whether the text is blue.
+
+### Model and layouts
+
+`brew_ui` is split so the same product can have different screens:
+
+- **`brew_model.c`**: everything the UI knows and decides. That's readings, targets, history, which view is open, the target being adjusted, the menu and scrub position, the 2.8 s auto-save, the status sentence, and the time labels. There's no LVGL here; it's unit-tested on its own (`test/test_ui_model.cpp`), and `check_rules.py` keeps it that way.
+- **A layout** (`brew_layout.h`) draws the model and nothing else. `layout_round.c` is the dial. A square panel with buttons, or a rectangular one, is another `brew_layout_t`, created with `brew_ui_create_with_layout()`. Layouts route taps and buttons to `brew_ui_press()` / `brew_ui_encoder()`, so every layout behaves identically.
+- **`brew_ui.c`**: the public API. It forwards each call to the model and the resulting `BREW_CH_*` change flags to the layout, and runs the auto-save timer.
+
+Behaviour changes go in the model; looks go in a layout.
 
 ## Interaction
 
@@ -151,7 +162,7 @@ The window runs the firmware's real stack: `Controller` + `LocalBus` + `UiBridge
 
 ### The loop
 
-Edit `lib/brew_ui/src/brew_ui.c` (layout, colors, timings), then rebuild and relaunch:
+Edit `lib/brew_ui/src/layout_round.c` (looks, colours, timings) or `brew_model.c` (behaviour), then rebuild and relaunch:
 
 ```sh
 cmake --build sim/build -j && ./sim/build/brew_desk
@@ -168,13 +179,13 @@ In VS Code, the CMake Tools extension can open `sim/` as the project with `brew_
 
 ### Where to tweak things
 
-| What                                  | Where (`lib/brew_ui/src/brew_ui.c`)                 |
+| What                                  | Where (`lib/brew_ui/src/layout_round.c` unless noted) |
 |---------------------------------------|-----------------------------------------------------|
 | Background gradients per state        | `s_grad[]`                                          |
 | Graph line colors, cooling text color | `s_line[]`, `COOL_TEXT`                             |
-| Text positions and spacing            | `make_view(...)` calls in `brew_ui_create`          |
-| Graph position and height             | `G_X1`, `G_YT`, `G_YB`                              |
-| Ring range, auto-save delay           | `T_MIN`, `T_MAX`, `COMMIT_MS`                       |
+| Text positions and spacing            | `make_view(...)` calls in `round_create`            |
+| Graph position and height             | `G_X0`, `G_X1`, `G_YT`, `G_YB`                      |
+| Ring range, auto-save delay, history window | `BREW_T_MIN`, `BREW_T_MAX`, `BREW_COMMIT_MS`, `BREW_HIST_MAX` in `brew_model.h` |
 | Animation timings                     | `nv_anim_in` (digits), `wheel_animate_to`, `fade_to`|
 | Fonts and weights                     | `tools/gen_fonts.sh`                                |
 
@@ -192,7 +203,7 @@ This prints how many screens' worth of pixels LVGL re-renders for each interacti
 ./sim/build/brew_tests          # or: ctest --test-dir sim/build
 ```
 
-These cover the controller (commands, persistence, fail-safe, history), the control laws and output guard, knob press/turn ordering and debounce, the codec (including golden v1 bytes), COBS/CRC framing, the display-to-controller link end to end, and the I2C chip drivers against a fake bus. The CMake build also runs `tools/check_rules.py`.
+These cover the controller (commands, persistence, fail-safe, history), the UI model (turn/press rules, auto-save, menu, history scrub), the control laws and output guard, knob press/turn ordering and debounce, the codec (including golden v1 bytes), COBS/CRC framing, the display-to-controller link end to end, and the I2C chip drivers against a fake bus. The CMake build also runs `tools/check_rules.py`.
 
 ### Headless frames (`brew_sim`)
 
@@ -205,6 +216,7 @@ This runs a fixed session through the real controller and UI bridge, and writes 
 ## Adding hardware
 
 - **A new screen, touch chip, encoder, sensor or relay board:** implement the matching interface in `lib/brew_hal` (portable chip drivers go in `lib/brew_drivers`, ESP-IDF peripheral drivers in `lib/brew_drivers_esp32`), then construct it in your board's `main.cpp`. Nothing else changes.
+- **A new screen shape** (square, rectangular, buttons instead of a ring): add a layout next to `layout_round.c` implementing `brew_layout_t`, and create the UI with `brew_ui_create_with_layout()`. The model, and so the behaviour, stays the same.
 - **A new board:** add `boards/<name>/main.cpp` and an env in `platformio.ini` with `build_src_filter = +<name/>` and the right `brew_fonts_<size>`.
 - **Display and controller on separate chips:** give the display board a `RemoteControllerProxy` and the controller board a `RemoteUiProxy`, both over a `StreamPacketLink` on a UART (see `crowpanel21_display` and `controller_devkit`). Any other `hal::Link` (I2C, ESP-NOW, RS-485) drops in the same way.
 
@@ -220,4 +232,4 @@ This runs a fixed session through the real controller and UI bridge, and writes 
 
 - **Menu depth effect.** The menu wheel uses opacity and font weight for depth, not scale. In LVGL 9.3, `transform_scale` rows that scroll in from outside their parent render clipped. I reproduced this in the simulator.
 - **Other panel sizes.** Run `tools/gen_fonts.sh <diameter>` and build with `BREW_UI_DISP_SIZE=<diameter>` (in the simulator: `-DBREW_DISP_SIZE=<diameter>`). All geometry scales from that value.
-- **Ring range.** The setpoint ring covers 30–80 °F. Change `T_MIN` / `T_MAX` in `brew_ui.c` to widen it.
+- **Ring range.** The setpoint ring covers 30–80 °F. Change `BREW_T_MIN` / `BREW_T_MAX` in `brew_model.h` to widen it.

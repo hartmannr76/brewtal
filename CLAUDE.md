@@ -17,7 +17,9 @@ lib/brew_core           portable logic: Controller, ControlLaw, OutputGuard, His
 lib/brew_drivers        portable chip drivers on hal buses (PCF8574, MCP23008, CST8xx). Host-testable.
 lib/brew_drivers_esp32  ESP-IDF peripheral drivers (I2C master, GPIO, PCNT, LEDC, esp_lcd RGB/QSPI, UART,
                         NVS, DS18B20) + startPeriodic(). ESP-IDF APIs only: never Arduino APIs.
-lib/brew_ui             the C view (brew_ui.c/brew_bg.c). Knows nothing about controller/hal/drivers.
+lib/brew_ui             the C view. brew_model.c = UI state + rules (no LVGL, unit-tested); layouts
+                        (layout_round.c) draw it behind brew_layout.h; brew_ui.c = API glue.
+                        Knows nothing about controller/hal/drivers.
 lib/brew_fonts_<size>   generated fonts; an env lists exactly one.
 lib/brew_app            UiBridge (brew_ui <-> UiPort), LvglPort, ESP display runtime. Never includes drivers.
 boards/<name>/          composition roots: the ONLY place pins, part numbers, addresses and driver choices
@@ -36,6 +38,8 @@ sim/harness sim/web     web test harness: real firmware on fake hal devices (sim
 - LVGL / brew_ui calls happen only in the UI task. The controller runs in its own task.
 - Policy (debounce, press/turn ordering, interlocks, min on/off times) lives in core and is unit-tested,
   not in drivers.
+- UI behaviour (what a turn/press does, auto-commit, menu, scrub) lives in `brew_model.c`, never in a
+  layout. A new screen shape is a new `brew_layout_t`; it must not change behaviour.
 
 ## Wire format rules (keep the nanopb migration a one-file change)
 

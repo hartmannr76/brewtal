@@ -21,6 +21,7 @@
 #endif
 
 #include "lvgl.h"
+#include "brew_ui_types.h"   /* brew_mode_t, brew_action_t, brew_ui_cbs_t (no LVGL) */
 #include <stdbool.h>
 
 #ifdef __cplusplus
@@ -31,29 +32,12 @@ extern "C" {
 #define BREW_UI_DISP_SIZE 360   /* square, round panel; fonts are generated for 360 */
 #endif
 
-typedef enum {
-    BREW_MODE_FERMENT = 0,
-    BREW_MODE_CRASH   = 1,
-} brew_mode_t;
+struct brew_layout;
 
-typedef enum {
-    BREW_ACTION_IDLE = 0,   /* within deadband -> "Holding at" */
-    BREW_ACTION_COOLING,
-    BREW_ACTION_HEATING,
-} brew_action_t;
-
-typedef struct {
-    /** User committed a new target (turned the crown, then pressed or waited). */
-    void (*on_setpoint)(brew_mode_t mode, float temp_f, void * user);
-    /** User picked Ferment / Cold crash / Pause / Resume in the menu. */
-    void (*on_mode)(brew_mode_t mode, bool paused, void * user);
-    /** User toggled display units. */
-    void (*on_units)(bool celsius, void * user);
-    void * user;
-} brew_ui_cbs_t;
-
-/** Build the UI on `screen` (usually lv_screen_active()). */
+/** Build the UI on `screen` (usually lv_screen_active()) with the round dial layout. */
 void brew_ui_create(lv_obj_t * screen, const brew_ui_cbs_t * cbs);
+/** Same, with a chosen layout (see brew_layout.h); NULL = round. */
+void brew_ui_create_with_layout(lv_obj_t * screen, const brew_ui_cbs_t * cbs, const struct brew_layout * layout);
 
 /* ---- controller -> UI ---- */
 void brew_ui_set_temp(float temp_f);

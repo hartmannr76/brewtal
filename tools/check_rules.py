@@ -33,6 +33,13 @@ LAYERS = {
 # brew_ui may use esp_heap_caps.h for its PSRAM allocator (guarded by ESP_PLATFORM).
 LAYER_EXCEPTIONS = {("lib/brew_ui", "esp_heap_caps.h")}
 
+# Stricter rules for single files inside a library. The UI model is shared by every layout
+# and unit-tested on the host, so it must not see LVGL, a layout, or the platform.
+FILE_RULES = [
+    (re.compile(r"^lib/brew_ui/src/(brew_model\.[ch]|brew_ui_types\.h)$"),
+     "the UI model", UI + [r"^brew_layout\.h", r"^layout_"] + PLATFORM),
+]
+
 # --------------------------------------------------------------------------- wire format
 CODEC_FILES = re.compile(r"lib/brew_core/src/codec[^/]*\.cpp$")
 WIRE_HEADER = re.compile(r'#\s*include\s*"(wire_v\d+\.h)"')
@@ -93,6 +100,16 @@ def check_layers(root, path, text, errors):
                     line = text.count("\n", 0, m.start()) + 1
                     errors.append(f"{r}:{line}: layering: {lib} must not include \"{inc}\"")
                     break
+    for rx, what, forbidden in FILE_RULES:
+        if not rx.search(r):
+            continue
+        for m in INCLUDE.finditer(text):
+            inc = m.group(2)
+            if m.group(1) == "<" and STD_HEADER.match("<" + inc + ">") and "/" not in inc:
+                continue
+            if any(re.search(pat, inc) for pat in forbidden):
+                line = text.count("\n", 0, m.start()) + 1
+                errors.append(f"{r}:{line}: layering: {what} must not include \"{inc}\" (no LVGL, layouts or platform)")
 
 
 def check_wire(root, path, text, errors):
