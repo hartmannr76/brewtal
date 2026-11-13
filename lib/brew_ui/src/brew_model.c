@@ -95,6 +95,15 @@ void brew_model_hist_time(const brew_model_t * m, int idx, char * buf, size_t n)
     }
 }
 
+void brew_model_hist_window_text(const brew_model_t * m, char * buf, size_t n)
+{
+    const int min = BREW_HIST_MAX * (m->hist_min_per > 0 ? m->hist_min_per : 1);
+    if(min < 60) snprintf(buf, n, "last %d min", min);
+    else if(min == 60) snprintf(buf, n, "last hour");
+    else if(min % 60 == 0) snprintf(buf, n, "last %d hours", min / 60);
+    else snprintf(buf, n, "last %dh %02dm", min / 60, min % 60);
+}
+
 void brew_model_menu_label(const brew_model_t * m, int i, char * buf, size_t n)
 {
     switch(i) {

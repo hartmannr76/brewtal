@@ -239,6 +239,7 @@ static struct {
     numview_t big;
     numview_t hval;
     lv_obj_t * htime;
+    lv_obj_t * hhint;        /* "Turn to scrub · last 2 hours" */
 
     lv_obj_t * item[BREW_MENU_N];
     lv_obj_t * item_ico[BREW_MENU_N];
@@ -655,6 +656,10 @@ static void refresh(bool animate)
         nv_set_color(&U.hval, vs == BREW_VS_COOL ? cool : white);
         brew_model_hist_time(M, M->hist_idx, s, sizeof(s));
         set_text(U.htime, s);
+        char w[32];
+        brew_model_hist_window_text(M, w, sizeof(w));
+        snprintf(s, sizeof(s), "Turn to scrub \xC2\xB7 %s", w);
+        set_text(U.hhint, s);
     }
 
     if(M->view == BREW_VIEW_MENU) update_menu_items();
@@ -850,11 +855,10 @@ static void round_create(lv_obj_t * screen, const brew_model_t * m)
     lv_obj_set_style_text_color(U.htime, lv_color_white(), 0);
     lv_obj_set_style_text_opa(U.htime, 140, 0);
     nv_create(&U.hval, U.v_hist, &brew_font_num_hist, &brew_font_deg_hist, DC(12));
-    lv_obj_t * hs = lv_label_create(U.v_hist);
-    lv_obj_set_style_text_font(hs, &brew_font_small, 0);
-    lv_obj_set_style_text_color(hs, lv_color_white(), 0);
-    lv_obj_set_style_text_opa(hs, 140, 0);
-    lv_label_set_text(hs, "Turn to scrub \xC2\xB7 last 24 hours");
+    U.hhint = lv_label_create(U.v_hist);   /* text set in refresh(): the window comes from the model */
+    lv_obj_set_style_text_font(U.hhint, &brew_font_small, 0);
+    lv_obj_set_style_text_color(U.hhint, lv_color_white(), 0);
+    lv_obj_set_style_text_opa(U.hhint, 140, 0);
 
     U.graph_t = lv_timer_create(graph_timer_cb, 2000, NULL);
 

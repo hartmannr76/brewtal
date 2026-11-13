@@ -114,6 +114,8 @@ int brew_model_hist_last(const brew_model_t * m);
 float brew_model_hist_val(const brew_model_t * m, int i);
 /** "Now", "2:41 PM" (wall clock set) or "1h 05m ago". */
 void brew_model_hist_time(const brew_model_t * m, int i, char * buf, size_t n);
+/** How far back the history window reaches: "last 2 hours", "last hour", "last 45 min". */
+void brew_model_hist_window_text(const brew_model_t * m, char * buf, size_t n);
 
 /* Menu */
 /** Label for item i ("Pause" / "Resume", "Units · °F", ...). */

@@ -229,3 +229,19 @@ TEST(ui_model_history_scrub_and_rolling_window)
     brew_model_press(&m);                        // back home
     CHECK(m.view == BREW_VIEW_HOME);
 }
+
+TEST(ui_model_history_window_text_follows_the_sample_interval)
+{
+    brew_model_t m;
+    brew_model_init(&m, nullptr);
+    char t[32];
+    auto window = [&](int min_per) {
+        const float one = 60.0f;
+        brew_model_set_history(&m, &one, 1, min_per);
+        brew_model_hist_window_text(&m, t, sizeof(t));
+        return std::string(t);
+    };
+    CHECK(window(1) == "last 2 hours");   // 120 samples x 1 min (the default)
+    CHECK(window(3) == "last 6 hours");
+    CHECK(window(30) == "last 60 hours");
+}
