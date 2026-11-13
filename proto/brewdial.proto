@@ -1,0 +1,41 @@
+// BrewDial board-to-board messages: the SCHEMA OF RECORD.
+//
+// Not compiled yet. Wire format v1 is hand-written (lib/brew_core/src/wire_v1.h) and must keep
+// the same field numbers and names as this file; tools/check_rules.py fails the build if the two
+// drift apart. Moving to nanopb = generate from this file, encode as proto_ver 2 in codec.cpp.
+//
+// Every frame: [proto_ver:u8][msg_type:u8][seq:u16 LE][payload]. Temperatures are
+// centi-degrees Celsius (sint32 here, i16 on the v1 wire).
+//
+// Evolution: add fields with NEW numbers only; never renumber, retype or reuse a number.
+syntax = "proto3";
+
+package brewdial;
+
+// msg_type 1, controller -> display. Latest value wins.
+message State {
+  sint32 temp_cc = 1;
+  sint32 setpoint_ferm_cc = 2;
+  sint32 setpoint_crash_cc = 3;
+  uint32 mode = 4;      // 0 ferment, 1 crash
+  uint32 action = 5;    // 0 idle, 1 cooling, 2 heating
+  uint32 flags = 6;     // bit0 paused, bit1 celsius, bit2 temp_valid
+  uint32 day = 7;
+  string batch = 8;     // <= 15 bytes UTF-8
+}
+
+// msg_type 2, display -> controller. Idempotent.
+message Command {
+  uint32 kind = 1;      // 1 set_setpoint, 2 set_mode, 3 set_units, 4 request_sync
+  uint32 mode = 2;
+  sint32 setpoint_cc = 3;
+  uint32 flags = 4;     // bit0 paused, bit1 celsius
+}
+
+// msg_type 3, controller -> display. A reset chunk starts a new series.
+message HistoryChunk {
+  uint32 flags = 1;                // bit0 reset, bit1 more chunks follow
+  uint32 minutes_per_sample = 2;
+  uint32 n = 3;
+  repeated sint32 temps_cc = 4;    // <= 24 per chunk
+}

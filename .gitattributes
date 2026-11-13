@@ -1,0 +1,25 @@
+# Normalise line endings in the repo (LF), check out natively per platform.
+* text=auto
+
+# Scripts that must keep their platform's line endings
+*.sh   text eol=lf
+*.py   text eol=lf
+*.ps1  text eol=crlf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# Binary assets: never diff or convert
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.ttf  binary
+*.otf  binary
+*.woff binary
+*.woff2 binary
+*.bin  binary
+*.pdf  binary
+
+# Generated LVGL font sources (tools/gen_fonts.sh): collapsed in GitHub diffs and language stats
+lib/brew_fonts_*/** linguist-generated=true

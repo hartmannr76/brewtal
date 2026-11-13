@@ -1,0 +1,162 @@
+#if defined(ESP_PLATFORM)
+
+#include "brew/app/runtime.h"
+
+#include "brew/app/lvgl_port.h"
+#include "brew/app/ui_bridge.h"
+#include "brew/local_bus.h"
+
+#include "esp_heap_caps.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+#include <cstdlib>
+
+namespace brew::app {
+
+namespace {
+
+const char * TAG = "brewdial";
+
+constexpr uint32_t kInputPeriodMs = 5;
+constexpr uint32_t kTouchEvery = 2;   // touch sampled every 10 ms
+
+uint32_t millis32() { return static_cast<uint32_t>(esp_timer_get_time() / 1000); }
+
+/* Logs every command on its way out, like the old sketch's Serial prints. */
+class LoggingUiPort final : public UiPort {
+public:
+    explicit LoggingUiPort(UiPort & inner) : in_(inner) {}
+    void send(const Command & c) override
+    {
+        switch(c.kind) {
+            case Command::Kind::SetSetpoint:
+                ESP_LOGI(TAG, "setpoint[%d] = %.2f C (%.1f F)", static_cast<int>(c.mode), c.setpoint_c, c_to_f(c.setpoint_c));
+                break;
+            case Command::Kind::SetMode:
+                ESP_LOGI(TAG, "mode=%d paused=%d", static_cast<int>(c.mode), c.paused);
+                break;
+            case Command::Kind::SetUnits:
+                ESP_LOGI(TAG, "celsius=%d", c.celsius);
+                break;
+            case Command::Kind::RequestSync:
+                break;
+        }
+        in_.send(c);
+    }
+    bool pollState(State & s) override { return in_.pollState(s); }
+    bool pollHistory(HistoryChunk & h) override { return in_.pollHistory(h); }
+    void service(uint32_t now) override { in_.service(now); }
+
+private:
+    UiPort & in_;
+};
+
+struct DisplayCtx {
+    DisplayConfig cfg;
+    LvglPort lvgl;
+    UiBridge * bridge = nullptr;
+    LoggingUiPort * port = nullptr;
+    KnobInput * knob = nullptr;
+    TouchTracker touch;
+    SpscRing<InputEvent, 64> events;   // input task -> ui task
+};
+
+DisplayCtx * s_disp;
+
+void input_task(void *)
+{
+    DisplayCtx & d = *s_disp;
+    hal::TouchPoint tp;
+    uint32_t n = 0;
+    TickType_t wake = xTaskGetTickCount();
+    for(;;) {
+        const uint32_t now = millis32();
+        if(d.knob) d.knob->poll(now, [&](const InputEvent & e) { d.events.push(e); });
+        if(d.cfg.touch && ++n % kTouchEvery == 0 && d.cfg.touch->read(tp))
+            d.touch.step(tp, [&](const InputEvent & e) { d.events.push(e); });
+        vTaskDelayUntil(&wake, pdMS_TO_TICKS(kInputPeriodMs));
+    }
+}
+
+void ui_task(void *)
+{
+    DisplayCtx & d = *s_disp;
+    for(;;) {
+        InputEvent e;
+        while(d.events.pop(e)) {
+            if(e.kind == InputEvent::Kind::Rotate || e.kind == InputEvent::Kind::Press) d.bridge->handle(e);
+            else d.lvgl.pushTouch(e);
+        }
+        d.bridge->poll(millis32());
+        const uint32_t wait = lv_timer_handler();
+        /* run at least every 5 ms so knob events are applied promptly */
+        vTaskDelay(pdMS_TO_TICKS(wait > 5 ? 5 : (wait < 1 ? 1 : wait)));
+    }
+}
+
+uint32_t lv_tick_cb() { return millis32(); }
+
+[[noreturn]] void fatal(const char * msg)
+{
+    ESP_LOGE(TAG, "FATAL: %s", msg);
+    for(;;) vTaskDelay(pdMS_TO_TICKS(1000));
+}
+
+}  // namespace
+
+void startDisplay(const DisplayConfig & cfg, UiPort & port)
+{
+    if(!cfg.panel) fatal("startDisplay: no panel");
+    s_disp = new DisplayCtx();
+    DisplayCtx & d = *s_disp;
+    d.cfg = cfg;
+
+    if(!cfg.panel->begin()) ESP_LOGE(TAG, "display panel begin() failed");
+    if(cfg.touch && !cfg.touch->begin()) ESP_LOGW(TAG, "touch controller not found");
+    if(cfg.encoder && !cfg.encoder->begin()) ESP_LOGW(TAG, "encoder init failed");
+
+    lv_init();
+    lv_tick_set_cb(lv_tick_cb);
+
+    /* Render into small buffers in internal SRAM (much faster than PSRAM for LVGL's blending);
+     * the panel driver copies each dirty band out. */
+    const size_t bytes = static_cast<size_t>(cfg.panel->width()) * cfg.panel->drawBufferLines() * 2;
+    void * b1 = heap_caps_malloc(bytes, cfg.panel->drawBufferCaps());
+    void * b2 = heap_caps_malloc(bytes, cfg.panel->drawBufferCaps());
+    if(!b1 || !b2) fatal("draw buffer allocation failed");
+    d.lvgl.begin(*cfg.panel, b1, b2, bytes, cfg.refresh_ms);
+    if(cfg.touch) d.lvgl.addTouch();
+
+    d.port = new LoggingUiPort(port);
+    d.bridge = new UiBridge(*d.port);
+    d.bridge->create(lv_screen_active());
+
+    /* First frame before the backlight, so there is no flash of garbage. Give the controller
+     * a moment to answer the sync request so the first frame already shows real values. */
+    for(int i = 0; i < 20; i++) {
+        d.bridge->poll(millis32());
+        lv_timer_handler();
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+    lv_refr_now(nullptr);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    if(cfg.backlight) cfg.backlight->set(cfg.backlight_level);
+    if(cfg.after_first_frame) cfg.after_first_frame();
+
+    if(cfg.encoder || cfg.button) {
+        d.knob = new KnobInput(cfg.encoder, cfg.button, cfg.knob);
+        d.knob->begin();
+    }
+
+    xTaskCreatePinnedToCore(input_task, "input", 4096, nullptr, 5, nullptr, 0);
+    xTaskCreatePinnedToCore(ui_task, "ui", 16384, nullptr, 2, nullptr, 1);
+    ESP_LOGI(TAG, "display ready (%ux%u, PSRAM free %u KB)", cfg.panel->width(), cfg.panel->height(),
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024));
+}
+
+}  // namespace brew::app
+
+#endif  // ESP_PLATFORM

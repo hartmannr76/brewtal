@@ -1,0 +1,8 @@
+{
+  "name": "brew_ui",
+  "version": "1.0.0",
+  "description": "BrewDial round UI (pure LVGL 9 view, C). Fonts come from brew_fonts_<size>.",
+  "frameworks": "*",
+  "platforms": "*",
+  "build": { "srcDir": "src", "includeDir": "src" }
+}

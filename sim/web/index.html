@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BrewDial Bench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@200;300;400;500&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-state="idle">
+
+<!-- room light: tinted by the dial's state, like the dial's own background -->
+<div class="atmos" aria-hidden="true"><div class="atmos-glow"></div><div class="atmos-floor"></div><div class="grain"></div></div>
+
+<header class="bar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <span class="brand-word">BrewDial</span>
+    <span class="brand-sub">Bench</span>
+  </div>
+  <div class="clock" title="Simulated time since start">
+    <span class="clock-label">Sim time</span>
+    <span id="simclock">00:00:00</span>
+  </div>
+  <div class="seg" id="speed" role="group" aria-label="Simulation speed">
+    <button data-speed="0" title="Pause the controller and beer (UI keeps running)" aria-label="Pause">
+      <svg viewBox="0 0 12 12" width="10" height="10"><rect x="2" y="1.5" width="2.6" height="9" rx="1"/><rect x="7.4" y="1.5" width="2.6" height="9" rx="1"/></svg>
+    </button>
+    <button data-speed="1" class="on">1×</button>
+    <button data-speed="10">10×</button>
+    <button data-speed="60">60×</button>
+    <button data-speed="600">600×</button>
+    <button data-speed="3600">3600×</button>
+  </div>
+</header>
+
+<main>
+  <!-- ---------------------------------------------------------------- stage -->
+  <section class="stage" aria-label="Device">
+    <div class="device" id="device">
+      <div class="ring" id="ring" title="Drag to turn the knob">
+        <div class="knurl" id="knurl"></div>
+        <div class="ring-light"></div>
+      </div>
+      <div class="bezel" id="bezel">
+        <canvas id="screen" width="480" height="480" aria-label="BrewDial screen: click to tap, scroll to turn"></canvas>
+        <div class="glass" aria-hidden="true"></div>
+      </div>
+    </div>
+    <div class="floor" aria-hidden="true"></div>
+
+    <div class="deck">
+      <button id="ccw" class="disc" title="Turn one detent counter-clockwise (←)" aria-label="Turn counter-clockwise">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M8.5 6.2A7.5 7.5 0 1 1 4.6 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M8.9 2.6 8.3 6.6l4 .7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button id="press" class="press" title="Press the knob; hold to keep it down (Space)">Press</button>
+      <button id="cw" class="disc" title="Turn one detent clockwise (→)" aria-label="Turn clockwise">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M15.5 6.2A7.5 7.5 0 1 0 19.4 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M15.1 2.6l.6 4-4 .7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+    <div class="deck deck-small">
+      <button id="ccw5" class="chip">−5</button>
+      <button id="bounce" class="chip" title="One raw encoder count (half a detent): should do nothing">½ detent</button>
+      <button id="cw5" class="chip">+5</button>
+      <label class="switch-row"><input type="checkbox" class="switch" id="corners"> Square</label>
+    </div>
+    <p class="hint">Drag the ring or scroll to turn&ensp;·&ensp;click the glass to touch&ensp;·&ensp;← → Space</p>
+  </section>
+
+  <!-- ---------------------------------------------------------------- console -->
+  <section class="console">
+
+    <article class="card wide telemetry" id="c-state">
+      <div class="tele">
+        <span class="tele-label">Probe</span>
+        <span class="tele-num"><b id="s-temp">–</b><i>°F</i></span>
+      </div>
+      <div class="tele">
+        <span class="tele-label">Target</span>
+        <span class="tele-num"><b id="s-sp">–</b><i>°F</i></span>
+      </div>
+      <div class="tele tele-doing">
+        <span class="tele-label">Doing</span>
+        <span class="pill" id="s-action">–</span>
+      </div>
+      <div class="tele-extra" id="s-extra">–</div>
+    </article>
+
+    <article class="card wide" id="c-relays">
+      <header class="card-h"><h2>Outputs</h2><span class="card-sub">relays, and the power the elements actually deliver</span></header>
+      <div class="relays">
+        <div class="relay heat" id="r-heat">
+          <div class="lens"><i></i></div>
+          <div class="relay-body">
+            <div class="relay-top"><b>Heat</b><span class="relay-state">–</span></div>
+            <div class="meter"><i></i></div>
+            <span class="relay-sub">–</span>
+          </div>
+        </div>
+        <div class="relay cool" id="r-cool">
+          <div class="lens"><i></i></div>
+          <div class="relay-body">
+            <div class="relay-top"><b>Cool</b><span class="relay-state">–</span></div>
+            <div class="meter"><i></i></div>
+            <span class="relay-sub">–</span>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="card wide" id="c-chart">
+      <header class="card-h"><h2>History</h2><span class="card-sub" id="chart-span"></span>
+        <button id="chart-clear" class="link">Clear</button></header>
+      <canvas id="chart" height="200"></canvas>
+      <div class="legend">
+        <span class="k beer">Beer</span><span class="k probe">Probe reading</span>
+        <span class="k sp">Target</span><span class="k heat">Heating</span><span class="k cool">Cooling</span>
+      </div>
+    </article>
+
+    <article class="card" id="c-plant">
+      <header class="card-h"><h2>Fermenter</h2><span class="card-sub">the physical rig</span></header>
+      <div class="field"><label for="plant-preset">Setup</label>
+        <select id="plant-preset">
+          <option value="jacket" selected>5 gal · neoprene jacket · heat wrap + glycol coil</option>
+          <option value="freezer">5 gal · chest freezer chamber + heat pad</option>
+          <option value="bare">5 gal · bare stainless · heat wrap + glycol coil</option>
+          <option value="fast">Fast demo (old model, ~4 °F/min)</option>
+          <option value="custom">Custom</option>
+        </select></div>
+      <div class="grid2">
+        <div class="field"><label for="vol">Batch <u>gal</u></label><input type="number" id="vol" step="0.5" min="0.5" value="5"></div>
+        <div class="field"><label for="room">Room / chamber <u>°F</u></label><input type="number" id="room" step="1" value="68"></div>
+        <div class="field"><label for="insul">Insulation</label>
+          <select id="insul">
+            <option value="bare">Bare stainless</option>
+            <option value="neoprene" selected>Neoprene jacket</option>
+            <option value="foam">Thick foam jacket</option>
+            <option value="freezer">Inside a chest freezer</option>
+            <option value="custom">Custom</option>
+          </select></div>
+        <div class="field"><label for="loss">Heat loss <u>W/°C</u></label><input type="number" id="loss" step="0.1" min="0" value="1.8"></div>
+        <div class="field"><label for="heatw">Heater <u>W</u></label><input type="number" id="heatw" step="5" min="0" value="50"></div>
+        <div class="field"><label for="heatlag">Heater lag <u>min</u></label><input type="number" id="heatlag" step="0.5" min="0" value="4"></div>
+        <div class="field"><label for="coolw">Cooling into beer <u>W</u></label><input type="number" id="coolw" step="10" min="0" value="150"></div>
+        <div class="field"><label for="coollag">Cooling lag <u>min</u></label><input type="number" id="coollag" step="0.5" min="0" value="1"></div>
+        <div class="field"><label for="yeast">Yeast heat <u>W</u></label><input type="number" id="yeast" step="1" value="0"></div>
+      </div>
+      <p class="readout" id="plant-explain"></p>
+      <p class="note">Lag is how long an element keeps warming or chilling after its relay switches: a heat wrap's own mass, glycol left in the coil. Active ale fermentation gives about 10–20 W per 5 gal at its peak. Changes apply immediately.</p>
+    </article>
+
+    <article class="card" id="c-beer">
+      <header class="card-h"><h2>Beer &amp; probe</h2></header>
+      <div class="field">
+        <label for="beer">Beer <b id="beer-v">–</b></label>
+        <input type="range" id="beer" min="25" max="90" step="0.1">
+      </div>
+      <label class="switch-row"><input type="checkbox" class="switch" id="physics" checked> Physics: heating and cooling move the beer</label>
+      <div class="field">
+        <label>Probe fault</label>
+        <div class="seg seg-fill" id="fault">
+          <button data-f="0" class="on">None</button>
+          <button data-f="1">Unplugged</button>
+          <button data-f="2">Stuck</button>
+          <button data-f="3">Noisy</button>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label for="noise">Noise σ <u>°F</u></label><input type="number" id="noise" step="0.1" min="0" value="0.5"></div>
+        <div class="field"><label for="offset">Calibration offset <u>°F</u></label><input type="number" id="offset" step="0.1" value="0"></div>
+      </div>
+    </article>
+
+    <article class="card" id="c-setup">
+      <header class="card-h"><h2>Controller</h2><span class="card-sub">control law and relay protection</span></header>
+      <div class="seg seg-fill presets">
+        <button id="preset-recommended">Recommended</button>
+        <button id="preset-original">Original ±0.3 deadband</button>
+      </div>
+      <div class="grid2">
+        <div class="field"><label for="law">Control law</label>
+          <select id="law"><option value="1" selected>Differential: run to target</option><option value="0">Deadband: stop at band</option></select></div>
+        <div class="field"><label for="histmin">History every <u>min</u></label><input type="number" id="histmin" min="1" value="1"></div>
+        <div class="field"><label for="hdiff">Heat differential <u>°F</u></label><input type="number" id="hdiff" step="0.1" min="0" value="0.5"></div>
+        <div class="field"><label for="cdiff">Cool differential <u>°F</u></label><input type="number" id="cdiff" step="0.1" min="0" value="0.5"></div>
+        <div class="field"><label for="hon">Heat min on <u>min</u></label><input type="number" id="hon" step="0.5" min="0" value="0"></div>
+        <div class="field"><label for="hoff">Heat min off <u>min</u></label><input type="number" id="hoff" step="0.5" min="0" value="0"></div>
+        <div class="field"><label for="con">Cool min on <u>min</u></label><input type="number" id="con" step="0.5" min="0" value="0"></div>
+        <div class="field"><label for="coff">Compressor delay <u>min</u></label><input type="number" id="coff" step="0.5" min="0" value="5"></div>
+        <div class="field"><label for="change">Heat ↔ cool gap <u>min</u></label><input type="number" id="change" step="0.5" min="0" value="10"></div>
+      </div>
+      <p class="note">Differential: heating starts at target − heat differential and runs until it reaches the target; cooling likewise. The compressor delay also counts from power-up, so a reboot waits it out.</p>
+      <div class="actions">
+        <button id="apply" class="btn primary">Apply &amp; reboot</button>
+        <button id="reboot" class="btn">Reboot</button>
+        <button id="factory" class="btn danger">Factory reset</button>
+      </div>
+      <p class="note">Rebooting keeps settings (like NVS) and drops RAM history.</p>
+    </article>
+
+    <article class="card" id="c-link">
+      <header class="card-h"><h2>Display ↔ controller</h2></header>
+      <div class="seg seg-fill" id="topology">
+        <button data-split="0" class="on">Same board</button>
+        <button data-split="1">Two boards, cable</button>
+      </div>
+      <div id="link-opts">
+        <label class="switch-row"><input type="checkbox" class="switch" id="unplug"> Cable unplugged</label>
+        <div class="grid2">
+          <div class="field"><label for="drop">Byte loss <u>%</u></label><input type="number" id="drop" min="0" max="100" step="0.5" value="0"></div>
+          <div class="field"><label for="corrupt">Bit errors <u>%</u></label><input type="number" id="corrupt" min="0" max="100" step="0.5" value="0"></div>
+        </div>
+      </div>
+      <p class="readout" id="link-stats">–</p>
+    </article>
+
+    <article class="card wide" id="c-log">
+      <header class="card-h"><h2>Events</h2>
+        <label class="switch-row inline"><input type="checkbox" class="switch" id="log-actions" checked> Relay changes</label>
+        <button id="log-clear" class="link">Clear</button></header>
+      <ol id="log" aria-live="polite"></ol>
+    </article>
+  </section>
+</main>
+
+<div id="loading"><div class="load-word">BrewDial</div><div class="load-line"><i></i></div><div class="load-msg">Starting the firmware</div></div>
+<script src="brew_web.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

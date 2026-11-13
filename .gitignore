@@ -1,0 +1,57 @@
+# ---------------------------------------------------------------- build output
+# PlatformIO (firmware builds, downloaded toolchains and libraries)
+.pio/
+# CMake builds: the host sim/tests (sim/build, sim/build-msvc, sim/build-web-480, ...) and any
+# build/ directory, including the root one CMake's VS integration creates
+build/
+build-*/
+sim/build*/
+CMakeUserPresets.json
+
+# Firmware images are build artifacts: publish them as GitHub release assets, never commit them.
+# (A committed .bin silently drifts from the code that's supposed to produce it.)
+*.bin
+*.elf
+*.map
+*.hex
+*.uf2
+boards/*/prebuilt/
+
+# Host build leftovers (in case something builds in-tree)
+*.o
+*.obj
+*.a
+*.lib
+*.exe
+*.pdb
+*.ilk
+*.wasm
+
+# Simulator output: brew_sim writes raw RGB565 frames, the harness tools write RGBA dumps
+*.raw
+*.rgba
+
+# ---------------------------------------------------------------- tools
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+node_modules/
+
+# ---------------------------------------------------------------- editors / OS
+# VS Code: PlatformIO regenerates these with absolute paths for each machine.
+# settings.json and extensions.json are shared on purpose.
+.vscode/c_cpp_properties.json
+.vscode/launch.json
+.vscode/ipch/
+.vscode/.browse.c_cpp.db*
+.vs/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Claude Code: per-user settings (CLAUDE.md, the project instructions, is shared)
+.claude/settings.local.json
