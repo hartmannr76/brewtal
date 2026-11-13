@@ -45,13 +45,23 @@
         <div class="ring-light"></div>
       </div>
       <div class="bezel" id="bezel">
-        <canvas id="screen" width="480" height="480" aria-label="BrewDial screen: click to tap, scroll to turn"></canvas>
+        <canvas id="screen" width="480" height="480" aria-label="BrewDial screen: click to tap"></canvas>
         <div class="glass" aria-hidden="true"></div>
+      </div>
+      <!-- square panel: three physical keys on the right edge (ButtonInput in the firmware) -->
+      <div class="keys" aria-label="Panel keys">
+        <button class="key" data-key="0" title="Up (↑): hold to repeat" aria-label="Up">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="key key-sel" data-key="2" title="Select (Space / Enter)" aria-label="Select"><i></i></button>
+        <button class="key" data-key="1" title="Down (↓): hold to repeat" aria-label="Down">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
       </div>
     </div>
     <div class="floor" aria-hidden="true"></div>
 
-    <div class="deck">
+    <div class="deck deck-round">
       <button id="ccw" class="disc" title="Turn one detent counter-clockwise (←)" aria-label="Turn counter-clockwise">
         <svg viewBox="0 0 24 24" width="20" height="20"><path d="M8.5 6.2A7.5 7.5 0 1 1 4.6 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M8.9 2.6 8.3 6.6l4 .7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
@@ -60,13 +70,27 @@
         <svg viewBox="0 0 24 24" width="20" height="20"><path d="M15.5 6.2A7.5 7.5 0 1 0 19.4 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M15.1 2.6l.6 4-4 .7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
     </div>
-    <div class="deck deck-small">
-      <button id="ccw5" class="chip">−5</button>
-      <button id="bounce" class="chip" title="One raw encoder count (half a detent): should do nothing">½ detent</button>
-      <button id="cw5" class="chip">+5</button>
-      <label class="switch-row"><input type="checkbox" class="switch" id="corners"> Square</label>
+    <div class="deck deck-square">
+      <button class="disc" data-key="1" title="Down (↓): hold to repeat" aria-label="Down">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="press" data-key="2" title="Select (Space / Enter). Name to be decided">Select</button>
+      <button class="disc" data-key="0" title="Up (↑): hold to repeat" aria-label="Up">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
     </div>
-    <p class="hint">Drag the ring or scroll to turn&ensp;·&ensp;click the glass to touch&ensp;·&ensp;← → Space</p>
+    <div class="deck deck-small">
+      <div class="seg" id="device-kind" role="group" aria-label="Device">
+        <button data-kind="round" class="on">Round · knob ring</button>
+        <button data-kind="square">Square · buttons</button>
+      </div>
+      <span class="deck-round">
+        <button id="ccw5" class="chip">−5</button>
+        <button id="bounce" class="chip" title="One raw encoder count (half a detent): should do nothing">½ detent</button>
+        <button id="cw5" class="chip">+5</button>
+      </span>
+    </div>
+    <p class="hint" id="hint"></p>
   </section>
 
   <!-- ---------------------------------------------------------------- console -->

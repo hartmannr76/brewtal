@@ -61,6 +61,8 @@ public:
     void button(bool down);          // knob switch level
     void click();                    // a ~80 ms press
     void touch(int x, int y, bool down);
+    /** Square-panel keys (ButtonInput): 0 = up, 1 = down, 2 = select. Level, so hold works. */
+    void key(int which, bool down);
 
     /* ---- beer / probe ---- */
     void setBeerC(float c);
@@ -122,6 +124,8 @@ private:
     SimButton button_;
     std::deque<Scheduled> button_q_;
     KnobInput knob_;
+    SimButton keys_[3];              // up, down, select (a square panel's buttons)
+    ButtonInput buttons_;
     TouchTracker touch_;
     app::LvglPort lvgl_;
     std::vector<uint8_t> buf1_, buf2_;

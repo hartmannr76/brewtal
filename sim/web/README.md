@@ -38,6 +38,7 @@ The native build also runs `harness_check` through ctest, which covers the same 
 | Panel | Controls |
 |---|---|
 | Screen | Drag the knurled ring around the glass to turn the knob (12° per detent, like the CrowPanel's 30-detent ring), or scroll. Click or drag the glass to touch. ←/→ turn, Space presses (hold it to hold the knob down). |
+| Device | **Round · knob ring** or **Square · buttons** (remembered; `index.html?device=square` picks it). Square shows a square bezel with three side keys (up, down, and select, whose name is still to be decided) and the deck controls change to match. They're real press-and-hold keys that go through the firmware's `ButtonInput` (debounce, hold-to-repeat). ↑/↓ and Space/Enter work too. Until a square layout exists, the screen draws the round one. |
 | Knob buttons | ±1 and ±5 detents. **½ detent** sends one raw encoder count, which must do nothing. **Press** can be held. |
 | Speed | Pause, or ×1 to ×3600. Only the controller and the beer speed up; the UI and knob stay in real time. `index.html?speed=600` starts fast. |
 | Beer & probe | Drag the beer temperature. Turn physics off to pin the temperature where you put it. Probe faults: disconnected, stuck, noisy (with σ). Calibration offset. |

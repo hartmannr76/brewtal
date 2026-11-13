@@ -121,6 +121,93 @@ private:
     uint32_t hold_ms_ = 0;
 };
 
+/**
+ * Three push buttons (up, down, select) -> the same Rotate/Press events as the knob, for
+ * panels with keys instead of a rotary ring. Up = +1 (clockwise / warmer), down = -1.
+ *
+ *   - Each button is debounced on its own (debounce_ms).
+ *   - Up/down step once when the press is confirmed, then repeat while held: first after
+ *     repeat_delay_ms, then every repeat_ms (sweeping the target, like a thermostat).
+ *   - Select emits Press when it is released, so a long-press can mean something else later
+ *     without changing what a short press does.
+ *   - While select is down, up/down are ignored (no accidental change while pressing).
+ *
+ * Any button may be null. Call poll() every ~5 ms from one task.
+ */
+class ButtonInput {
+public:
+    struct Config {
+        uint16_t debounce_ms = 25;
+        uint16_t repeat_delay_ms = 450;
+        uint16_t repeat_ms = 120;       // 0 = no auto-repeat
+        bool     active_low = true;
+    };
+
+    ButtonInput(hal::DigitalIn * up, hal::DigitalIn * down, hal::DigitalIn * select, const Config & cfg)
+        : cfg_(cfg)
+    {
+        in_[kUp] = up;
+        in_[kDown] = down;
+        in_[kSelect] = select;
+    }
+
+    template<typename Emit>
+    void poll(uint32_t now_ms, Emit && emit)
+    {
+        bool raw[3];
+        for(int i = 0; i < 3; i++) raw[i] = in_[i] && (in_[i]->read() != cfg_.active_low);
+        step(now_ms, raw[kUp], raw[kDown], raw[kSelect], emit);
+    }
+
+    /** The whole policy, on raw levels (true = pressed, polarity already corrected). */
+    template<typename Emit>
+    void step(uint32_t now, bool up, bool down, bool select, Emit && emit)
+    {
+        const bool raw[3] = { up, down, select };
+        for(int i = 0; i < 3; i++) {
+            Key & k = key_[i];
+            if(raw[i] != k.raw) {
+                k.raw = raw[i];
+                k.changed = now;
+            }
+            if(k.raw == k.stable || now - k.changed < cfg_.debounce_ms) continue;
+            k.stable = k.raw;
+            if(i == kSelect) {
+                if(k.stable) key_[kUp].repeating = key_[kDown].repeating = false;   // select wins
+                else emit(InputEvent::press());
+                continue;
+            }
+            k.repeating = k.stable && !key_[kSelect].stable;
+            if(k.repeating) {
+                emit(InputEvent::rotate(i == kUp ? 1 : -1));
+                k.next = now + cfg_.repeat_delay_ms;
+            }
+        }
+        if(cfg_.repeat_ms == 0 || key_[kSelect].stable) return;
+        for(int i = kUp; i <= kDown; i++) {
+            Key & k = key_[i];
+            /* k.raw: stop the instant the contact opens; waiting for the release to debounce
+             * would let one more repeat through after the finger has lifted */
+            while(k.repeating && k.raw && static_cast<int32_t>(now - k.next) >= 0) {
+                emit(InputEvent::rotate(i == kUp ? 1 : -1));
+                k.next += cfg_.repeat_ms;
+            }
+        }
+    }
+
+private:
+    enum { kUp, kDown, kSelect };
+    struct Key {
+        bool raw = false, stable = false;
+        bool repeating = false;   // stepped on this press: auto-repeat is armed
+        uint32_t changed = 0, next = 0;
+    };
+
+    hal::DigitalIn * in_[3] = {};
+    Config cfg_;
+    Key key_[3];
+};
+
 /** Touch samples -> TouchDown/Move/Up, ignoring sub-`jitter` movement. */
 class TouchTracker {
 public:

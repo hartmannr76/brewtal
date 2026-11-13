@@ -31,6 +31,13 @@ create().then((M) => {
   s = status();
   check(Math.abs(toF(s.state.sp[0]) - 67) < 0.01 && s.link.bytes_to_ctl > 0, 'split mode: command crossed the cable');
 
+  /* square-panel keys: hold up ~0.7 s (step + 2 repeats), then select commits */
+  const sp0 = toF(status().state.sp[0]);
+  M._bd_key(0, 1); run(700); M._bd_key(0, 0); run(200);
+  M._bd_key(2, 1); run(100); M._bd_key(2, 0); run(1500);
+  s = status();
+  check(Math.abs(toF(s.state.sp[0]) - (sp0 + 1.5)) < 0.05, `panel keys: held up then select (${sp0} -> ${toF(s.state.sp[0]).toFixed(2)} F)`);
+
   let line, n = 0;
   while ((line = M.UTF8ToString(M._bd_next_log()))) n++;
   check(n > 0, `event log has entries (${n})`);

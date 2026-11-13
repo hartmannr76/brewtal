@@ -35,7 +35,7 @@ createBrewDial().then((M) => {
     beer: M._bd_set_beer_c, physics: M._bd_set_physics, plant: M._bd_plant,
     fault: M._bd_set_fault, noise: M._bd_set_noise, offset: M._bd_set_offset,
     speed: M._bd_set_speed, reboot: M._bd_reboot, factory: M._bd_factory_reset, setup: M._bd_setup,
-    split: M._bd_set_split, link: M._bd_link,
+    split: M._bd_set_split, link: M._bd_link, key: M._bd_key,
     status: () => JSON.parse(M.UTF8ToString(M._bd_status())),
     nextLog: () => M.UTF8ToString(M._bd_next_log()),
   };
@@ -89,6 +89,7 @@ createBrewDial().then((M) => {
   /* ------------------------------------------------------------ knob ring + touch */
   /* The CrowPanel's knob is the ring around the glass: 30 detents per turn = 12° each. */
   const DETENT_DEG = 12;
+  let kind = 'round';   // which device the stage shows: 'round' (knob ring) or 'square' (side keys)
   const ring = $('ring'), knurl = $('knurl'), device = $('device');
   let rot = 0;
   const spin = (deg) => { rot += deg; knurl.style.setProperty('--rot', rot + 'deg'); };
@@ -148,6 +149,7 @@ createBrewDial().then((M) => {
 
   let wheelAcc = 0;
   const onWheel = (e) => {
+    if (kind !== 'round') return;        // a square panel has no encoder: let the page scroll
     e.preventDefault();
     wheelAcc += e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
     while (Math.abs(wheelAcc) >= 50) {
@@ -170,8 +172,30 @@ createBrewDial().then((M) => {
   screen.addEventListener('pointerup', tup);
   screen.addEventListener('pointercancel', tup);
 
+  /* ---- square panel keys: real press-and-hold, debounced and repeated by ButtonInput ---- */
+  const KEYMAP = { ArrowUp: 0, ArrowDown: 1, ' ': 2, Enter: 2 };
+  const keyEls = (i) => document.querySelectorAll(`[data-key="${i}"]`);
+  const held = new Set();
+  const keyDown = (i) => { if (held.has(i)) return; held.add(i); keyEls(i).forEach((b) => b.classList.add('held')); api.key(i, 1); };
+  const keyUp = (i) => { if (!held.delete(i)) return; keyEls(i).forEach((b) => b.classList.remove('held')); api.key(i, 0); };
+  document.querySelectorAll('[data-key]').forEach((b) => {
+    const i = +b.dataset.key;
+    b.addEventListener('pointerdown', (e) => { b.setPointerCapture(e.pointerId); keyDown(i); });
+    b.addEventListener('pointerup', () => keyUp(i));
+    b.addEventListener('pointercancel', () => keyUp(i));
+    b.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') e.preventDefault(); });
+  });
+
   document.addEventListener('keydown', (e) => {
     if (e.target.closest('input, select, textarea')) return;
+    if (kind === 'square') {
+      const k = KEYMAP[e.key];
+      if (k === undefined) return;
+      if (k === 2 && e.target.tagName === 'BUTTON' && !e.target.dataset.key) return;   // let buttons work
+      e.preventDefault();
+      if (!e.repeat) keyDown(k);
+      return;
+    }
     if (e.key === 'ArrowRight') { turn(1); e.preventDefault(); }
     else if (e.key === 'ArrowLeft') { turn(-1); e.preventDefault(); }
     else if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) {
@@ -179,9 +203,11 @@ createBrewDial().then((M) => {
       down(); e.preventDefault();
     }
   });
-  document.addEventListener('keyup', (e) => { if (e.key === ' ' || e.key === 'Enter') up(); });
-
-  $('corners').onchange = (e) => $('bezel').classList.toggle('square', e.target.checked);
+  document.addEventListener('keyup', (e) => {
+    if (kind === 'square') { if (KEYMAP[e.key] !== undefined) keyUp(KEYMAP[e.key]); return; }
+    if (e.key === ' ' || e.key === 'Enter') up();
+  });
+  window.addEventListener('blur', () => { [0, 1, 2].forEach(keyUp); up(); });   // never leave a key stuck down
 
   /* ------------------------------------------------------------ speed */
   /* segmented controls: a glass thumb slides under the chosen button */
@@ -209,6 +235,28 @@ createBrewDial().then((M) => {
     });
   }
   segment('speed', 'speed', (v) => api.speed(+v));
+
+  /* ------------------------------------------------------------ device: round dial or square panel */
+  const HINTS = {
+    round: 'Drag the ring or scroll to turn · click the glass to touch · ← → Space',
+    // the screen still draws the round layout until a square one exists (lib/brew_ui, brew_layout.h)
+    square: 'Hold a key to repeat · click the glass to touch · ↑ ↓ Space · round UI for now',
+  };
+  const setKind = (k) => {
+    if (!(k in HINTS)) k = 'round';
+    [0, 1, 2].forEach(keyUp);
+    up();
+    kind = k;
+    $('device').closest('.stage').classList.toggle('square', k === 'square');
+    document.querySelectorAll('#device-kind button').forEach((b) => b.classList.toggle('on', b.dataset.kind === k));
+    syncThumb($('device-kind'));
+    $('hint').textContent = HINTS[k];
+    try { localStorage.setItem('brewdial.device', k); } catch (_) { /* private mode: not remembered */ }
+  };
+  segment('device-kind', 'kind', setKind);
+  let savedKind = null;
+  try { savedKind = localStorage.getItem('brewdial.device'); } catch (_) { /* ignore */ }
+  setKind(qs.get('device') || savedKind || 'round');
   requestAnimationFrame(syncAllThumbs);
 
   /* ------------------------------------------------------------ beer + probe */

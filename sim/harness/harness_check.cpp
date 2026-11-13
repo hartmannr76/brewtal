@@ -17,6 +17,7 @@ void bd_frame(double);
 const uint8_t * bd_rgba();
 void bd_turn(int);
 void bd_click();
+void bd_key(int, int);
 void bd_set_beer_c(float);
 void bd_set_physics(int);
 void bd_set_fault(int);
@@ -152,6 +153,15 @@ int main()
     check(std::abs(f(field("state", "sp")) - 67.0) < 0.01, "target survived the reboot");
     check(field(nullptr, "boots") == 2, "boot counter");
 
+    std::printf("square-panel keys: tap up, hold up, select\n");
+    const double before = f(field("state", "sp"));
+    bd_key(0, 1); run_ms(100); bd_key(0, 0); run_ms(200);   // tap: +1 detent
+    bd_key(0, 1); run_ms(700); bd_key(0, 0); run_ms(200);   // hold: step at 25 ms, repeats at 475, 595
+    bd_key(2, 1); run_ms(100); bd_key(2, 0); run_ms(1500);  // select: commit now
+    drain_log();
+    /* 0.05: a target read back after a reboot is stored in centi-degC (67 F -> 66.99 F) */
+    check(std::abs(f(field("state", "sp")) - (before + 2.0)) < 0.05, "4 half-degree steps committed by select");
+
     std::printf("setup applies\n");
     bd_setup(1, 0.5f, 0.75f, 60, 0, 120, 300, 600, 1);
     run_ms(2000);
@@ -165,7 +175,7 @@ int main()
     bd_set_physics(1);
     /* 5 gal, neoprene jacket, 68 F room, 50 W wrap, 150 W glycol coil, 15 W of yeast heat */
     bd_plant(18.9f, 20.0f, 1.8f, 50.0f, 150.0f, 240.0f, 60.0f, 15.0f);
-    bd_turn(-6);   // 67 -> 64 F
+    bd_turn(static_cast<int>(std::lround((64.0 - f(field("state", "sp"))) * 2.0)));   // -> 64 F, half-degree detents
     run_ms(200);
     bd_click();
     run_ms(1000);

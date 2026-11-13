@@ -88,6 +88,8 @@ Behaviour changes go in the model; looks go in a layout.
 | Menu    | Scrolls Ferment / Cold crash / Pause / History / Units             | Selects the item          |
 | History | Scrubs the background graph through the stored samples             | Returns home              |
 
+Panels with keys instead of a ring use `ButtonInput` (`brew/input.h`): up/down step like one detent each (holding repeats: first after 450 ms, then every 120 ms), and select acts as the press, on release.
+
 ## How it's built
 
 - **Background.** The background is drawn per pixel (`brew_bg_render`) rather than with LVGL's gradient engine, so it matches the CSS exactly: a farthest-corner radial gradient centred at 50%/40%, plus the glass highlight. It's ordered-dithered to RGB565, which avoids visible banding in the dark blue-grey. Two canvases cross-fade over 700 ms when the state changes.

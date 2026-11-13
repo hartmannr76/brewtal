@@ -37,6 +37,8 @@ BD_API void bd_turn(int detents) { H->turn(detents); }
 BD_API void bd_counts(int counts) { H->encoderCounts(counts); }
 BD_API void bd_button(int down) { H->button(down != 0); }
 BD_API void bd_click() { H->click(); }
+/* square-panel keys: which 0 = up, 1 = down, 2 = select; down = level (hold to repeat) */
+BD_API void bd_key(int which, int down) { H->key(which, down != 0); }
 BD_API void bd_touch(int x, int y, int down) { H->touch(x, y, down != 0); }
 
 /* beer / probe */

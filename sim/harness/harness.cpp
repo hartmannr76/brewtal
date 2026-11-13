@@ -86,6 +86,7 @@ Harness::Harness(int size)
     : size_(size),
       panel_(static_cast<uint16_t>(size), static_cast<uint16_t>(size)),
       knob_(&encoder_, &button_, KnobInput::Config{}),
+      buttons_(&keys_[0], &keys_[1], &keys_[2], ButtonInput::Config{}),
       plant_(plant_cfg_)
 {
     g_harness = this;
@@ -170,6 +171,7 @@ void Harness::frame(uint32_t ui_now)
         }
         /* Same order as the firmware: input events, then controller -> UI, then render. */
         knob_.poll(ui_ms_, [&](const InputEvent & e) { bridge_->handle(e); });
+        buttons_.poll(ui_ms_, [&](const InputEvent & e) { bridge_->handle(e); });
         advanceSim(static_cast<float>(step) * speed_);
     }
     bridge_->poll(ui_ms_);
@@ -230,6 +232,12 @@ void Harness::click()
     const uint32_t at = std::max(ui_ms_, button_q_.empty() ? 0u : button_q_.back().at + 40);
     button_q_.push_back({ at, true });
     button_q_.push_back({ at + 80, false });
+}
+
+void Harness::key(int which, bool down)
+{
+    if(which < 0 || which > 2) return;
+    keys_[which].set(down);
 }
 
 void Harness::touch(int x, int y, bool down)
