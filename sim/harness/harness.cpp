@@ -1,5 +1,7 @@
 #include "harness.h"
 
+#include "brew_layout.h"
+#include "brew_ui.h"
 #include "lvgl.h"
 
 #include <algorithm>
@@ -240,6 +242,12 @@ void Harness::key(int which, bool down)
     keys_[which].set(down);
 }
 
+void Harness::setSquare(bool square)
+{
+    brew_ui_set_layout(square ? &brew_layout_square : &brew_layout_round);
+    log("Screen layout: %s", brew_ui_layout_name());
+}
+
 void Harness::touch(int x, int y, bool down)
 {
     hal::TouchPoint p;
@@ -361,7 +369,7 @@ std::string Harness::statusJson() const
         "\"bytes_lost\":%llu,\"bytes_corrupted\":%llu,\"bad_frames_display\":%u,\"bad_frames_controller\":%u},"
         "\"setup\":{\"law\":%d,\"heat_diff_f\":%g,\"cool_diff_f\":%g,\"heat_min_on_s\":%u,\"heat_min_off_s\":%u,"
         "\"cool_min_on_s\":%u,\"cool_min_off_s\":%u,\"changeover_s\":%u,\"history_minutes\":%u},"
-        "\"knob\":{\"button\":%s}}",
+        "\"knob\":{\"button\":%s},\"layout\":\"%s\"}",
         ui_ms_, sim_ms_, static_cast<double>(speed_), split_ ? "true" : "false", static_cast<unsigned>(boots_),
         static_cast<unsigned>(settings_.commits), num(plant_.actual()), r.valid ? "true" : "false", num(r.celsius),
         static_cast<int>(probe_.fault), probe_.physics ? "true" : "false", static_cast<double>(probe_.noise_c),
@@ -388,7 +396,7 @@ std::string Harness::statusJson() const
         static_cast<unsigned>(setup_.heat_min_off_s), static_cast<unsigned>(setup_.cool_min_on_s),
         static_cast<unsigned>(setup_.cool_min_off_s),
         static_cast<unsigned>(setup_.changeover_s), static_cast<unsigned>(setup_.history_minutes),
-        button_.down() ? "true" : "false");
+        button_.down() ? "true" : "false", brew_ui_layout_name());
     return b;
 }
 

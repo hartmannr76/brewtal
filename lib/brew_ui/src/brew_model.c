@@ -122,6 +122,44 @@ bool brew_model_menu_active(const brew_model_t * m, int i)
                           (i == BREW_MENU_CRASH && m->mode == BREW_MODE_CRASH));
 }
 
+const char * brew_model_press_hint(const brew_model_t * m)
+{
+    switch(m->view) {
+        case BREW_VIEW_HOME: return m->setting ? "Set" : "Menu";
+        case BREW_VIEW_HIST: return "Back";
+        case BREW_VIEW_MENU:
+            switch(m->menu_idx) {
+                case BREW_MENU_FERMENT:
+                case BREW_MENU_CRASH:   return brew_model_menu_active(m, m->menu_idx) ? "Close" : "Start";
+                case BREW_MENU_PAUSE:   return m->paused ? "Resume" : "Pause";
+                case BREW_MENU_HISTORY: return "Open";
+                case BREW_MENU_UNITS:   return "Switch";
+            }
+            break;
+    }
+    return "";
+}
+
+bool brew_model_can_step(const brew_model_t * m, int dir)
+{
+    if(dir == 0) return false;
+    switch(m->view) {
+        case BREW_VIEW_HOME: {
+            const float t = m->setting ? m->draft_f : m->sp_f[m->mode];
+            return dir > 0 ? t < BREW_T_MAX : t > BREW_T_MIN;
+        }
+        case BREW_VIEW_MENU: {
+            const int i = m->menu_idx + (dir > 0 ? 1 : -1);
+            return i >= 0 && i < BREW_MENU_N;
+        }
+        case BREW_VIEW_HIST: {
+            const int i = m->hist_idx + (dir > 0 ? 1 : -1);
+            return i >= 0 && i <= brew_model_hist_last(m);
+        }
+    }
+    return false;
+}
+
 /* ------------------------------------------------------------------ controller -> model */
 
 uint32_t brew_model_set_temp(brew_model_t * m, float f)

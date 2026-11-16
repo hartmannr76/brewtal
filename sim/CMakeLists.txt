@@ -112,7 +112,9 @@ target_link_libraries(brew_ui_model PUBLIC ${BREW_LIBM})
 file(GLOB FONT_SRC ${ROOT}/lib/brew_fonts_${BREW_DISP_SIZE}/src/*.c)
 add_library(brew_ui STATIC
     ${ROOT}/lib/brew_ui/src/brew_ui.c
+    ${ROOT}/lib/brew_ui/src/layout_kit.c
     ${ROOT}/lib/brew_ui/src/layout_round.c
+    ${ROOT}/lib/brew_ui/src/layout_square.c
     ${ROOT}/lib/brew_ui/src/brew_bg.c
     ${FONT_SRC})
 target_include_directories(brew_ui PUBLIC ${ROOT}/lib/brew_ui/src)

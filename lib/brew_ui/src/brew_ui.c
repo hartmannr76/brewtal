@@ -9,6 +9,7 @@
 
 static struct {
     brew_model_t m;
+    lv_obj_t * screen;
     const brew_layout_t * layout;
     lv_timer_t * commit_t;
 } S;
@@ -32,11 +33,23 @@ static void commit_timer_cb(lv_timer_t * t)
 void brew_ui_create_with_layout(lv_obj_t * screen, const brew_ui_cbs_t * cbs, const brew_layout_t * layout)
 {
     brew_model_init(&S.m, cbs);
+    S.screen = screen;
     S.layout = layout ? layout : &brew_layout_round;
     S.commit_t = lv_timer_create(commit_timer_cb, BREW_COMMIT_MS, NULL);
     lv_timer_pause(S.commit_t);
     S.layout->create(screen, &S.m);
 }
+
+void brew_ui_set_layout(const brew_layout_t * layout)
+{
+    if(!layout) layout = &brew_layout_round;
+    if(!S.layout || layout == S.layout) return;
+    S.layout->destroy();
+    S.layout = layout;
+    S.layout->create(S.screen, &S.m);   /* same model: what's shown and being adjusted carries over */
+}
+
+const char * brew_ui_layout_name(void) { return S.layout ? S.layout->name : ""; }
 
 void brew_ui_create(lv_obj_t * screen, const brew_ui_cbs_t * cbs)
 {

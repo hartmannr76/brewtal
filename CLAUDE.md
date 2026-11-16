@@ -18,7 +18,8 @@ lib/brew_drivers        portable chip drivers on hal buses (PCF8574, MCP23008, C
 lib/brew_drivers_esp32  ESP-IDF peripheral drivers (I2C master, GPIO, PCNT, LEDC, esp_lcd RGB/QSPI, UART,
                         NVS, DS18B20) + startPeriodic(). ESP-IDF APIs only: never Arduino APIs.
 lib/brew_ui             the C view. brew_model.c = UI state + rules (no LVGL, unit-tested); layouts
-                        (layout_round.c) draw it behind brew_layout.h; brew_ui.c = API glue.
+                        (layout_round.c, layout_square.c, sharing layout_kit.c) draw it behind
+                        brew_layout.h; brew_ui.c = API glue.
                         Knows nothing about controller/hal/drivers.
 lib/brew_fonts_<size>   generated fonts; an env lists exactly one.
 lib/brew_app            UiBridge (brew_ui <-> UiPort), LvglPort, ESP display runtime. Never includes drivers.

@@ -16,188 +16,22 @@
  *   DS(x)  SVG viewBox units (240 = full diameter)
  *   DC(x)  CSS px of the mockup screen (276 = full diameter)
  */
-#include "brew_layout.h"
-#include "brew_ui.h"
-#include "brew_bg.h"
-#include "fonts/brew_fonts.h"
+#include "layout_kit.h"
 
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
-#include <stdlib.h>
 
-/* LVGL 9.1/9.2 compatibility (Elecrow ships 9.1 with its Arduino examples) */
-#if LVGL_VERSION_MAJOR == 9 && LVGL_VERSION_MINOR < 3
-#define lv_anim_set_reverse_duration lv_anim_set_playback_duration
-#endif
-
-#ifndef BREW_UI_ALLOC
-#if defined(ESP_PLATFORM)
-/* ~720 KB of canvases: PSRAM when present, internal RAM otherwise */
-#include "esp_heap_caps.h"
-#define BREW_UI_ALLOC(sz) heap_caps_malloc_prefer((sz), 2, MALLOC_CAP_SPIRAM, MALLOC_CAP_DEFAULT)
-#else
-#define BREW_UI_ALLOC(sz) lv_malloc(sz)
-#endif
-#endif
-
-#define DISP      BREW_UI_DISP_SIZE
+#define DISP      KIT_DISP
 #define DS(x)     ((float)(x) * (float)DISP / 240.0f)
 #define DC(x)     ((int32_t)lroundf((float)(x) * (float)DISP / 276.0f))
 
 #define A0        135.0f                   /* ring: BREW_T_MIN at 135 deg, sweeping 270 deg */
 #define SWEEP     270.0f
 #define RING_R    DS(113)
-#define POLY_STEPS 8
 #define G_Y0      ((int32_t)DS(146))       /* top of graph canvas */
 #define G_H       (DISP - G_Y0)
-#define G_X0      DS(36)                   /* oldest sample: left end, inside the round glass */
-#define G_X1      DS(204)                  /* right end: "now" once the window is full */
-#define G_YT      DS(158)
-#define G_YB      DS(212)
-
-#ifndef BREW_FADE_MS
-#define BREW_FADE_MS 160          /* view / ring / graph-dim fades */
-#endif
-#ifndef BREW_BG_FADE_MS
-#define BREW_BG_FADE_MS 350       /* background colour cross-fade between states */
-#endif
 #define GRAPH_MIN_REDRAW_MS 10000 /* live-temperature graph updates at most this often */
-#define COOL_TEXT 0x7cd4ff
-
-static const brew_grad_t s_grad[BREW_VS_N] = {
-    {{0x3070b0, 0x20456b, 0x1c2a37, 0x171f27}, {0.0f, 0.42f, 0.78f, 1.0f}}, /* cool  */
-    {{0x3070b0, 0x20456b, 0x1c2a37, 0x171f27}, {0.0f, 0.42f, 0.78f, 1.0f}}, /* idle  */
-    {{0xff8f3a, 0xc4561a, 0x4a2516, 0x2a1912}, {0.0f, 0.40f, 0.78f, 1.0f}}, /* heat  */
-    {{0x8c5ff2, 0x4b2e98, 0x241c3e, 0x18142a}, {0.0f, 0.42f, 0.78f, 1.0f}}, /* crash */
-    {{0x5f6871, 0x383f46, 0x22272c, 0x1a1d21}, {0.0f, 0.45f, 0.80f, 1.0f}}, /* pause */
-};
-static const uint32_t s_line[BREW_VS_N] = { 0x7cd4ff, 0x7cd4ff, 0xffcf8a, 0xd8bcff, 0xc3cad1 };
-
-/* ------------------------------------------------------------------ */
-/* Number view: one fixed-width cell per character, so only the       */
-/* digits that change animate (slide + fade), iOS numericText style.  */
-/* ------------------------------------------------------------------ */
-#define NV_MAX 6
-
-typedef struct {
-    lv_obj_t * box;
-    lv_obj_t * cell[NV_MAX];
-    lv_obj_t * lbl[NV_MAX];
-    lv_obj_t * deg;
-    const lv_font_t * font;
-    int32_t digit_w, dot_w, minus_w;
-    char cur[NV_MAX + 1];
-    lv_color_t color;
-    bool color_set;
-} numview_t;
-
-static bool col_eq(lv_color_t a, lv_color_t b);
-static void ty_exec(void * o, int32_t v) { lv_obj_set_style_translate_y((lv_obj_t *)o, v, 0); }
-static void tx_opa_exec(void * o, int32_t v) { lv_obj_set_style_text_opa((lv_obj_t *)o, (lv_opa_t)v, 0); }
-
-static int32_t glyph_w(const lv_font_t * f, uint32_t c)
-{
-    return (int32_t)lv_font_get_glyph_width(f, c, 0);
-}
-
-static void nv_create(numview_t * nv, lv_obj_t * parent, const lv_font_t * font,
-                      const lv_font_t * deg_font, int32_t deg_dy)
-{
-    memset(nv, 0, sizeof(*nv));
-    nv->font = font;
-    const int32_t kern = -(int32_t)lroundf(0.04f * (float)font->line_height / 1.21f);
-    for(char c = '0'; c <= '9'; c++) {
-        int32_t w = glyph_w(font, (uint32_t)c);
-        if(w > nv->digit_w) nv->digit_w = w;
-    }
-    nv->digit_w += kern;
-    nv->dot_w   = glyph_w(font, '.') + kern;
-    nv->minus_w = glyph_w(font, '-') + kern;
-
-    nv->box = lv_obj_create(parent);
-    lv_obj_remove_style_all(nv->box);
-    lv_obj_set_size(nv->box, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_set_flex_flow(nv->box, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(nv->box, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-    lv_obj_remove_flag(nv->box, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-
-    for(int i = 0; i < NV_MAX; i++) {
-        lv_obj_t * cell = lv_obj_create(nv->box);
-        lv_obj_remove_style_all(cell);
-        lv_obj_set_size(cell, nv->digit_w, font->line_height);
-        lv_obj_add_flag(cell, LV_OBJ_FLAG_OVERFLOW_VISIBLE | LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(cell, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_t * l = lv_label_create(cell);
-        lv_obj_set_style_text_font(l, font, 0);
-        lv_obj_set_style_text_color(l, lv_color_white(), 0);
-        lv_label_set_text(l, "");
-        lv_obj_align(l, LV_ALIGN_TOP_MID, 0, 0);
-        nv->cell[i] = cell;
-        nv->lbl[i] = l;
-    }
-
-    nv->deg = lv_label_create(nv->box);
-    lv_obj_set_style_text_font(nv->deg, deg_font, 0);
-    lv_obj_set_style_text_color(nv->deg, lv_color_white(), 0);
-    lv_obj_set_style_translate_y(nv->deg, deg_dy, 0);
-    lv_obj_set_style_pad_left(nv->deg, DC(2), 0);
-    lv_label_set_text(nv->deg, "\xC2\xB0");
-}
-
-static void nv_set_color(numview_t * nv, lv_color_t c)
-{
-    if(nv->color_set && col_eq(nv->color, c)) return;
-    nv->color = c;
-    nv->color_set = true;
-    for(int i = 0; i < NV_MAX; i++) lv_obj_set_style_text_color(nv->lbl[i], c, 0);
-    lv_obj_set_style_text_color(nv->deg, c, 0);
-}
-
-static void nv_anim_in(numview_t * nv, lv_obj_t * l, bool up)
-{
-    const int32_t dy = (int32_t)lroundf(0.45f * (float)nv->font->line_height / 1.21f);
-    lv_anim_delete(l, ty_exec);
-    lv_anim_delete(l, tx_opa_exec);
-    lv_anim_t a;
-    lv_anim_init(&a);
-    lv_anim_set_var(&a, l);
-    lv_anim_set_duration(&a, 260);
-    lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
-    lv_anim_set_exec_cb(&a, ty_exec);
-    lv_anim_set_values(&a, up ? dy : -dy, 0);
-    lv_anim_start(&a);
-    lv_anim_set_exec_cb(&a, tx_opa_exec);
-    lv_anim_set_values(&a, 0, 255);
-    lv_anim_start(&a);
-}
-
-static void nv_set(numview_t * nv, const char * str, bool animate)
-{
-    if(strcmp(nv->cur, str) == 0) return;
-    const bool up = atof(str) >= atof(nv->cur);
-    const int L = (int)strlen(str), Lo = (int)strlen(nv->cur);
-    const bool had_old = Lo > 0;
-
-    for(int k = 0; k < NV_MAX; k++) {
-        const int si = L - NV_MAX + k;   /* right-aligned slot mapping */
-        const int oi = Lo - NV_MAX + k;
-        if(si < 0) {
-            lv_obj_add_flag(nv->cell[k], LV_OBJ_FLAG_HIDDEN);
-            continue;
-        }
-        const char c = str[si];
-        const char oc = oi >= 0 ? nv->cur[oi] : 0;
-        if(c == oc && lv_obj_has_flag(nv->cell[k], LV_OBJ_FLAG_HIDDEN) == false) continue; /* unchanged */
-        lv_obj_remove_flag(nv->cell[k], LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_width(nv->cell[k], c == '.' ? nv->dot_w : (c == '-' ? nv->minus_w : nv->digit_w));
-        char t[2] = { c, 0 };
-        lv_label_set_text(nv->lbl[k], t);
-        if(animate && had_old && c != oc) nv_anim_in(nv, nv->lbl[k], up);
-    }
-    strncpy(nv->cur, str, NV_MAX);
-    nv->cur[NV_MAX] = 0;
-}
 
 /* ------------------------------------------------------------------ */
 /* State: the model it draws, plus presentation state only            */
@@ -210,21 +44,8 @@ static struct {
 
     /* objects */
     lv_obj_t * root;
-    lv_obj_t * bg[2];
-    uint16_t * bg_cache[4];  /* one pre-rendered background per distinct gradient */
-    int bg_front;
-    int bg_gid;              /* gradient currently shown, -1 = none */
-    lv_obj_t * graph;
-    uint8_t * graph_buf;
-    lv_obj_t * halo;
-    lv_obj_t * dot;
-    brew_pt_t pts[BREW_HIST_MAX + 1];   /* samples, then the live reading */
-    int npts;
-    brew_pt_t poly[BREW_HIST_MAX * POLY_STEPS + 1];
-    int npoly;
-    float g_min, g_max;
-    bool graph_dirty;
-    uint32_t graph_last_ms;
+    kit_bg_t bg;
+    kit_graph_t g;
 
     lv_obj_t * ticks;
     lv_obj_t * arc;
@@ -236,8 +57,8 @@ static struct {
     lv_obj_t * st_dot;
     lv_obj_t * st_lbl;
     lv_obj_t * sub_lbl;
-    numview_t big;
-    numview_t hval;
+    kit_numview_t big;
+    kit_numview_t hval;
     lv_obj_t * htime;
     lv_obj_t * hhint;        /* "Turn to scrub · last 2 hours" */
 
@@ -249,10 +70,6 @@ static struct {
 
     lv_timer_t * graph_t;
 } U;
-
-/* ------------------------------------------------------------------ */
-/* Helpers                                                            */
-/* ------------------------------------------------------------------ */
 
 static float frac_t(float f)
 {
@@ -267,245 +84,10 @@ static float norm_deg(float a)
     return a;
 }
 
-static void opa_exec(void * o, int32_t v) { lv_obj_set_style_opa((lv_obj_t *)o, (lv_opa_t)v, 0); }
-
-static void fade_to(lv_obj_t * o, lv_opa_t to, uint32_t ms)
-{
-    lv_anim_delete(o, opa_exec);
-    lv_opa_t from = lv_obj_get_style_opa(o, 0);
-    if(to > 0 && lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN)) lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
-    if(from == to) return;
-    lv_anim_t a;
-    lv_anim_init(&a);
-    lv_anim_set_var(&a, o);
-    lv_anim_set_exec_cb(&a, opa_exec);
-    lv_anim_set_values(&a, from, to);
-    lv_anim_set_duration(&a, ms);
-    lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
-    lv_anim_start(&a);
-}
-
-/* Change-guarded setters. LVGL invalidates (and re-renders) an object's whole area on
- * every style/text set, even when the value is unchanged. On the ring that's ~the
- * entire screen, so refresh() must only touch what actually changed. */
-static bool col_eq(lv_color_t a, lv_color_t b) { return a.red == b.red && a.green == b.green && a.blue == b.blue; }
-static void set_text(lv_obj_t * l, const char * t)
-{
-    const char * c = lv_label_get_text(l);
-    if(c && strcmp(c, t) == 0) return;
-    lv_label_set_text(l, t);
-}
-static void set_text_color(lv_obj_t * o, lv_color_t c)
-{
-    if(!col_eq(lv_obj_get_style_text_color(o, 0), c)) lv_obj_set_style_text_color(o, c, 0);
-}
-static void set_text_opa(lv_obj_t * o, lv_opa_t v)
-{
-    if(lv_obj_get_style_text_opa(o, 0) != v) lv_obj_set_style_text_opa(o, v, 0);
-}
-static void set_bg_color(lv_obj_t * o, lv_color_t c)
-{
-    if(!col_eq(lv_obj_get_style_bg_color(o, 0), c)) lv_obj_set_style_bg_color(o, c, 0);
-}
-static void set_font(lv_obj_t * o, const lv_font_t * f)
-{
-    if(lv_obj_get_style_text_font(o, 0) != f) lv_obj_set_style_text_font(o, f, 0);
-}
-static void set_hidden(lv_obj_t * o, bool h)
-{
-    if(lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN) == h) return;
-    if(h) lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
-}
-
-static lv_obj_t * plain_obj(lv_obj_t * parent)
-{
-    lv_obj_t * o = lv_obj_create(parent);
-    lv_obj_remove_style_all(o);
-    lv_obj_remove_flag(o, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    return o;
-}
-
-
-/* ------------------------------------------------------------------ */
-/* Background: pre-rendered per gradient, cross-faded on change       */
-/* ------------------------------------------------------------------ */
-static int grad_id(brew_vstate_t vs)
-{
-    switch(vs) {
-        case BREW_VS_HEAT:  return 1;
-        case BREW_VS_CRASH: return 2;
-        case BREW_VS_PAUSE: return 3;
-        default:       return 0;   /* cooling and holding share the blue gradient */
-    }
-}
-static const brew_vstate_t s_gid_vs[4] = { BREW_VS_COOL, BREW_VS_HEAT, BREW_VS_CRASH, BREW_VS_PAUSE };
-
-static uint16_t * bg_get(int gid)
-{
-    if(!U.bg_cache[gid]) {
-        U.bg_cache[gid] = BREW_UI_ALLOC((size_t)DISP * DISP * 2);
-        LV_ASSERT_MALLOC(U.bg_cache[gid]);
-        brew_bg_render(U.bg_cache[gid], DISP, DISP, &s_grad[s_gid_vs[gid]]);
-    }
-    return U.bg_cache[gid];
-}
-static void bg_fade_done(lv_anim_t * a)
-{
-    LV_UNUSED(a);
-    const int nf = 1 - U.bg_front;
-    lv_obj_set_style_opa(U.bg[U.bg_front], LV_OPA_TRANSP, 0);
-    lv_obj_move_to_index(U.bg[nf], 0);
-    lv_obj_move_to_index(U.bg[U.bg_front], 1);
-    U.bg_front = nf;
-}
-
-static void bg_show(brew_vstate_t vs, bool animate)
-{
-    const int gid = grad_id(vs);
-    if(gid == U.bg_gid) return;            /* same gradient: nothing to redraw */
-    const int back = 1 - U.bg_front;
-    /* finish an in-flight fade first */
-    if(lv_anim_get(U.bg[back], opa_exec)) {
-        lv_anim_delete(U.bg[back], opa_exec);
-        lv_obj_set_style_opa(U.bg[back], LV_OPA_COVER, 0);
-        bg_fade_done(NULL);
-        bg_show(vs, animate);
-        return;
-    }
-    U.bg_gid = gid;
-    if(!animate) {
-        lv_canvas_set_buffer(U.bg[U.bg_front], bg_get(gid), DISP, DISP, LV_COLOR_FORMAT_RGB565);
-        lv_obj_invalidate(U.bg[U.bg_front]);
-        return;
-    }
-    lv_canvas_set_buffer(U.bg[back], bg_get(gid), DISP, DISP, LV_COLOR_FORMAT_RGB565);
-    lv_obj_invalidate(U.bg[back]);
-    lv_obj_set_style_opa(U.bg[back], LV_OPA_TRANSP, 0);
-    lv_anim_t a;
-    lv_anim_init(&a);
-    lv_anim_set_var(&a, U.bg[back]);
-    lv_anim_set_exec_cb(&a, opa_exec);
-    lv_anim_set_values(&a, 0, 255);
-    lv_anim_set_duration(&a, BREW_BG_FADE_MS);
-    lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
-    lv_anim_set_completed_cb(&a, bg_fade_done);
-    lv_anim_start(&a);
-}
-
-/* ------------------------------------------------------------------ */
-/* Graph                                                              */
-/* ------------------------------------------------------------------ */
-/*
- * The graph is a fixed time window of BREW_HIST_MAX sample slots, oldest on the left. It starts
- * empty and fills left to right: sample i sits in slot i and the live reading in the slot
- * after the newest sample, so the "now" dot walks right as samples arrive. Once the window is
- * full the oldest sample drops off and the curve scrolls left under a dot pinned at G_X1.
- * Graph index i (0..brew_model_hist_last(M)) is sample i, or the live reading when i == hist_n.
- */
-static float slot_x(int slot) { return G_X0 + (G_X1 - G_X0) * (float)slot / (float)BREW_HIST_MAX; }
-static float temp_y(float f) { return G_YT + (G_YB - G_YT) * (1.0f - (f - U.g_min) / (U.g_max - U.g_min)); }
-
-static void place_marker(void)
-{
-    const bool show = U.npts > 0;
-    set_hidden(U.halo, !show);
-    set_hidden(U.dot, !show);
-    if(!show) return;
-    int i = M->view == BREW_VIEW_HIST ? M->hist_idx : U.npts - 1;
-    if(i < 0) i = 0;
-    if(i >= U.npts) i = U.npts - 1;
-    const brew_pt_t p = U.pts[i];
-    const int32_t hs = lv_obj_get_width(U.halo), ds = lv_obj_get_width(U.dot);
-    lv_obj_set_pos(U.halo, (int32_t)lroundf(p.x) - hs / 2, (int32_t)lroundf(p.y) - hs / 2);
-    lv_obj_set_pos(U.dot, (int32_t)lroundf(p.x) - ds / 2, (int32_t)lroundf(p.y) - ds / 2);
-}
-
-static void render_graph(void)
-{
-    U.graph_dirty = false;
-    U.graph_last_ms = lv_tick_get();
-    const int n = brew_model_hist_last(M) + 1;
-    if(n < 1) {
-        memset(U.graph_buf, 0, (size_t)DISP * G_H * 4);
-        lv_obj_invalidate(U.graph);
-        U.npts = 0;
-        U.npoly = 0;
-        place_marker();
-        return;
-    }
-    const float tg = M->sp_f[M->mode];
-    float mn = tg, mx = tg;
-    for(int i = 0; i < n; i++) {
-        const float v = brew_model_hist_val(M, i);
-        if(v < mn) mn = v;
-        if(v > mx) mx = v;
-    }
-    if(mx - mn < 1.0f) {   /* at least 1 F tall, centred, so a steady hold sits mid-graph */
-        const float mid = (mn + mx) * 0.5f;
-        mn = mid - 0.5f;
-        mx = mid + 0.5f;
-    }
-    const float span = mx - mn;
-    mn -= span * 0.15f;
-    mx += span * 0.15f;
-    U.g_min = mn;
-    U.g_max = mx;
-
-    for(int i = 0; i < n; i++) {
-        U.pts[i].x = slot_x(i);
-        U.pts[i].y = temp_y(brew_model_hist_val(M, i));
-    }
-    U.npts = n;
-    U.npoly = n < 2 ? 0 : brew_curve_sample(U.pts, n, U.poly, (int)(sizeof(U.poly) / sizeof(U.poly[0])), POLY_STEPS);
-
-    const brew_vstate_t vs = brew_model_vstate(M);
-    const uint32_t lc = s_line[vs];
-    brew_graph_fill(U.graph_buf, DISP, G_H, G_Y0, U.poly, U.npoly, lc, 0.38f, 0.02f);
-
-    lv_layer_t layer;
-    lv_canvas_init_layer(U.graph, &layer);
-
-    /* setpoint reference: dotted, 22% white */
-    const float sy = G_YT + (G_YB - G_YT) * (1.0f - (tg - mn) / (mx - mn)) - (float)G_Y0;
-    lv_draw_line_dsc_t d;
-    lv_draw_line_dsc_init(&d);
-    d.color = lv_color_white();
-    d.opa = 56;
-    d.width = 1;
-    d.dash_width = 2;
-    d.dash_gap = 6;
-    d.p1.x = 0;
-    d.p1.y = sy;
-    d.p2.x = DISP;
-    d.p2.y = sy;
-    lv_draw_line(&layer, &d);
-
-    /* the curve */
-    lv_draw_line_dsc_init(&d);
-    d.color = lv_color_hex(lc);
-    d.opa = LV_OPA_COVER;
-    d.width = (int32_t)lroundf(DS(1.8f));
-    d.round_start = 1;
-    d.round_end = 1;
-    for(int i = 0; i < U.npoly - 1; i++) {
-        d.p1.x = U.poly[i].x;
-        d.p1.y = U.poly[i].y - (float)G_Y0;
-        d.p2.x = U.poly[i + 1].x;
-        d.p2.y = U.poly[i + 1].y - (float)G_Y0;
-        lv_draw_line(&layer, &d);
-    }
-    lv_canvas_finish_layer(U.graph, &layer);
-    lv_obj_invalidate(U.graph);
-
-    set_bg_color(U.halo, lv_color_hex(lc));
-    place_marker();
-}
-
 static void graph_timer_cb(lv_timer_t * t)
 {
     LV_UNUSED(t);
-    if(U.graph_dirty && lv_tick_elaps(U.graph_last_ms) >= GRAPH_MIN_REDRAW_MS) render_graph();
+    if(U.g.dirty && lv_tick_elaps(U.g.last_ms) >= GRAPH_MIN_REDRAW_MS) kit_graph_render(&U.g, M);
 }
 
 /* ------------------------------------------------------------------ */
@@ -518,8 +100,8 @@ static void update_ring(void)
     const float a = frac_t(M->temp_f), b = frac_t(target);
     const float lo = a < b ? a : b, hi = a < b ? b : a;
     lv_arc_set_angles(U.arc, norm_deg(A0 + SWEEP * lo), norm_deg(A0 + SWEEP * hi + 0.6f));
-    const lv_color_t ac = lv_color_hex(s_line[brew_model_vstate(M)]);
-    if(!col_eq(lv_obj_get_style_arc_color(U.arc, LV_PART_INDICATOR), ac))
+    const lv_color_t ac = lv_color_hex(kit_line[brew_model_vstate(M)]);
+    if(!kit_col_eq(lv_obj_get_style_arc_color(U.arc, LV_PART_INDICATOR), ac))
         lv_obj_set_style_arc_color(U.arc, ac, LV_PART_INDICATOR);
     const lv_opa_t ao = M->setting ? LV_OPA_COVER : 179;
     if(lv_obj_get_style_arc_opa(U.arc, LV_PART_INDICATOR) != ao)
@@ -537,21 +119,21 @@ static void update_visibility(void)
     const bool home = M->view == BREW_VIEW_HOME;
     /* Fades re-render everything under the faded object every frame, so they're kept
      * short (BREW_FADE_MS). The ring/ticks cover nearly the whole screen. */
-    fade_to(U.v_home, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
-    fade_to(U.v_menu, M->view == BREW_VIEW_MENU ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
-    fade_to(U.v_hist, M->view == BREW_VIEW_HIST ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
+    kit_fade_to(U.v_home, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
+    kit_fade_to(U.v_menu, M->view == BREW_VIEW_MENU ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
+    kit_fade_to(U.v_hist, M->view == BREW_VIEW_HIST ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
     /* hide fully transparent views so they cost nothing and can't be invalidated */
-    set_hidden(U.v_menu, M->view != BREW_VIEW_MENU && lv_obj_get_style_opa(U.v_menu, 0) == 0 && !lv_anim_get(U.v_menu, opa_exec));
-    set_hidden(U.v_hist, M->view != BREW_VIEW_HIST && lv_obj_get_style_opa(U.v_hist, 0) == 0 && !lv_anim_get(U.v_hist, opa_exec));
+    kit_set_hidden(U.v_menu, M->view != BREW_VIEW_MENU && lv_obj_get_style_opa(U.v_menu, 0) == 0 && !lv_anim_get(U.v_menu, kit_opa_exec));
+    kit_set_hidden(U.v_hist, M->view != BREW_VIEW_HIST && lv_obj_get_style_opa(U.v_hist, 0) == 0 && !lv_anim_get(U.v_hist, kit_opa_exec));
 
-    fade_to(U.arc, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
-    fade_to(U.knob, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
-    fade_to(U.ticks, home && M->setting ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
+    kit_fade_to(U.arc, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
+    kit_fade_to(U.knob, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
+    kit_fade_to(U.ticks, home && M->setting ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
 
     const lv_opa_t g = M->view == BREW_VIEW_MENU ? 64 : (M->setting ? 102 : LV_OPA_COVER);
-    fade_to(U.graph, g, BREW_FADE_MS);
-    fade_to(U.halo, g, BREW_FADE_MS);
-    fade_to(U.dot, g, BREW_FADE_MS);
+    kit_fade_to(U.g.canvas, g, BREW_FADE_MS);
+    kit_fade_to(U.g.halo, g, BREW_FADE_MS);
+    kit_fade_to(U.g.dot, g, BREW_FADE_MS);
 }
 
 static void update_menu_items(void)
@@ -561,13 +143,13 @@ static void update_menu_items(void)
     for(int i = 0; i < BREW_MENU_N; i++) {
         const char * ico = icons[i];
         if(i == BREW_MENU_PAUSE && M->paused) ico = BREW_ICON_PLAY;
-        set_text(U.item_ico[i], ico);
+        kit_set_text(U.item_ico[i], ico);
         brew_model_menu_label(M, i, text, sizeof(text));
-        set_text(U.item_txt[i], text);
+        kit_set_text(U.item_txt[i], text);
         const lv_font_t * f = i == M->menu_idx ? &brew_font_menu_bold : &brew_font_menu;
-        set_font(U.item_ico[i], f);
-        set_font(U.item_txt[i], f);
-        set_hidden(U.item_dot[i], !brew_model_menu_active(M, i));
+        kit_set_font(U.item_ico[i], f);
+        kit_set_font(U.item_txt[i], f);
+        kit_set_hidden(U.item_dot[i], !brew_model_menu_active(M, i));
     }
 }
 
@@ -584,7 +166,7 @@ static void layout_wheel(void)
         op = op * op * (3.0f - 2.0f * op); /* smoothstep: crisper falloff */
         lv_obj_align(U.item[i], LV_ALIGN_CENTER, 0, (int32_t)lroundf(o * (float)DC(42)));
         lv_obj_set_style_opa(U.item[i], (lv_opa_t)lroundf(op * 255.0f), 0);
-        set_hidden(U.item[i], op <= 0.01f);
+        kit_set_hidden(U.item[i], op <= 0.01f);
     }
 }
 
@@ -613,96 +195,74 @@ static void refresh(bool animate)
 {
     const brew_vstate_t vs = brew_model_vstate(M);
     if(!U.vs_valid || vs != U.vs) {
-        bg_show(vs, animate && U.vs_valid);
-        if(!U.vs_valid || s_line[vs] != s_line[U.vs]) U.graph_dirty = true;  /* line colour changed */
+        kit_bg_show(&U.bg, vs, animate && U.vs_valid);
+        if(!U.vs_valid || kit_line[vs] != kit_line[U.vs]) U.g.dirty = true;  /* line colour changed */
         U.vs = vs;
         U.vs_valid = true;
     }
-    if(U.graph_dirty) render_graph();
+    if(U.g.dirty) kit_graph_render(&U.g, M);
 
     char t[24], s[48];
     const lv_color_t white = lv_color_white();
-    const lv_color_t cool = lv_color_hex(COOL_TEXT);
+    const lv_color_t cool = lv_color_hex(KIT_COOL_TEXT);
 
     if(M->setting) {
-        set_text(U.st_lbl, "Target");
-        set_text_color(U.st_lbl, white);
-        set_text_opa(U.st_lbl, 179);
-        set_hidden(U.st_dot, true);
-        nv_set_color(&U.big, white);
-        set_text(U.sub_lbl, "Turn to adjust \xC2\xB7 press to set");
+        kit_set_text(U.st_lbl, "Target");
+        kit_set_text_color(U.st_lbl, white);
+        kit_set_text_opa(U.st_lbl, 179);
+        kit_set_hidden(U.st_dot, true);
+        kit_nv_set_color(&U.big, white);
+        kit_set_text(U.sub_lbl, "Turn to adjust \xC2\xB7 press to set");
         brew_model_fmt_temp(M, t, sizeof(t), M->draft_f);
-        nv_set(&U.big, t, animate);
+        kit_nv_set(&U.big, t, animate);
     }
     else {
         brew_model_status_text(M, s, sizeof(s));
-        set_text(U.st_lbl, s);
+        kit_set_text(U.st_lbl, s);
         const bool is_cool = vs == BREW_VS_COOL;
-        set_text_color(U.st_lbl, is_cool ? cool : white);
-        set_text_opa(U.st_lbl, is_cool ? LV_OPA_COVER : 224);
-        set_bg_color(U.st_dot, is_cool ? cool : white);
-        set_hidden(U.st_dot, vs == BREW_VS_IDLE || vs == BREW_VS_PAUSE);
-        nv_set_color(&U.big, is_cool ? cool : white);
+        kit_set_text_color(U.st_lbl, is_cool ? cool : white);
+        kit_set_text_opa(U.st_lbl, is_cool ? LV_OPA_COVER : 224);
+        kit_set_bg_color(U.st_dot, is_cool ? cool : white);
+        kit_set_hidden(U.st_dot, vs == BREW_VS_IDLE || vs == BREW_VS_PAUSE);
+        kit_nv_set_color(&U.big, is_cool ? cool : white);
 
         brew_model_batch_text(M, s, sizeof(s));
-        set_text(U.sub_lbl, s);
+        kit_set_text(U.sub_lbl, s);
         brew_model_fmt_temp(M, t, sizeof(t), M->temp_f);
-        nv_set(&U.big, t, animate);
+        kit_nv_set(&U.big, t, animate);
     }
 
     if(M->view == BREW_VIEW_HIST && brew_model_hist_last(M) >= 0) {
         brew_model_fmt_temp(M, t, sizeof(t), brew_model_hist_val(M, M->hist_idx));
-        nv_set(&U.hval, t, animate);
-        nv_set_color(&U.hval, vs == BREW_VS_COOL ? cool : white);
+        kit_nv_set(&U.hval, t, animate);
+        kit_nv_set_color(&U.hval, vs == BREW_VS_COOL ? cool : white);
         brew_model_hist_time(M, M->hist_idx, s, sizeof(s));
-        set_text(U.htime, s);
+        kit_set_text(U.htime, s);
         char w[32];
         brew_model_hist_window_text(M, w, sizeof(w));
         snprintf(s, sizeof(s), "Turn to scrub \xC2\xB7 %s", w);
-        set_text(U.hhint, s);
+        kit_set_text(U.hhint, s);
     }
 
     if(M->view == BREW_VIEW_MENU) update_menu_items();
     update_ring();
     update_visibility();
-    place_marker();
+    kit_graph_place_marker(&U.g, M);
 }
 
 
 /* ------------------------------------------------------------------ */
 /* Construction                                                       */
 /* ------------------------------------------------------------------ */
-static lv_obj_t * make_canvas(lv_obj_t * parent, void * buf, int32_t w, int32_t h, lv_color_format_t cf)
-{
-    lv_obj_t * c = lv_canvas_create(parent);
-    lv_canvas_set_buffer(c, buf, w, h, cf);
-    lv_obj_remove_flag(c, LV_OBJ_FLAG_CLICKABLE);
-    return c;
-}
-
 static lv_obj_t * make_view(lv_obj_t * parent, int32_t pad_top, int32_t gap)
 {
-    lv_obj_t * v = plain_obj(parent);
+    lv_obj_t * v = kit_plain(parent);
     lv_obj_set_size(v, DISP, DISP);
     lv_obj_set_flex_flow(v, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(v, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_top(v, pad_top, 0);
     lv_obj_set_style_pad_row(v, gap, 0);
     return v;
-}
-
-static void breathe_start(lv_obj_t * o)
-{
-    lv_anim_t a;
-    lv_anim_init(&a);
-    lv_anim_set_var(&a, o);
-    lv_anim_set_exec_cb(&a, opa_exec);
-    lv_anim_set_values(&a, 255, 64);
-    lv_anim_set_duration(&a, 1200);
-    lv_anim_set_reverse_duration(&a, 1200);
-    lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
-    lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
-    lv_anim_start(&a);
 }
 
 static void tap_cb(lv_event_t * e)
@@ -720,37 +280,27 @@ static void round_create(lv_obj_t * screen, const brew_model_t * m)
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
     lv_obj_remove_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
-    U.root = plain_obj(screen);
+    U.root = kit_plain(screen);
     lv_obj_set_size(U.root, DISP, DISP);
     lv_obj_center(U.root);
     lv_obj_add_flag(U.root, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(U.root, tap_cb, LV_EVENT_CLICKED, NULL);
 
-    /* backgrounds */
-    U.bg_gid = -1;
-    for(int g = 0; g < 4; g++) bg_get(g);   /* pre-render now so state changes never stall */
-    for(int i = 0; i < 2; i++) {
-        U.bg[i] = make_canvas(U.root, bg_get(0), DISP, DISP, LV_COLOR_FORMAT_RGB565);
-        lv_obj_set_pos(U.bg[i], 0, 0);
-    }
-    lv_obj_set_style_opa(U.bg[1], LV_OPA_TRANSP, 0);
+    kit_bg_create(&U.bg, U.root);
 
-    /* graph */
-    U.graph_buf = BREW_UI_ALLOC((size_t)DISP * G_H * 4);
-    LV_ASSERT_MALLOC(U.graph_buf);
-    memset(U.graph_buf, 0, (size_t)DISP * G_H * 4);
-    U.graph = make_canvas(U.root, U.graph_buf, DISP, G_H, LV_COLOR_FORMAT_ARGB8888);
-    lv_obj_set_pos(U.graph, 0, G_Y0);
-
-    U.halo = plain_obj(U.root);
-    lv_obj_set_size(U.halo, (int32_t)lroundf(DS(12)), (int32_t)lroundf(DS(12)));
-    lv_obj_set_style_radius(U.halo, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_opa(U.halo, 64, 0);
-    U.dot = plain_obj(U.root);
-    lv_obj_set_size(U.dot, (int32_t)lroundf(DS(6)), (int32_t)lroundf(DS(6)));
-    lv_obj_set_style_radius(U.dot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(U.dot, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(U.dot, LV_OPA_COVER, 0);
+    /* graph: oldest sample at the left, inside the round glass */
+    U.g.cx = 0;
+    U.g.cy = G_Y0;
+    U.g.cw = DISP;
+    U.g.ch = G_H;
+    U.g.x0 = DS(36);
+    U.g.x1 = DS(204);
+    U.g.yt = DS(158);
+    U.g.yb = DS(212);
+    U.g.line_w = DS(1.8f);
+    U.g.halo_d = (int32_t)lroundf(DS(12));
+    U.g.dot_d = (int32_t)lroundf(DS(6));
+    kit_graph_create(&U.g, U.root);
 
     /* ticks (only while adjusting) */
     const int32_t tick_d = (int32_t)lroundf(DS(107) * 2.0f);
@@ -796,7 +346,7 @@ static void round_create(lv_obj_t * screen, const brew_model_t * m)
     lv_obj_set_style_arc_rounded(U.arc, true, LV_PART_INDICATOR);
     lv_obj_remove_flag(U.arc, LV_OBJ_FLAG_CLICKABLE);
 
-    U.knob = plain_obj(U.root);
+    U.knob = kit_plain(U.root);
     lv_obj_set_size(U.knob, (int32_t)lroundf(DS(10)), (int32_t)lroundf(DS(10)));
     lv_obj_set_style_radius(U.knob, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(U.knob, lv_color_white(), 0);
@@ -804,20 +354,20 @@ static void round_create(lv_obj_t * screen, const brew_model_t * m)
 
     /* ---- home view ---- */
     U.v_home = make_view(U.root, DC(62), DC(10));
-    lv_obj_t * st_row = plain_obj(U.v_home);
+    lv_obj_t * st_row = kit_plain(U.v_home);
     lv_obj_set_size(st_row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(st_row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(st_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(st_row, DC(7), 0);
-    U.st_dot = plain_obj(st_row);
+    U.st_dot = kit_plain(st_row);
     lv_obj_set_size(U.st_dot, DC(6), DC(6));
     lv_obj_set_style_radius(U.st_dot, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_opa(U.st_dot, LV_OPA_COVER, 0);
-    breathe_start(U.st_dot);
+    kit_breathe(U.st_dot);
     U.st_lbl = lv_label_create(st_row);
     lv_obj_set_style_text_font(U.st_lbl, &brew_font_status, 0);
 
-    nv_create(&U.big, U.v_home, &brew_font_num_big, &brew_font_deg_big, DC(17));
+    kit_nv_create(&U.big, U.v_home, &brew_font_num_big, &brew_font_deg_big, DC(17), DC(2));
 
     U.sub_lbl = lv_label_create(U.v_home);
     lv_obj_set_style_text_font(U.sub_lbl, &brew_font_small, 0);
@@ -825,11 +375,11 @@ static void round_create(lv_obj_t * screen, const brew_model_t * m)
     lv_obj_set_style_text_opa(U.sub_lbl, 140, 0);
 
     /* ---- menu view ---- */
-    U.v_menu = plain_obj(U.root);
+    U.v_menu = kit_plain(U.root);
     lv_obj_set_size(U.v_menu, DISP, DISP);
     lv_obj_set_style_opa(U.v_menu, LV_OPA_TRANSP, 0);
     for(int i = 0; i < 5; i++) {
-        lv_obj_t * it = plain_obj(U.v_menu);
+        lv_obj_t * it = kit_plain(U.v_menu);
         lv_obj_set_size(it, LV_SIZE_CONTENT, DC(44));
         lv_obj_set_flex_flow(it, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(it, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -839,10 +389,10 @@ static void round_create(lv_obj_t * screen, const brew_model_t * m)
         lv_obj_set_style_text_opa(U.item_ico[i], 230, 0);
         U.item_txt[i] = lv_label_create(it);
         lv_obj_set_style_text_color(U.item_txt[i], lv_color_white(), 0);
-        U.item_dot[i] = plain_obj(it);
+        U.item_dot[i] = kit_plain(it);
         lv_obj_set_size(U.item_dot[i], DC(5), DC(5));
         lv_obj_set_style_radius(U.item_dot[i], LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_bg_color(U.item_dot[i], lv_color_hex(COOL_TEXT), 0);
+        lv_obj_set_style_bg_color(U.item_dot[i], lv_color_hex(KIT_COOL_TEXT), 0);
         lv_obj_set_style_bg_opa(U.item_dot[i], LV_OPA_COVER, 0);
         U.item[i] = it;
     }
@@ -854,7 +404,7 @@ static void round_create(lv_obj_t * screen, const brew_model_t * m)
     lv_obj_set_style_text_font(U.htime, &brew_font_small, 0);
     lv_obj_set_style_text_color(U.htime, lv_color_white(), 0);
     lv_obj_set_style_text_opa(U.htime, 140, 0);
-    nv_create(&U.hval, U.v_hist, &brew_font_num_hist, &brew_font_deg_hist, DC(12));
+    kit_nv_create(&U.hval, U.v_hist, &brew_font_num_hist, &brew_font_deg_hist, DC(12), DC(2));
     U.hhint = lv_label_create(U.v_hist);   /* text set in refresh(): the window comes from the model */
     lv_obj_set_style_text_font(U.hhint, &brew_font_small, 0);
     lv_obj_set_style_text_color(U.hhint, lv_color_white(), 0);
@@ -862,6 +412,7 @@ static void round_create(lv_obj_t * screen, const brew_model_t * m)
 
     U.graph_t = lv_timer_create(graph_timer_cb, 2000, NULL);
 
+    U.wheel_pos = m->menu_idx * 256;   /* a live layout swap can land mid-menu */
     update_menu_items();
     layout_wheel();
     refresh(false);
@@ -878,12 +429,12 @@ static void round_update(const brew_model_t * m, uint32_t ch)
     if(ch & BREW_CH_VIEW) {             /* entering a view resets its presentation */
         if(M->view == BREW_VIEW_MENU) {
             lv_anim_delete(&U.wheel_pos, wheel_exec);
-            U.wheel_pos = 0;
+            U.wheel_pos = M->menu_idx * 256;
             layout_wheel();
         }
         if(M->view == BREW_VIEW_HIST) U.hval.cur[0] = 0;   /* no slide-in on entry */
     }
-    if(ch & (BREW_CH_GRAPH | BREW_CH_GRAPH_LAZY)) U.graph_dirty = true;
+    if(ch & (BREW_CH_GRAPH | BREW_CH_GRAPH_LAZY)) U.g.dirty = true;
     if(ch & BREW_CH_MENU_MOVE) {        /* the wheel animates on its own; nothing else moved */
         update_menu_items();
         wheel_animate_to(M->menu_idx);
@@ -893,20 +444,28 @@ static void round_update(const brew_model_t * m, uint32_t ch)
     if((ch & BREW_CH_TEMP) && !(ch & BREW_CH_GRAPH)) {
         /* The live point moved: redraw only if that shows (>= 1 px or off scale), and leave it
          * to graph_t, which re-renders at most every GRAPH_MIN_REDRAW_MS. */
-        const float f = M->temp_f;
-        if(U.npts == 0 || fabsf(temp_y(f) - U.pts[U.npts - 1].y) >= 1.0f || f < U.g_min || f > U.g_max)
-            U.graph_dirty = true;
-        const bool g = U.graph_dirty;
-        U.graph_dirty = false;    /* don't re-render synchronously here */
+        if(kit_graph_live_moved(&U.g, M->temp_f)) U.g.dirty = true;
+        const bool g = U.g.dirty;
+        U.g.dirty = false;    /* don't re-render synchronously here */
         refresh(animate);
-        U.graph_dirty = g;
+        U.g.dirty = g;
         return;
     }
     refresh(animate);
+}
+
+static void round_destroy(void)
+{
+    lv_anim_delete(&U.wheel_pos, wheel_exec);
+    lv_timer_delete(U.graph_t);
+    lv_obj_delete(U.root);   /* takes its children's animations with it */
+    kit_graph_free(&U.g);
+    memset(&U, 0, sizeof(U));
 }
 
 const brew_layout_t brew_layout_round = {
     .name = "round",
     .create = round_create,
     .update = round_update,
+    .destroy = round_destroy,
 };

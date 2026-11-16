@@ -74,7 +74,11 @@ The controller decides cooling, heating and idle: a `ControlLaw` proposes and `O
 `brew_ui` is split so the same product can have different screens:
 
 - **`brew_model.c`**: everything the UI knows and decides. That's readings, targets, history, which view is open, the target being adjusted, the menu and scrub position, the 2.8 s auto-save, the status sentence, and the time labels. There's no LVGL here; it's unit-tested on its own (`test/test_ui_model.cpp`), and `check_rules.py` keeps it that way.
-- **A layout** (`brew_layout.h`) draws the model and nothing else. `layout_round.c` is the dial. A square panel with buttons, or a rectangular one, is another `brew_layout_t`, created with `brew_ui_create_with_layout()`. Layouts route taps and buttons to `brew_ui_press()` / `brew_ui_encoder()`, so every layout behaves identically.
+- **A layout** (`brew_layout.h`) draws the model and nothing else. There are two:
+  - `layout_round.c`: the dial, with a target ring around the edge.
+  - `layout_square.c`: a square panel with up, select and down keys on its right edge. It has a horizontal target gauge and a full-width graph that grows in the history view. A key rail beside the keys shows what they do right now. The chevrons dim at the end of a range, and the select label ("Menu", "Set", "Start", "Back", ...) comes from the model. In the menu, the next item sits above the current one, so the up key moves up.
+
+  Pick a layout with `brew_ui_create_with_layout()` (or `UiBridge::create(screen, &brew_layout_square)`). `brew_ui_set_layout()` swaps it at run time and keeps the model, so a target being adjusted carries over. Layouts route taps and buttons to `brew_ui_press()` / `brew_ui_encoder()`, so every layout behaves identically. They share their drawing pieces through `layout_kit.c`: the state colours, rolling digits, background cross-fade and history graph.
 - **`brew_ui.c`**: the public API. It forwards each call to the model and the resulting `BREW_CH_*` change flags to the layout, and runs the auto-save timer.
 
 Behaviour changes go in the model; looks go in a layout.
@@ -211,6 +215,7 @@ These cover the controller (commands, persistence, fail-safe, history), the UI m
 
 ```sh
 ./sim/build/brew_sim sim/out && python3 sim/to_png.py sim/out   # needs Pillow
+./sim/build/brew_sim sim/out-square square                     # the same session on the square layout
 ```
 
 This runs a fixed session through the real controller and UI bridge, and writes PNGs plus a contact sheet. Use it to compare before and after a change, or to grab screenshots.
@@ -218,7 +223,7 @@ This runs a fixed session through the real controller and UI bridge, and writes 
 ## Adding hardware
 
 - **A new screen, touch chip, encoder, sensor or relay board:** implement the matching interface in `lib/brew_hal` (portable chip drivers go in `lib/brew_drivers`, ESP-IDF peripheral drivers in `lib/brew_drivers_esp32`), then construct it in your board's `main.cpp`. Nothing else changes.
-- **A new screen shape** (square, rectangular, buttons instead of a ring): add a layout next to `layout_round.c` implementing `brew_layout_t`, and create the UI with `brew_ui_create_with_layout()`. The model, and so the behaviour, stays the same.
+- **A new screen shape** (rectangular, a different key arrangement): add a layout next to `layout_round.c` / `layout_square.c` implementing `brew_layout_t` (create, update, destroy), build it from `layout_kit.h`, and pass it to `brew_ui_create_with_layout()`. A square panel with keys already exists: wire the keys to `ButtonInput` and pass `&brew_layout_square`. The model, and so the behaviour, stays the same.
 - **A new board:** add `boards/<name>/main.cpp` and an env in `platformio.ini` with `build_src_filter = +<name/>` and the right `brew_fonts_<size>`.
 - **Display and controller on separate chips:** give the display board a `RemoteControllerProxy` and the controller board a `RemoteUiProxy`, both over a `StreamPacketLink` on a UART (see `crowpanel21_display` and `controller_devkit`). Any other `hal::Link` (I2C, ESP-NOW, RS-485) drops in the same way.
 

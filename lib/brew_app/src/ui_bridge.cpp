@@ -29,14 +29,14 @@ static void cb_mode(brew_mode_t m, bool p, void * u) { UiBridge::onModeThunk(sta
 static void cb_units(bool c, void * u) { UiBridge::onUnitsThunk(c, u); }
 }
 
-void UiBridge::create(lv_obj_t * screen)
+void UiBridge::create(lv_obj_t * screen, const brew_layout * layout)
 {
     brew_ui_cbs_t cbs = {};
     cbs.on_setpoint = cb_setpoint;
     cbs.on_mode = cb_mode;
     cbs.on_units = cb_units;
     cbs.user = this;
-    brew_ui_create(screen, &cbs);
+    brew_ui_create_with_layout(screen, &cbs, layout);
     port_.send(Command::requestSync());
 }
 

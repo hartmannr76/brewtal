@@ -18,6 +18,7 @@ const uint8_t * bd_rgba();
 void bd_turn(int);
 void bd_click();
 void bd_key(int, int);
+void bd_layout(int);
 void bd_set_beer_c(float);
 void bd_set_physics(int);
 void bd_set_fault(int);
@@ -161,6 +162,26 @@ int main()
     drain_log();
     /* 0.05: a target read back after a reboot is stored in centi-degC (67 F -> 66.99 F) */
     check(std::abs(f(field("state", "sp")) - (before + 2.0)) < 0.05, "4 half-degree steps committed by select");
+
+    std::printf("layout swap mid-adjustment: turn on the round dial, select on the square panel\n");
+    {
+        const double sp = f(field("state", "sp"));
+        bd_turn(-2);                 // adjusting on the round layout...
+        run_ms(200);
+        bd_layout(1);                // ...swap to square: the draft and its countdown carry over
+        run_ms(200);
+        check(std::string(bd_status()).find("\"layout\":\"square\"") != std::string::npos, "square layout active");
+        bd_key(2, 1); run_ms(100); bd_key(2, 0); run_ms(1000);   // select commits the draft
+        drain_log();
+        check(std::abs(f(field("state", "sp")) - (sp - 1.0)) < 0.05, "the draft from the round dial was committed");
+        const uint8_t * px = bd_rgba();
+        long lit = 0;
+        for(int i = 0; i < bd_size() * bd_size(); i++) lit += px[i * 4] | px[i * 4 + 1] | px[i * 4 + 2];
+        check(lit > 0, "square screen rendered");
+        bd_layout(0);
+        run_ms(300);
+        check(std::string(bd_status()).find("\"layout\":\"round\"") != std::string::npos, "back to round");
+    }
 
     std::printf("setup applies\n");
     bd_setup(1, 0.5f, 0.75f, 60, 0, 120, 300, 600, 1);

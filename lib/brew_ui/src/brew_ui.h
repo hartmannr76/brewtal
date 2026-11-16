@@ -1,5 +1,5 @@
 /**
- * brew_ui.h - round fermentation controller UI (LVGL 9).
+ * brew_ui.h - fermentation controller UI (LVGL 9): round dial or square panel.
  *
  * The UI is a pure view: it never runs the control loop. Your controller
  * feeds it readings/state through the setters below, and gets user intent
@@ -38,6 +38,10 @@ struct brew_layout;
 void brew_ui_create(lv_obj_t * screen, const brew_ui_cbs_t * cbs);
 /** Same, with a chosen layout (see brew_layout.h); NULL = round. */
 void brew_ui_create_with_layout(lv_obj_t * screen, const brew_ui_cbs_t * cbs, const struct brew_layout * layout);
+/** Swap the layout at run time, keeping the model (targets, view, an adjustment in progress). */
+void brew_ui_set_layout(const struct brew_layout * layout);
+/** "round", "square", ... */
+const char * brew_ui_layout_name(void);
 
 /* ---- controller -> UI ---- */
 void brew_ui_set_temp(float temp_f);

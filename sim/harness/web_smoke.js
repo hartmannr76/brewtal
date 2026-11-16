@@ -38,6 +38,16 @@ create().then((M) => {
   s = status();
   check(Math.abs(toF(s.state.sp[0]) - (sp0 + 1.5)) < 0.05, `panel keys: held up then select (${sp0} -> ${toF(s.state.sp[0]).toFixed(2)} F)`);
 
+  /* live layout swap: the square layout takes over the same model, and back */
+  M._bd_layout(1); run(300);
+  check(status().layout === 'square', 'layout swapped to square');
+  M._bd_key(1, 1); run(100); M._bd_key(1, 0); run(200);   // down: still the same rules
+  M._bd_key(2, 1); run(100); M._bd_key(2, 0); run(1500);
+  s = status();
+  check(Math.abs(toF(s.state.sp[0]) - (sp0 + 1.0)) < 0.05, `square layout: down + select (${toF(s.state.sp[0]).toFixed(2)} F)`);
+  M._bd_layout(0); run(300);
+  check(status().layout === 'round', 'and back to round');
+
   let line, n = 0;
   while ((line = M.UTF8ToString(M._bd_next_log()))) n++;
   check(n > 0, `event log has entries (${n})`);

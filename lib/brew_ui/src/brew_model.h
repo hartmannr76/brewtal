@@ -123,6 +123,13 @@ void brew_model_menu_label(const brew_model_t * m, int i, char * buf, size_t n);
 /** Item i is the mode currently running (shows a marker). */
 bool brew_model_menu_active(const brew_model_t * m, int i);
 
+/* Key hints (layouts that label their keys, like the square panel) */
+/** What a press does right now, in one short word: "Menu", "Set", "Start", "Pause",
+ * "Resume", "Open", "Switch", "Close", "Back". */
+const char * brew_model_press_hint(const brew_model_t * m);
+/** Would brew_model_encoder(m, dir) change anything? (false at the end of a range) */
+bool brew_model_can_step(const brew_model_t * m, int dir);
+
 #ifdef __cplusplus
 }
 #endif

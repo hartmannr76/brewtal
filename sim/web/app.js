@@ -35,7 +35,7 @@ createBrewDial().then((M) => {
     beer: M._bd_set_beer_c, physics: M._bd_set_physics, plant: M._bd_plant,
     fault: M._bd_set_fault, noise: M._bd_set_noise, offset: M._bd_set_offset,
     speed: M._bd_set_speed, reboot: M._bd_reboot, factory: M._bd_factory_reset, setup: M._bd_setup,
-    split: M._bd_set_split, link: M._bd_link, key: M._bd_key,
+    split: M._bd_set_split, link: M._bd_link, key: M._bd_key, layout: M._bd_layout,
     status: () => JSON.parse(M.UTF8ToString(M._bd_status())),
     nextLog: () => M.UTF8ToString(M._bd_next_log()),
   };
@@ -239,14 +239,14 @@ createBrewDial().then((M) => {
   /* ------------------------------------------------------------ device: round dial or square panel */
   const HINTS = {
     round: 'Drag the ring or scroll to turn · click the glass to touch · ← → Space',
-    // the screen still draws the round layout until a square one exists (lib/brew_ui, brew_layout.h)
-    square: 'Hold a key to repeat · click the glass to touch · ↑ ↓ Space · round UI for now',
+    square: 'Hold a key to repeat · click the glass to touch · ↑ ↓ Space',
   };
   const setKind = (k) => {
     if (!(k in HINTS)) k = 'round';
     [0, 1, 2].forEach(keyUp);
     up();
     kind = k;
+    api.layout(k === 'square' ? 1 : 0);   // the firmware's own layout swap (brew_ui_set_layout)
     $('device').closest('.stage').classList.toggle('square', k === 'square');
     document.querySelectorAll('#device-kind button').forEach((b) => b.classList.toggle('on', b.dataset.kind === k));
     syncThumb($('device-kind'));

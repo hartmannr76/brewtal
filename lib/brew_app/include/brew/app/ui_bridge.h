@@ -12,14 +12,17 @@
 
 #include "lvgl.h"
 
+struct brew_layout;   // brew_layout.h (brew_ui)
+
 namespace brew::app {
 
 class UiBridge {
 public:
     explicit UiBridge(UiPort & port) : port_(port) {}
 
-    /** Builds the UI on `screen` and asks the controller for a full sync. */
-    void create(lv_obj_t * screen);
+    /** Builds the UI on `screen` and asks the controller for a full sync. `layout` picks the
+     *  screen shape (brew_layout_round, brew_layout_square, ...); nullptr = round. */
+    void create(lv_obj_t * screen, const brew_layout * layout = nullptr);
 
     /** Applies pending State/History. Call every loop iteration, before lv_timer_handler(). */
     void poll(uint32_t now_ms);

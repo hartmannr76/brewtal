@@ -1,7 +1,7 @@
 /**
  * Headless simulator: the real Controller + LocalBus + UiBridge + LvglPort, driven through a
  * scripted session. Dumps RGB565 frames to <outdir>/<name>.raw (sim/to_png.py makes PNGs).
- * Usage: ./brew_sim [outdir]
+ * Usage: ./brew_sim [outdir] [round|square]
  */
 #include "brew/app/lvgl_port.h"
 #include "brew/app/ui_bridge.h"
@@ -10,10 +10,12 @@
 #include "brew/local_bus.h"
 #include "sim_panel.h"
 
+#include "brew_layout.h"
 #include "lvgl.h"
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 using namespace brew;
 
@@ -117,6 +119,7 @@ void setHistory(float end, float target, float swing)
 int main(int argc, char ** argv)
 {
     if(argc > 1) s_out = argv[1];
+    const bool square = argc > 2 && std::strcmp(argv[2], "square") == 0;
     lv_init();
     lv_tick_set_cb(tick_cb);
     static uint16_t buf[N * 60];
@@ -125,7 +128,7 @@ int main(int argc, char ** argv)
 
     seedDemoHistory(ctl.history(), 48, 68.4f, 66.0f, 2.6f);
     ctl.begin(s_ms);
-    bridge.create(lv_screen_active());   // asks the controller for a full sync
+    bridge.create(lv_screen_active(), square ? &brew_layout_square : nullptr);   // asks for a full sync
     run(800);
     snap("01_home_cooling");
 

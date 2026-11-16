@@ -63,6 +63,9 @@ public:
     void touch(int x, int y, bool down);
     /** Square-panel keys (ButtonInput): 0 = up, 1 = down, 2 = select. Level, so hold works. */
     void key(int which, bool down);
+    /** Which screen layout the display draws: false = round dial, true = square panel. Swapped
+     *  live; what's on screen (and an adjustment in progress) carries over. */
+    void setSquare(bool square);
 
     /* ---- beer / probe ---- */
     void setBeerC(float c);

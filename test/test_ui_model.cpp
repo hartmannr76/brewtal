@@ -245,3 +245,51 @@ TEST(ui_model_history_window_text_follows_the_sample_interval)
     CHECK(window(3) == "last 6 hours");
     CHECK(window(30) == "last 60 hours");
 }
+
+TEST(ui_model_key_hints_say_what_the_keys_do)
+{
+    brew_model_t m;
+    brew_model_init(&m, nullptr);
+    brew_model_set_setpoints(&m, 66.0f, 34.0f);
+    auto hint = [&] { return std::string(brew_model_press_hint(&m)); };
+
+    CHECK(hint() == "Menu");
+    CHECK(brew_model_can_step(&m, 1) && brew_model_can_step(&m, -1));
+    brew_model_encoder(&m, 1);
+    CHECK(hint() == "Set");
+    brew_model_encoder(&m, 999);                 // clamped at the top of the range
+    CHECK(!brew_model_can_step(&m, 1) && brew_model_can_step(&m, -1));
+    brew_model_press(&m);                        // commit
+
+    brew_model_press(&m);                        // menu, on Ferment (the running mode)
+    CHECK(hint() == "Close");
+    CHECK(!brew_model_can_step(&m, -1) && brew_model_can_step(&m, 1));
+    brew_model_encoder(&m, 1);
+    CHECK(hint() == "Start");                    // Cold crash
+    brew_model_encoder(&m, 1);
+    CHECK(hint() == "Pause");
+    brew_model_encoder(&m, 1);
+    CHECK(hint() == "Open");
+    brew_model_encoder(&m, 1);
+    CHECK(hint() == "Switch");
+    CHECK(!brew_model_can_step(&m, 1));
+
+    brew_model_encoder(&m, -1);
+    brew_model_press(&m);                        // History
+    CHECK(m.view == BREW_VIEW_HIST);
+    CHECK(hint() == "Back");
+    CHECK(!brew_model_can_step(&m, 1) && !brew_model_can_step(&m, -1));   // nothing recorded yet
+    const float h[3] = { 66.0f, 66.5f, 67.0f };
+    brew_model_set_history(&m, h, 3, 1);
+    CHECK(!brew_model_can_step(&m, 1) && brew_model_can_step(&m, -1));   // at "now"
+
+    brew_model_press(&m);                        // back home, then pause from the menu
+    brew_model_press(&m);
+    brew_model_encoder(&m, BREW_MENU_PAUSE);
+    brew_model_press(&m);
+    CHECK(m.paused);
+    brew_model_press(&m);
+    CHECK(hint() == "Start");                    // paused: no mode is running
+    brew_model_encoder(&m, BREW_MENU_PAUSE);
+    CHECK(hint() == "Resume");
+}
