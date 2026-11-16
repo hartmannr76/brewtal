@@ -1,0 +1,76 @@
+# Builds the web test harness (real firmware on fake devices, compiled to WebAssembly),
+# smoke-tests it, and publishes it to GitHub Pages.
+#
+# One-time setup: repo Settings -> Pages -> Build and deployment -> Source: "GitHub Actions".
+name: Web harness
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: "7.0.0"          # same as the dev machine (tools/web.ps1)
+          actions-cache-folder: emsdk-cache
+
+      - name: Rules check
+        run: python tools/check_rules.py
+
+      - name: Configure
+        run: emcmake cmake -S sim -B sim/build-web-480 -G Ninja -DCMAKE_BUILD_TYPE=Release -DBREW_DISP_SIZE=480
+
+      - name: Build
+        run: cmake --build sim/build-web-480 -j 4
+
+      - name: Smoke test
+        run: node sim/harness/web_smoke.js sim/build-web-480/web/brew_web.js
+
+      - name: Collect the page
+        run: |
+          mkdir -p site
+          cp sim/build-web-480/web/{index.html,app.js,style.css,brew_web.js} site/
+          touch site/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

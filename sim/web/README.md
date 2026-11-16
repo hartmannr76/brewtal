@@ -4,6 +4,8 @@ The display firmware and the controller firmware, compiled to WebAssembly and ru
 
 Everything except the drivers is the real code: `brew::Controller`, the control laws, `OutputGuard`, `KnobInput`, `TouchTracker`, `UiBridge`, `brew_ui` with LVGL, and the board-to-board link (`StreamPacketLink` and the remote proxies). The drivers are replaced by the fakes in [`../harness/sim_devices.h`](../harness/sim_devices.h). So what you see is pixel for pixel what the panel shows. What the harness can't tell you: real driver timing (I²C, panel setup, 1-Wire), and how fast rendering is on the chip.
 
+A live copy, rebuilt from `main` on every push, is at <https://hartmannr76.github.io/brewtal/>. The [`web-harness`](../../.github/workflows/web-harness.yml) workflow builds it with Emscripten, runs `web_smoke.js`, and only then publishes to GitHub Pages; pull requests get the build and smoke test without the publish.
+
 ## Run it
 
 ```powershell

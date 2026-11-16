@@ -107,6 +107,8 @@ You don't need the board to work on the UI. `sim/` builds the same C files again
 
 ### Web test harness (start here)
 
+Live, built from `main` on every push: <https://hartmannr76.github.io/brewtal/> (`.github/workflows/web-harness.yml`). To build it yourself:
+
 ```powershell
 powershell -File tools/web.ps1
 ```
