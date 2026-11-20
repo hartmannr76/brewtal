@@ -45,6 +45,8 @@ private:
         bool  paused = false;
         bool  celsius = false;
         Action action = Action::Idle;
+        Action wanted = Action::Idle;
+        uint16_t wait_s = 0;
         char  batch[State::kBatchLen] = { 0 };
         uint16_t day = 0;
     };

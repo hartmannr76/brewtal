@@ -22,6 +22,9 @@ message State {
   uint32 flags = 6;     // bit0 paused, bit1 celsius, bit2 temp_valid
   uint32 day = 7;
   string batch = 8;     // <= 15 bytes UTF-8
+  uint32 wanted = 9;    // what the control law asks for (0/1/2 as action); differs from action
+                        // while the output guard holds it off (compressor delay, changeover)
+  uint32 wait_s = 10;   // seconds until wanted may start, 0 = not waiting
 }
 
 // msg_type 2, display -> controller. Idempotent.

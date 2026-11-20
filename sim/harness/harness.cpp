@@ -353,6 +353,8 @@ std::string Harness::statusJson() const
 {
     const State & s = ctl_->state();
     const hal::TempReading r = probe_.latest();
+    char ui_status[48];
+    brew_ui_status_text(ui_status, sizeof(ui_status));
     char b[2048];
     std::snprintf(
         b, sizeof(b),
@@ -369,7 +371,8 @@ std::string Harness::statusJson() const
         "\"bytes_lost\":%llu,\"bytes_corrupted\":%llu,\"bad_frames_display\":%u,\"bad_frames_controller\":%u},"
         "\"setup\":{\"law\":%d,\"heat_diff_f\":%g,\"cool_diff_f\":%g,\"heat_min_on_s\":%u,\"heat_min_off_s\":%u,"
         "\"cool_min_on_s\":%u,\"cool_min_off_s\":%u,\"changeover_s\":%u,\"history_minutes\":%u},"
-        "\"knob\":{\"button\":%s},\"layout\":\"%s\"}",
+        "\"knob\":{\"button\":%s},\"layout\":\"%s\","
+        "\"pending\":{\"wanted\":%d,\"wait_s\":%u},\"ui_status\":\"%s\"}",
         ui_ms_, sim_ms_, static_cast<double>(speed_), split_ ? "true" : "false", static_cast<unsigned>(boots_),
         static_cast<unsigned>(settings_.commits), num(plant_.actual()), r.valid ? "true" : "false", num(r.celsius),
         static_cast<int>(probe_.fault), probe_.physics ? "true" : "false", static_cast<double>(probe_.noise_c),
@@ -396,7 +399,8 @@ std::string Harness::statusJson() const
         static_cast<unsigned>(setup_.heat_min_off_s), static_cast<unsigned>(setup_.cool_min_on_s),
         static_cast<unsigned>(setup_.cool_min_off_s),
         static_cast<unsigned>(setup_.changeover_s), static_cast<unsigned>(setup_.history_minutes),
-        button_.down() ? "true" : "false", brew_ui_layout_name());
+        button_.down() ? "true" : "false", brew_ui_layout_name(), static_cast<int>(s.wanted),
+        static_cast<unsigned>(s.wait_s), ui_status);
     return b;
 }
 

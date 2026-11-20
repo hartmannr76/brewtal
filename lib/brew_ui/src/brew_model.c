@@ -46,10 +46,23 @@ void brew_model_fmt_temp(const brew_model_t * m, char * buf, size_t n, float f)
     snprintf(buf, n, "%.1f", (double)brew_model_to_disp(m, f));
 }
 
+bool brew_model_waiting(const brew_model_t * m)
+{
+    return !m->paused && m->action == BREW_ACTION_IDLE && m->wanted != BREW_ACTION_IDLE;
+}
+
 void brew_model_status_text(const brew_model_t * m, char * buf, size_t n)
 {
     const int tgt = (int)lroundf(brew_model_to_disp(m, m->sp_f[m->mode]));
-    switch(brew_model_vstate(m)) {
+    const brew_vstate_t vs = brew_model_vstate(m);
+    if(brew_model_waiting(m) && (vs == BREW_VS_IDLE || vs == BREW_VS_CRASH)) {
+        const char * what = m->wanted == BREW_ACTION_HEATING ? "Heating"
+                            : vs == BREW_VS_CRASH            ? "Crashing"
+                                                             : "Cooling";
+        snprintf(buf, n, "%s in %d min", what, m->wait_min);
+        return;
+    }
+    switch(vs) {
         case BREW_VS_COOL:  snprintf(buf, n, "Cooling to %d\xC2\xB0", tgt); break;
         case BREW_VS_IDLE:  snprintf(buf, n, "Holding at %d\xC2\xB0", tgt); break;
         case BREW_VS_HEAT:  snprintf(buf, n, "Heating to %d\xC2\xB0", tgt); break;
@@ -175,6 +188,16 @@ uint32_t brew_model_set_action(brew_model_t * m, brew_action_t a)
 {
     m->action = a;
     return BREW_CH_REFRESH | BREW_CH_ANIMATE;
+}
+
+uint32_t brew_model_set_pending(brew_model_t * m, brew_action_t wanted, int wait_s)
+{
+    /* whole minutes, rounded up: the status only redraws when the shown number changes */
+    const int min = wait_s > 0 ? (wait_s + 59) / 60 : 1;
+    if(wanted == m->wanted && min == m->wait_min) return 0;
+    m->wanted = wanted;
+    m->wait_min = min;
+    return BREW_CH_REFRESH;
 }
 
 uint32_t brew_model_set_setpoints(brew_model_t * m, float ferment_f, float crash_f)

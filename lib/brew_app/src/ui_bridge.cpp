@@ -117,6 +117,11 @@ void UiBridge::apply(const State & s)
         v.action = s.action;
         brew_ui_set_action(to_ui(s.action));
     }
+    if(all || s.wanted != v.wanted || s.wait_s != v.wait_s) {
+        v.wanted = s.wanted;
+        v.wait_s = s.wait_s;
+        brew_ui_set_pending(to_ui(s.wanted), s.wait_s);
+    }
 }
 
 void UiBridge::applyHistory(const HistoryChunk & h)

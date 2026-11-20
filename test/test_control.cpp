@@ -172,6 +172,30 @@ TEST(controller_commands_persist_and_reevaluate)
     CHECK_NEAR(c_to_f(port2.last.setpoint_c[0]), 70.0, 0.01);
 }
 
+TEST(controller_publishes_what_it_wants_while_the_guard_holds_it_off)
+{
+    CapturePort port;
+    FakeSensor s;
+    s.set(f_to_c(68.6f));
+    DeadbandLaw law(0.3f * 5.0f / 9.0f);
+    FakeOut h, c;
+    OutputGuard::Config g;
+    g.cool.min_off_ms = 300000;   // 5 min compressor delay, counted from power-up
+    OutputGuard guard(&h, &c, g);
+    Controller ctl(port, s, law, guard, nullptr, Controller::Config{});
+    ctl.begin(0);
+    ctl.tick(0);
+    CHECK(port.last.action == Action::Idle);      // held off...
+    CHECK(port.last.wanted == Action::Cooling);   // ...but it wants to cool
+    CHECK_EQ(port.last.wait_s, static_cast<uint16_t>(300));
+    ctl.tick(60500);
+    CHECK_EQ(port.last.wait_s, static_cast<uint16_t>(240));   // rounded up: 239.5 s
+    ctl.tick(300000);
+    CHECK(port.last.action == Action::Cooling && c.on);
+    CHECK(port.last.wanted == Action::Cooling);
+    CHECK_EQ(port.last.wait_s, static_cast<uint16_t>(0));
+}
+
 TEST(controller_fails_safe_without_reading)
 {
     CapturePort port;

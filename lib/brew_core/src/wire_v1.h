@@ -17,6 +17,8 @@
  *   #6 flags            u8    bit0 paused, bit1 celsius, bit2 temp_valid
  *   #7 day              u16
  *   #8 batch            u8 len + len bytes (UTF-8, len <= 15)
+ *   #9 wanted           u8    0 idle, 1 cooling, 2 heating (missing: same as action)
+ *   #10 wait_s          u16   seconds until wanted may start (missing: 0)
  *
  * Command (msg_type 2)
  *   #1 kind             u8    1 set_setpoint, 2 set_mode, 3 set_units, 4 request_sync

@@ -174,6 +174,42 @@ TEST(ui_model_status_follows_the_action)
     CHECK(std::strcmp(b, "Pale ale \xC2\xB7 Day 4") == 0);
 }
 
+TEST(ui_model_status_says_when_a_held_off_output_will_start)
+{
+    brew_model_t m;
+    brew_model_init(&m, nullptr);
+    brew_model_set_temp(&m, 68.6f);
+    /* power-up: the controller wants to cool, the compressor delay holds it off */
+    CHECK(brew_model_set_pending(&m, BREW_ACTION_COOLING, 300) & BREW_CH_REFRESH);
+    CHECK(brew_model_waiting(&m));
+    CHECK(status(m) == "Cooling in 5 min");
+    CHECK(brew_model_vstate(&m) == BREW_VS_IDLE);   // the relays are off: idle colours
+    CHECK_EQ(brew_model_set_pending(&m, BREW_ACTION_COOLING, 299), 0u);   // same minute: no redraw
+    brew_model_set_pending(&m, BREW_ACTION_COOLING, 59);
+    CHECK(status(m) == "Cooling in 1 min");
+    brew_model_set_pending(&m, BREW_ACTION_COOLING, 0);
+    CHECK(status(m) == "Cooling in 1 min");          // about to start: never "in 0 min"
+    brew_model_set_action(&m, BREW_ACTION_COOLING);
+    CHECK(!brew_model_waiting(&m));
+    CHECK(status(m) == "Cooling to 66\xC2\xB0");
+    /* changeover gap before heating */
+    brew_model_set_action(&m, BREW_ACTION_IDLE);
+    brew_model_set_pending(&m, BREW_ACTION_HEATING, 540);
+    CHECK(status(m) == "Heating in 9 min");
+    /* cold crash waiting on the compressor */
+    brew_model_set_mode(&m, BREW_MODE_CRASH, false);
+    brew_model_set_pending(&m, BREW_ACTION_COOLING, 200);
+    CHECK(status(m) == "Crashing in 4 min");
+    /* paused: nothing is waiting */
+    brew_model_set_mode(&m, BREW_MODE_CRASH, true);
+    CHECK(!brew_model_waiting(&m));
+    CHECK(status(m) == "Paused");
+    /* nothing wanted: back to holding */
+    brew_model_set_mode(&m, BREW_MODE_FERMENT, false);
+    brew_model_set_pending(&m, BREW_ACTION_IDLE, 0);
+    CHECK(status(m) == "Holding at 66\xC2\xB0");
+}
+
 TEST(ui_model_first_reading_redraws_the_graph_later_ones_may_throttle)
 {
     brew_model_t m;

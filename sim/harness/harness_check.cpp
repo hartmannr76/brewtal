@@ -93,6 +93,10 @@ int main()
     check(field("state", "action") == 0 && field("cool", "on") == 0,
           "68.4 F vs 66 F wants cooling, but the compressor delay holds it off after power-up");
     check(field("cool", "wait_ms") > 290000, "compressor delay (~5 min) is reported");
+    check(field("pending", "wanted") == 1 && field("pending", "wait_s") > 290,
+          "State says the controller wants to cool, and for how long it is held off");
+    check(std::string(bd_status()).find("\"ui_status\":\"Cooling in 5 min\"") != std::string::npos,
+          "the dial says \"Cooling in 5 min\", not \"Holding at 66\"");
     {
         const uint8_t * px = bd_rgba();
         long lit = 0;

@@ -73,11 +73,30 @@ TEST(codec_state_golden_v1)
     s.celsius = false;
     std::strcpy(s.batch, "IPA");
     s.day = 260;
+    s.wanted = Action::Heating;
+    s.wait_s = 300;
     uint8_t b[codec::kMaxEncoded];
     const size_t n = codec::encode(s, 0x1234, b, sizeof(b));
     /* ver 01, type 01, seq 3412 | e607 (2022) 6107 (1889) 6f00 (111) | 01 01 05 | 0401 | 03 'IPA'
-     * If this changes, you broke wire compatibility with deployed boards: bump proto_ver instead. */
-    CHECK_EQ(hex(bytes(b, n)), std::string("01013412" "e607" "6107" "6f00" "010105" "0401" "03495041"));
+     * If this prefix changes, you broke wire compatibility with deployed boards: bump proto_ver
+     * instead. Fields appended later (rule 5) follow it; pin each one as it is added. */
+    const std::string v1_original = "01013412" "e607" "6107" "6f00" "010105" "0401" "03495041";
+    const std::string appended = "02"      /* #9 wanted: heating */
+                                 "2c01";   /* #10 wait_s: 300 */
+    CHECK_EQ(hex(bytes(b, n)), v1_original + appended);
+}
+
+TEST(codec_state_from_an_older_controller_is_never_waiting)
+{
+    /* The golden bytes above without #9/#10, as a controller from before they existed sends. */
+    const uint8_t old[] = { 0x01, 0x01, 0x34, 0x12, 0xe6, 0x07, 0x61, 0x07, 0x6f, 0x00,
+                            0x01, 0x01, 0x05, 0x04, 0x01, 0x03, 0x49, 0x50, 0x41 };
+    codec::Message m;
+    CHECK(codec::decode(old, sizeof(old), m) == codec::DecodeResult::Ok);
+    CHECK(m.state.action == Action::Cooling);
+    CHECK(m.state.wanted == Action::Cooling);   // defaults to what it is doing
+    CHECK_EQ(m.state.wait_s, static_cast<uint16_t>(0));
+    CHECK_EQ(std::string(m.state.batch), std::string("IPA"));
 }
 
 TEST(codec_command_and_history_golden_v1)
@@ -106,6 +125,8 @@ TEST(codec_round_trips)
     s.celsius = true;
     std::strcpy(s.batch, "Fifteen chars!!");
     s.day = 7;
+    s.wanted = Action::Cooling;
+    s.wait_s = 65535;
     uint8_t b[codec::kMaxEncoded];
     size_t n = codec::encode(s, 9, b, sizeof(b));
     codec::Message m;
@@ -117,6 +138,8 @@ TEST(codec_round_trips)
     CHECK(m.state.action == Action::Heating);
     CHECK_EQ(std::string(m.state.batch), std::string("Fifteen chars!!"));
     CHECK_EQ(m.state.day, static_cast<uint16_t>(7));
+    CHECK(m.state.wanted == Action::Cooling);
+    CHECK_EQ(m.state.wait_s, static_cast<uint16_t>(65535));
 
     n = codec::encode(Command::setMode(Mode::Crash, true), 3, b, sizeof(b));
     CHECK(codec::decode(b, n, m) == codec::DecodeResult::Ok);

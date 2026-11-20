@@ -23,6 +23,7 @@
 #include "lvgl.h"
 #include "brew_ui_types.h"   /* brew_mode_t, brew_action_t, brew_ui_cbs_t (no LVGL) */
 #include <stdbool.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -46,6 +47,9 @@ const char * brew_ui_layout_name(void);
 /* ---- controller -> UI ---- */
 void brew_ui_set_temp(float temp_f);
 void brew_ui_set_action(brew_action_t action);
+/** What the controller wants to do and how many seconds until it may (0 = now). While it
+ * differs from the action, the status says "Cooling in 4 min" rather than "Holding". */
+void brew_ui_set_pending(brew_action_t wanted, int wait_s);
 void brew_ui_set_setpoints(float ferment_f, float crash_f);
 void brew_ui_set_mode(brew_mode_t mode, bool paused);
 void brew_ui_set_units(bool celsius);
@@ -63,6 +67,10 @@ void brew_ui_push_history(float temp_f);
 /** Positive = clockwise. Call once per detent, or with the accumulated delta. */
 void brew_ui_encoder(int detents);
 void brew_ui_press(void);
+
+/* ---- for tests and the harness ---- */
+/** The status line as shown: "Cooling to 66°", "Cooling in 4 min", ... */
+void brew_ui_status_text(char * buf, size_t n);
 
 #ifdef __cplusplus
 }

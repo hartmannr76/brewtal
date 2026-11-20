@@ -60,6 +60,8 @@ typedef struct {
     brew_mode_t mode;
     bool paused;
     brew_action_t action;
+    brew_action_t wanted;     /* what the controller wants to do; differs from action while held off */
+    int wait_min;             /* ...and in how many minutes it may (rounded up, >= 1 while waiting) */
     bool celsius;             /* display units */
     float hist[BREW_HIST_MAX];
     int hist_n;
@@ -80,6 +82,9 @@ void brew_model_init(brew_model_t * m, const brew_ui_cbs_t * cbs);
 /* ---- controller -> model ---- */
 uint32_t brew_model_set_temp(brew_model_t * m, float temp_f);
 uint32_t brew_model_set_action(brew_model_t * m, brew_action_t a);
+/** What the controller wants and how long until it may start it (compressor delay etc.).
+ * Changes are reported only when the minute shown changes. */
+uint32_t brew_model_set_pending(brew_model_t * m, brew_action_t wanted, int wait_s);
 uint32_t brew_model_set_setpoints(brew_model_t * m, float ferment_f, float crash_f);
 uint32_t brew_model_set_mode(brew_model_t * m, brew_mode_t mode, bool paused);
 uint32_t brew_model_set_units(brew_model_t * m, bool celsius);
@@ -103,7 +108,10 @@ float brew_model_shown_target(const brew_model_t * m);
 float brew_model_to_disp(const brew_model_t * m, float temp_f);
 /** "68.4" in display units. */
 void brew_model_fmt_temp(const brew_model_t * m, char * buf, size_t n, float temp_f);
-/** "Cooling to 66°", "Holding at 66°", "Heating to 66°", "Crashing to 34°", "Paused". */
+/** The controller wants to cool or heat but is held off (compressor delay, changeover gap). */
+bool brew_model_waiting(const brew_model_t * m);
+/** "Cooling to 66°", "Holding at 66°", "Heating to 66°", "Crashing to 34°", "Paused";
+ * while waiting: "Cooling in 4 min", "Heating in 9 min", "Crashing in 4 min". */
 void brew_model_status_text(const brew_model_t * m, char * buf, size_t n);
 /** "Pale ale · Day 4", or "Pale ale · Cold crash". */
 void brew_model_batch_text(const brew_model_t * m, char * buf, size_t n);

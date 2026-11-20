@@ -59,6 +59,7 @@ void brew_ui_create(lv_obj_t * screen, const brew_ui_cbs_t * cbs)
 /* ---- controller -> UI ---- */
 void brew_ui_set_temp(float f) { apply(brew_model_set_temp(&S.m, f)); }
 void brew_ui_set_action(brew_action_t a) { apply(brew_model_set_action(&S.m, a)); }
+void brew_ui_set_pending(brew_action_t wanted, int wait_s) { apply(brew_model_set_pending(&S.m, wanted, wait_s)); }
 void brew_ui_set_setpoints(float ferment_f, float crash_f) { apply(brew_model_set_setpoints(&S.m, ferment_f, crash_f)); }
 void brew_ui_set_mode(brew_mode_t m, bool paused) { apply(brew_model_set_mode(&S.m, m, paused)); }
 void brew_ui_set_units(bool celsius) { apply(brew_model_set_units(&S.m, celsius)); }
@@ -72,3 +73,5 @@ void brew_ui_push_history(float f) { apply(brew_model_push_history(&S.m, f)); }
 /* ---- input -> UI ---- */
 void brew_ui_encoder(int detents) { apply(brew_model_encoder(&S.m, detents)); }
 void brew_ui_press(void) { apply(brew_model_press(&S.m)); }
+
+void brew_ui_status_text(char * buf, size_t n) { brew_model_status_text(&S.m, buf, n); }

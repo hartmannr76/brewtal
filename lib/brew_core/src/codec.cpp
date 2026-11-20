@@ -37,6 +37,8 @@ size_t encode(const State & s, uint16_t seq, uint8_t * buf, size_t max)
     size_t len = strnlen(s.batch, State::kBatchLen - 1);
     w.u8(static_cast<uint8_t>(len));                                // #8
     w.bytes(reinterpret_cast<const uint8_t *>(s.batch), len);
+    w.u8(static_cast<uint8_t>(s.wanted));                           // #9
+    w.u16(s.wait_s);                                                // #10
     return w.size();
 }
 
@@ -89,6 +91,14 @@ DecodeResult decodeState(Reader & r, State & s)
         s.batch[i] = static_cast<char>(r.u8());
     }
     s.batch[len] = '\0';
+    /* appended later: an older controller omits them, and then is never "waiting" */
+    s.wanted = s.action;
+    if(r.has(1)) {
+        const uint8_t wanted = r.u8();
+        if(wanted > static_cast<uint8_t>(Action::Heating)) return DecodeResult::BadPayload;
+        s.wanted = static_cast<Action>(wanted);
+    }
+    s.wait_s = r.u16();   // 0 if missing
     return DecodeResult::Ok;
 }
 

@@ -115,6 +115,12 @@ void Controller::evaluate(uint32_t now)
     Action want = Action::Idle;
     if(!st_.paused && r.valid) want = law_.step(st_.temp_c, st_.setpoint_c[static_cast<int>(st_.mode)], now);
     st_.action = guard_.apply(want, now);
+    st_.wanted = want;
+    /* Held off (compressor delay, min on/off, changeover)? Say for how long, so the display can
+     * show "Cooling in 4 min" instead of "Holding" while the beer is above target. */
+    const uint32_t wait_ms = want != st_.action ? guard_.blockedFor(want, now) : 0;
+    const uint32_t wait_s = (wait_ms + 999u) / 1000u;
+    st_.wait_s = static_cast<uint16_t>(wait_s > 0xFFFFu ? 0xFFFFu : wait_s);
     port_.publish(st_);
 }
 
