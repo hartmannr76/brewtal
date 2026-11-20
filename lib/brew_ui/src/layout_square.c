@@ -34,7 +34,6 @@
 #define PLOT_YT_HOME SQF(352)
 #define PLOT_YT_HIST SQF(250)
 #define ROW_DY   SQ(66)             /* menu row pitch */
-#define GRAPH_MIN_REDRAW_MS 10000
 
 static const brew_model_t * M;
 
@@ -98,7 +97,7 @@ static int32_t gauge_x(float f) { return PAD + (int32_t)lroundf((float)GAUGE_W *
 static void graph_timer_cb(lv_timer_t * t)
 {
     LV_UNUSED(t);
-    if(U.g.dirty && lv_tick_elaps(U.g.last_ms) >= GRAPH_MIN_REDRAW_MS) kit_graph_render(&U.g, M);
+    if(U.g.dirty && lv_tick_elaps(U.g.last_ms) >= KIT_GRAPH_REDRAW_MS) kit_graph_render(&U.g, M);
 }
 
 /* ------------------------------------------------------------------ refresh pieces */
@@ -468,7 +467,7 @@ static void square_create(lv_obj_t * screen, const brew_model_t * m)
     U.sel_lbl = label(U.rail, &brew_font_small, 200);
     lv_obj_align(U.sel_lbl, LV_ALIGN_RIGHT_MID, -(DISP - RAIL_X) - SQ(16), 0);
 
-    U.graph_t = lv_timer_create(graph_timer_cb, 2000, NULL);
+    U.graph_t = lv_timer_create(graph_timer_cb, 250, NULL);   /* checks; renders per KIT_GRAPH_REDRAW_MS */
 
     U.wheel_pos = m->menu_idx * 256;
     update_menu_items();

@@ -31,7 +31,6 @@
 #define RING_R    DS(113)
 #define G_Y0      ((int32_t)DS(146))       /* top of graph canvas */
 #define G_H       (DISP - G_Y0)
-#define GRAPH_MIN_REDRAW_MS 10000 /* live-temperature graph updates at most this often */
 
 /* ------------------------------------------------------------------ */
 /* State: the model it draws, plus presentation state only            */
@@ -87,7 +86,7 @@ static float norm_deg(float a)
 static void graph_timer_cb(lv_timer_t * t)
 {
     LV_UNUSED(t);
-    if(U.g.dirty && lv_tick_elaps(U.g.last_ms) >= GRAPH_MIN_REDRAW_MS) kit_graph_render(&U.g, M);
+    if(U.g.dirty && lv_tick_elaps(U.g.last_ms) >= KIT_GRAPH_REDRAW_MS) kit_graph_render(&U.g, M);
 }
 
 /* ------------------------------------------------------------------ */
@@ -410,7 +409,7 @@ static void round_create(lv_obj_t * screen, const brew_model_t * m)
     lv_obj_set_style_text_color(U.hhint, lv_color_white(), 0);
     lv_obj_set_style_text_opa(U.hhint, 140, 0);
 
-    U.graph_t = lv_timer_create(graph_timer_cb, 2000, NULL);
+    U.graph_t = lv_timer_create(graph_timer_cb, 250, NULL);   /* checks; renders per KIT_GRAPH_REDRAW_MS */
 
     U.wheel_pos = m->menu_idx * 256;   /* a live layout swap can land mid-menu */
     update_menu_items();
@@ -443,7 +442,7 @@ static void round_update(const brew_model_t * m, uint32_t ch)
 
     if((ch & BREW_CH_TEMP) && !(ch & BREW_CH_GRAPH)) {
         /* The live point moved: redraw only if that shows (>= 1 px or off scale), and leave it
-         * to graph_t, which re-renders at most every GRAPH_MIN_REDRAW_MS. */
+         * to graph_t, which re-renders at most every KIT_GRAPH_REDRAW_MS. */
         if(kit_graph_live_moved(&U.g, M->temp_f)) U.g.dirty = true;
         const bool g = U.g.dirty;
         U.g.dirty = false;    /* don't re-render synchronously here */

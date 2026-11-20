@@ -288,9 +288,13 @@ void kit_bg_show(kit_bg_t * b, brew_vstate_t vs, bool animate)
 
 /* ------------------------------------------------------------------ graph */
 
-static float slot_x(const kit_graph_t * g, int slot)
+/* Point i of n, stretched across x0..x1: the newest (the live reading) always sits at x1, and
+ * however few samples there are, they span the whole width. With a full window (n =
+ * BREW_HIST_MAX + 1) the spacing is (x1 - x0) / BREW_HIST_MAX, one slot per sample. */
+static float point_x(const kit_graph_t * g, int i, int n)
 {
-    return g->x0 + (g->x1 - g->x0) * (float)slot / (float)BREW_HIST_MAX;
+    if(n < 2) return g->x1;
+    return g->x0 + (g->x1 - g->x0) * (float)i / (float)(n - 1);
 }
 
 float kit_graph_temp_y(const kit_graph_t * g, float f)
@@ -382,7 +386,7 @@ void kit_graph_render(kit_graph_t * g, const brew_model_t * m)
     g->g_max = mx;
 
     for(int i = 0; i < n; i++) {
-        g->pts[i].x = slot_x(g, i);
+        g->pts[i].x = point_x(g, i, n);
         g->pts[i].y = kit_graph_temp_y(g, brew_model_hist_val(m, i));
     }
     g->npts = n;

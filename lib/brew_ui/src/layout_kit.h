@@ -107,18 +107,21 @@ void kit_bg_create(kit_bg_t * b, lv_obj_t * parent);
 void kit_bg_show(kit_bg_t * b, brew_vstate_t vs, bool animate);
 
 /* ---- history graph ------------------------------------------------------------------------
- * A fixed window of BREW_HIST_MAX sample slots, oldest on the left. It starts empty and fills
- * left to right: sample i sits in slot i and the live reading in the slot after the newest
- * sample, so the "now" dot walks right as samples arrive. Once the window is full the oldest
- * sample drops off and the curve scrolls left under a dot pinned at x1.
+ * Whatever is buffered, stretched to the full width: the oldest sample at x0, the live reading
+ * (the "now" dot) at x1, evenly spaced between. A few minutes of data already fill the graph;
+ * as samples arrive they squeeze together until the window is full (BREW_HIST_MAX samples),
+ * then the oldest drops off and the curve scrolls left.
  * Graph index i (0..brew_model_hist_last()) is sample i, or the live reading when i == hist_n.
  */
 #define KIT_POLY_STEPS 8
+/* The live point redraws at most this often (a full graph render; cheap enough on the S3 at
+ * this rate, and only when the point moved >= 1 px). */
+#define KIT_GRAPH_REDRAW_MS 2000
 
 typedef struct {
     /* geometry: fill in before kit_graph_create(). Everything is in the parent's coordinates. */
     int32_t cx, cy, cw, ch;       /* the canvas */
-    float x0, x1;                 /* oldest slot .. last slot ("now" once the window is full) */
+    float x0, x1;                 /* oldest sample .. "now" */
     float yt, yb;                 /* plot top / bottom */
     float line_w;
     int32_t halo_d, dot_d;        /* "now" / scrub marker */
