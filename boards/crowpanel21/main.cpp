@@ -93,7 +93,7 @@ Controller::Config controllerConfig()
 {
     Controller::Config c;
     c.period_ms = 1500;
-    c.history_minutes = HISTORY_MINUTES;
+    c.history_period_s = HISTORY_PERIOD_S;
     c.batch = "Pale ale";
     c.day = 4;
     return c;

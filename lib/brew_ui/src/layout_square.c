@@ -188,7 +188,7 @@ static void place_cursor(void)
     const int i = kit_graph_marker_index(&U.g, M);
     kit_set_hidden(U.cursor, i < 0);
     if(i < 0) return;
-    lv_obj_set_pos(U.cursor, (int32_t)lroundf(U.g.pts[i].x), (int32_t)U.g.yt - SQ(18));
+    lv_obj_set_pos(U.cursor, (int32_t)lroundf(kit_graph_index_x(&U.g, i)), (int32_t)U.g.yt - SQ(18));
     lv_obj_set_height(U.cursor, (int32_t)(U.g.yb - U.g.yt) + SQ(36));
 }
 

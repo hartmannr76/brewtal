@@ -134,11 +134,12 @@ struct ChamberDefaults {
 
 /**
  * Fixed-capacity history, oldest first: the graph's time window. Capacity matches brew_ui's
- * HIST_MAX (120 samples = 2 h at the default one sample per minute).
+ * BREW_HIST_MAX (3600 samples = 2 h at the default one sample every 2 s). When full, push()
+ * drops the oldest.
  */
 class History {
 public:
-    static constexpr int kCapacity = 120;
+    static constexpr int kCapacity = 3600;
 
     void clear() { n_ = 0; }
     void push(float c);

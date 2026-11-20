@@ -96,7 +96,7 @@ private:
     State state_;
     bool fresh_ = false;
     Pending pending_[kSlots];
-    SpscRing<HistoryChunk, 16> hist_;
+    SpscRing<HistoryChunk, 32> hist_;   // chunks received but not yet polled
 };
 
 /** Controller side: talks to a display on another board. */
@@ -106,7 +106,7 @@ public:
 
     bool pollCommand(Command & out) override;
     void publish(const State & s) override;
-    void publish(const HistoryChunk & h) override;
+    bool publish(const HistoryChunk & h) override;
 
 private:
     void pump();

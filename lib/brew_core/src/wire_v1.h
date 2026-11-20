@@ -28,9 +28,10 @@
  *
  * HistoryChunk (msg_type 3)
  *   #1 flags            u8    bit0 reset, bit1 more chunks follow
- *   #2 minutes_per_sample u8
+ *   #2 minutes_per_sample u8  rounded; 0 under 30 s (for decoders that predate #5)
  *   #3 n                u8    <= 24
  *   #4 temps_cc         i16 x n
+ *   #5 seconds_per_sample u16 (missing: minutes_per_sample x 60)
  */
 #pragma once
 

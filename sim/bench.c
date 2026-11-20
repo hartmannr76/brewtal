@@ -79,7 +79,7 @@ int main(void)
     float h[48];
     for(int i = 0; i < 48; i++) h[i] = 66 + 2.4f * (1 - i / 47.0f) + 0.5f * sinf(i * 0.4f);
     h[47] = g_temp;
-    brew_ui_set_history(h, 48, 30);
+    brew_ui_set_history(h, 48, 30 * 60);
     brew_ui_set_temp(g_temp);
     brew_ui_set_action(BREW_ACTION_COOLING);
 

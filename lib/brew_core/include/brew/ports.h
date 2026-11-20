@@ -32,7 +32,8 @@ public:
     virtual ~ControlPort() = default;
     virtual bool pollCommand(Command & out) = 0;
     virtual void publish(const State & s) = 0;
-    virtual void publish(const HistoryChunk & h) = 0;
+    /** False if it could not be queued right now (full): the controller tries again later. */
+    virtual bool publish(const HistoryChunk & h) = 0;
     virtual void service(uint32_t now_ms) { (void)now_ms; }
 };
 

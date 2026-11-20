@@ -58,10 +58,10 @@ The UI is a pure view. `UiBridge` (lib/brew_app) drives it from the controller's
 ```c
 brew_ui_create(lv_screen_active(), &(brew_ui_cbs_t){ on_setpoint, on_mode, on_units, NULL });
 brew_ui_set_setpoints(66, 34);
-brew_ui_set_history(samples, n, 30);   // oldest first, minutes per sample
+brew_ui_set_history(samples, n, 2);    // oldest first, seconds per sample (up to 3600 = 2 h)
 brew_ui_set_temp(68.4f);               // call every couple of seconds
 brew_ui_set_action(BREW_ACTION_COOLING);
-brew_ui_push_history(t);               // every N minutes
+brew_ui_push_history(t);               // every sample period (2 s)
 
 brew_ui_encoder(+1);                   // per detent, from your knob driver
 brew_ui_press();                       // knob push (taps on the screen already call this)

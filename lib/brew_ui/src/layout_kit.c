@@ -289,13 +289,14 @@ void kit_bg_show(kit_bg_t * b, brew_vstate_t vs, bool animate)
 /* ------------------------------------------------------------------ graph */
 
 /* Point i of n, stretched across x0..x1: the newest (the live reading) always sits at x1, and
- * however few samples there are, they span the whole width. With a full window (n =
- * BREW_HIST_MAX + 1) the spacing is (x1 - x0) / BREW_HIST_MAX, one slot per sample. */
+ * however few there are, they span the whole width. */
 static float point_x(const kit_graph_t * g, int i, int n)
 {
     if(n < 2) return g->x1;
     return g->x0 + (g->x1 - g->x0) * (float)i / (float)(n - 1);
 }
+
+float kit_graph_index_x(const kit_graph_t * g, int i) { return point_x(g, i, g->nsrc); }
 
 float kit_graph_temp_y(const kit_graph_t * g, float f)
 {
@@ -330,9 +331,9 @@ void kit_graph_free(kit_graph_t * g)
 int kit_graph_marker_index(const kit_graph_t * g, const brew_model_t * m)
 {
     if(g->npts <= 0) return -1;
-    int i = m->view == BREW_VIEW_HIST ? m->hist_idx : g->npts - 1;
+    int i = m->view == BREW_VIEW_HIST ? m->hist_idx : g->nsrc - 1;
     if(i < 0) i = 0;
-    if(i >= g->npts) i = g->npts - 1;
+    if(i >= g->nsrc) i = g->nsrc - 1;
     return i;
 }
 
@@ -342,7 +343,10 @@ void kit_graph_place_marker(kit_graph_t * g, const brew_model_t * m)
     kit_set_hidden(g->halo, i < 0);
     kit_set_hidden(g->dot, i < 0);
     if(i < 0) return;
-    const brew_pt_t p = g->pts[i];
+    /* the sample itself, not the averaged point it was drawn in: scrubbing reads exact values */
+    brew_pt_t p;
+    p.x = kit_graph_index_x(g, i);
+    p.y = i == g->nsrc - 1 ? g->pts[g->npts - 1].y : kit_graph_temp_y(g, brew_model_hist_val(m, i));
     const int32_t hs = g->halo_d, ds = g->dot_d;   /* not lv_obj_get_width(): 0 until the first layout pass */
     lv_obj_set_pos(g->halo, (int32_t)lroundf(p.x) - hs / 2, (int32_t)lroundf(p.y) - hs / 2);
     lv_obj_set_pos(g->dot, (int32_t)lroundf(p.x) - ds / 2, (int32_t)lroundf(p.y) - ds / 2);
@@ -363,6 +367,7 @@ void kit_graph_render(kit_graph_t * g, const brew_model_t * m)
         memset(g->buf, 0, (size_t)g->cw * g->ch * 4);
         lv_obj_invalidate(g->canvas);
         g->npts = 0;
+        g->nsrc = 0;
         g->npoly = 0;
         kit_graph_place_marker(g, m);
         return;
@@ -385,12 +390,33 @@ void kit_graph_render(kit_graph_t * g, const brew_model_t * m)
     g->g_min = mn;
     g->g_max = mx;
 
-    for(int i = 0; i < n; i++) {
-        g->pts[i].x = point_x(g, i, n);
-        g->pts[i].y = kit_graph_temp_y(g, brew_model_hist_val(m, i));
+    g->nsrc = n;
+    if(n <= KIT_GRAPH_PTS) {
+        for(int i = 0; i < n; i++) {
+            g->pts[i].x = point_x(g, i, n);
+            g->pts[i].y = kit_graph_temp_y(g, brew_model_hist_val(m, i));
+        }
+        g->npts = n;
     }
-    g->npts = n;
-    g->npoly = n < 2 ? 0 : brew_curve_sample(g->pts, n, g->poly, (int)(sizeof(g->poly) / sizeof(g->poly[0])), KIT_POLY_STEPS);
+    else {
+        /* Average the samples into KIT_GRAPH_PTS - 1 buckets; the live reading stays the last
+         * point exactly, so the "now" dot sits on the end of the curve. */
+        const int k = KIT_GRAPH_PTS - 1, ns = n - 1;
+        for(int j = 0; j < k; j++) {
+            const int a = (int)((long)j * ns / k), b = (int)((long)(j + 1) * ns / k);
+            float sum = 0.0f;
+            for(int i = a; i < b; i++) sum += brew_model_hist_val(m, i);
+            g->pts[j].x = point_x(g, j, KIT_GRAPH_PTS);
+            g->pts[j].y = kit_graph_temp_y(g, sum / (float)(b - a));
+        }
+        g->pts[k].x = g->x1;
+        g->pts[k].y = kit_graph_temp_y(g, brew_model_hist_val(m, n - 1));
+        g->npts = KIT_GRAPH_PTS;
+    }
+    int steps = g->npts > 1 ? (KIT_POLY_MAX - 1) / (g->npts - 1) : 1;
+    if(steps > KIT_POLY_STEPS) steps = KIT_POLY_STEPS;
+    if(steps < 1) steps = 1;
+    g->npoly = g->npts < 2 ? 0 : brew_curve_sample(g->pts, g->npts, g->poly, KIT_POLY_MAX, steps);
 
     const uint32_t lc = kit_line[brew_model_vstate(m)];
     /* the fill works in parent rows; shift x into the canvas (a no-op for full-width canvases) */

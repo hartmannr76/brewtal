@@ -129,7 +129,7 @@ void UiBridge::applyHistory(const HistoryChunk & h)
     float f[HistoryChunk::kMax];
     for(int i = 0; i < h.n; i++) f[i] = c_to_f(h.temps_c[i]);
     if(h.reset) {
-        brew_ui_set_history(f, h.n, h.minutes_per_sample);
+        brew_ui_set_history(f, h.n, h.seconds_per_sample);
     }
     else {
         for(int i = 0; i < h.n; i++) brew_ui_push_history(f[i]);

@@ -23,7 +23,8 @@
 extern "C" {
 #endif
 
-#define BREW_HIST_MAX  120      /* history window in samples: 2 h at one per minute */
+#define BREW_HIST_MAX  3600     /* history window in samples: 2 h at one every 2 s */
+#define BREW_SCRUB_S   60       /* the history view moves this far back/forward per step */
 #define BREW_T_MIN     30.0f    /* adjustable target range, F */
 #define BREW_T_MAX     80.0f
 #define BREW_COMMIT_MS 2800     /* an adjusted target commits itself after this long */
@@ -65,7 +66,7 @@ typedef struct {
     bool celsius;             /* display units */
     float hist[BREW_HIST_MAX];
     int hist_n;
-    int hist_min_per;         /* minutes per history sample */
+    int hist_sec_per;         /* seconds per history sample */
     char batch[32];
     int day;
 
@@ -89,7 +90,7 @@ uint32_t brew_model_set_setpoints(brew_model_t * m, float ferment_f, float crash
 uint32_t brew_model_set_mode(brew_model_t * m, brew_mode_t mode, bool paused);
 uint32_t brew_model_set_units(brew_model_t * m, bool celsius);
 uint32_t brew_model_set_batch(brew_model_t * m, const char * name, int day);
-uint32_t brew_model_set_history(brew_model_t * m, const float * temps_f, int n, int minutes_per_sample);
+uint32_t brew_model_set_history(brew_model_t * m, const float * temps_f, int n, int seconds_per_sample);
 uint32_t brew_model_push_history(brew_model_t * m, float temp_f);
 
 /* ---- input -> model ---- */
@@ -120,8 +121,10 @@ void brew_model_batch_text(const brew_model_t * m, char * buf, size_t n);
  * reading when i == hist_n. -1 = nothing to show yet. */
 int brew_model_hist_last(const brew_model_t * m);
 float brew_model_hist_val(const brew_model_t * m, int i);
-/** "Now", "2:41 PM" (wall clock set) or "1h 05m ago". */
+/** "Now", "2:41 PM" (wall clock set), "40 s ago" or "1h 05m ago". */
 void brew_model_hist_time(const brew_model_t * m, int i, char * buf, size_t n);
+/** Samples per history-view step (BREW_SCRUB_S worth, at least 1). */
+int brew_model_hist_step(const brew_model_t * m);
 /** How far back the history window reaches: "last 2 hours", "last hour", "last 45 min". */
 void brew_model_hist_window_text(const brew_model_t * m, char * buf, size_t n);
 

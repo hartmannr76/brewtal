@@ -6,6 +6,7 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
 using namespace brew;
 
@@ -49,9 +50,15 @@ struct CapturePort final : ControlPort {
     State last;
     int states = 0;
     std::vector<HistoryChunk> hist;
+    size_t room = static_cast<size_t>(-1);   // queue size: publish fails when hist holds this many
     bool pollCommand(Command & c) override { return in.pop(c); }
     void publish(const State & s) override { last = s; states++; }
-    void publish(const HistoryChunk & h) override { hist.push_back(h); }
+    bool publish(const HistoryChunk & h) override
+    {
+        if(hist.size() >= room) return false;
+        hist.push_back(h);
+        return true;
+    }
 };
 
 }  // namespace
@@ -218,32 +225,75 @@ TEST(controller_history_sync_and_sampling)
     DeadbandLaw law(0.1f);
     OutputGuard guard(nullptr, nullptr, {});
     Controller::Config cfg;
-    cfg.history_minutes = 1;
+    cfg.history_period_s = 60;
     Controller ctl(port, s, law, guard, nullptr, cfg);
     float h[50];
     for(int i = 0; i < 50; i++) h[i] = 10.0f + i;
     ctl.history().assign(h, 50);
     ctl.begin(0);
-    CHECK_EQ(port.hist.size(), static_cast<size_t>(3));   // begin() publishes the history too
+    CHECK_EQ(port.hist.size(), static_cast<size_t>(1));   // begin() starts a sync: one chunk now...
     CHECK(port.hist[0].reset);
+    CHECK(ctl.syncing());
+    ctl.tick(10);
+    ctl.tick(20);
+    CHECK_EQ(port.hist.size(), static_cast<size_t>(3));   // ...and one per tick after that
+    CHECK(!ctl.syncing());
     port.hist.clear();
 
     port.in.push(Command::requestSync());
-    ctl.tick(0);
+    for(uint32_t t = 30; t <= 60; t += 10) ctl.tick(t);
     CHECK_EQ(port.hist.size(), static_cast<size_t>(3));   // 24 + 24 + 2
     CHECK(port.hist[0].reset);
-    CHECK_EQ(port.hist[0].minutes_per_sample, static_cast<uint8_t>(1));
+    CHECK_EQ(port.hist[0].seconds_per_sample, static_cast<uint16_t>(60));
     CHECK(!port.hist[1].reset);
     CHECK(port.hist[0].more && port.hist[1].more && !port.hist[2].more);
     CHECK_EQ(port.hist[2].n, static_cast<uint8_t>(2));
     CHECK_NEAR(port.hist[2].temps_c[1], 59.0, 1e-6);
 
     port.hist.clear();
-    ctl.tick(60000);   // one sample per minute
+    ctl.tick(60000);   // one sample per period
     CHECK_EQ(port.hist.size(), static_cast<size_t>(1));
     CHECK_EQ(port.hist[0].n, static_cast<uint8_t>(1));
     CHECK_NEAR(port.hist[0].temps_c[0], 18.0, 1e-6);
     CHECK_EQ(ctl.history().size(), 51);
+}
+
+TEST(controller_full_history_sync_waits_for_room_and_keeps_order)
+{
+    CapturePort port;
+    port.room = 2;                                 // a small queue the "UI" drains slowly
+    FakeSensor s;
+    s.set(18.0f);
+    DeadbandLaw law(0.1f);
+    OutputGuard guard(nullptr, nullptr, {});
+    Controller ctl(port, s, law, guard, nullptr, Controller::Config{});   // 2 s samples
+    static float h[History::kCapacity];
+    for(int i = 0; i < History::kCapacity; i++) h[i] = static_cast<float>(i);
+    ctl.history().assign(h, History::kCapacity);   // a full 2 h window
+    ctl.begin(0);
+    std::vector<float> got;
+    bool reset_first = false;
+    uint32_t t = 0;
+    for(int guard_n = 0; guard_n < 2000 && (ctl.syncing() || port.hist.size()); guard_n++) {
+        t += 20;
+        ctl.tick(t);                               // a new sample every 2 s lands mid-sync
+        if(guard_n % 3 == 0 && !port.hist.empty()) {   // the UI takes one chunk now and then
+            const HistoryChunk c = port.hist.front();
+            port.hist.erase(port.hist.begin());
+            if(c.reset) { got.clear(); reset_first = true; }
+            for(int i = 0; i < c.n; i++) {   // like the UI: the oldest drops off when full
+                got.push_back(c.temps_c[i]);
+                if(got.size() > static_cast<size_t>(History::kCapacity)) got.erase(got.begin());
+            }
+        }
+    }
+    CHECK(reset_first);
+    CHECK(!ctl.syncing());
+    CHECK_EQ(got.size(), static_cast<size_t>(ctl.history().size()));
+    bool same = got.size() == static_cast<size_t>(ctl.history().size());
+    for(size_t i = 0; same && i < got.size(); i++) same = got[i] == ctl.history().at(static_cast<int>(i));
+    CHECK(same);                                   // nothing lost, nothing out of order
+    CHECK_NEAR(ctl.history().at(ctl.history().size() - 1), 18.0, 1e-6);   // includes new samples
 }
 
 TEST(controller_history_sample_is_the_mean_reading)
@@ -253,7 +303,7 @@ TEST(controller_history_sample_is_the_mean_reading)
     DeadbandLaw law(0.1f);
     OutputGuard guard(nullptr, nullptr, {});
     Controller::Config cfg;
-    cfg.history_minutes = 1;
+    cfg.history_period_s = 60;
     cfg.period_ms = 1000;
     Controller ctl(port, s, law, guard, nullptr, cfg);
     ctl.begin(0);

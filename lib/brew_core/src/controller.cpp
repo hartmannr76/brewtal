@@ -78,20 +78,28 @@ void Controller::tick(uint32_t now)
 
     if(now - last_eval_ >= cfg_.period_ms) evaluate(now);
 
-    const uint32_t hist_ms = static_cast<uint32_t>(cfg_.history_minutes) * 60u * 1000u;
+    const uint32_t hist_ms = static_cast<uint32_t>(cfg_.history_period_s) * 1000u;
     if(hist_ms && now - last_hist_ >= hist_ms) {
         last_hist_ = now;
         if(hist_cnt_ > 0) {
             const float mean = hist_sum_ / static_cast<float>(hist_cnt_);
             hist_sum_ = 0.0f;
             hist_cnt_ = 0;
+            const bool dropped = hist_.size() == History::kCapacity;
             hist_.push(mean);
-            HistoryChunk h;
-            h.n = 1;
-            h.temps_c[0] = mean;
-            port_.publish(h);
+            if(syncing()) {
+                /* the sync sends it when it reaches the end; keep its cursor on the same sample */
+                if(dropped && sync_i_ > 0) sync_i_--;
+            }
+            else {
+                HistoryChunk h;
+                h.n = 1;
+                h.temps_c[0] = mean;
+                port_.publish(h);   // if the queue is full this one sample is lost; harmless
+            }
         }
     }
+    pumpSync();
 }
 
 void Controller::evaluateNow(uint32_t now)
@@ -157,17 +165,27 @@ void Controller::handle(const Command & c, uint32_t now)
 
 void Controller::syncHistory()
 {
-    HistoryChunk h;
-    h.reset = true;
-    h.minutes_per_sample = static_cast<uint8_t>(cfg_.history_minutes > 255 ? 255 : cfg_.history_minutes);
-    int i = 0;
-    do {
-        h.n = 0;
+    sync_i_ = 0;
+    sync_reset_ = true;
+    pumpSync();
+}
+
+void Controller::pumpSync()
+{
+    /* One chunk per tick: at the boards' 20 ms tick that's ~3 KB/s, well inside a 115200 baud
+     * UART and the display's 1 KB receive buffer (a chunk is ~60 bytes on the wire), and a
+     * full 2 h window (150 chunks) still arrives in ~3 s. */
+    if(syncing()) {
+        HistoryChunk h;
+        h.reset = sync_reset_;
+        h.seconds_per_sample = cfg_.history_period_s;
+        int i = sync_i_;
         while(i < hist_.size() && h.n < HistoryChunk::kMax) h.temps_c[h.n++] = hist_.at(i++);
         h.more = i < hist_.size();
-        port_.publish(h);
-        h.reset = false;
-    } while(i < hist_.size());
+        if(!port_.publish(h)) return;   // full: try again next tick
+        sync_reset_ = false;
+        sync_i_ = h.more ? i : -1;
+    }
 }
 
 }  // namespace brew

@@ -59,9 +59,11 @@ size_t encode(const HistoryChunk & h, uint16_t seq, uint8_t * buf, size_t max)
     header(w, MsgType::History, seq);
     const uint8_t n = h.n > HistoryChunk::kMax ? HistoryChunk::kMax : h.n;
     w.u8(static_cast<uint8_t>((h.reset ? 1u : 0u) | (h.more ? 2u : 0u)));   // #1
-    w.u8(h.minutes_per_sample);                                     // #2
+    const unsigned min = (h.seconds_per_sample + 30u) / 60u;       // whole minutes; 0 under 30 s
+    w.u8(static_cast<uint8_t>(min > 255u ? 255u : min));            // #2
     w.u8(n);                                                        // #3
     for(uint8_t i = 0; i < n; i++) w.i16(to_cc(h.temps_c[i]));      // #4
+    w.u16(h.seconds_per_sample);                                    // #5
     return w.size();
 }
 
@@ -128,10 +130,12 @@ DecodeResult decodeHistory(Reader & r, HistoryChunk & h)
     const uint8_t f = r.u8();
     h.reset = f & 1u;
     h.more = f & 2u;
-    h.minutes_per_sample = r.u8();
+    const uint8_t minutes = r.u8();
     h.n = r.u8();
     if(h.n > HistoryChunk::kMax || !r.has(static_cast<size_t>(h.n) * 2)) return DecodeResult::BadPayload;
     for(uint8_t i = 0; i < h.n; i++) h.temps_c[i] = from_cc(r.i16());
+    /* #5 appended later: an older controller only sends whole minutes */
+    h.seconds_per_sample = r.has(2) ? r.u16() : static_cast<uint16_t>(minutes * 60u);
     return DecodeResult::Ok;
 }
 

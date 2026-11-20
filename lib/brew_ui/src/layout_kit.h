@@ -108,12 +108,16 @@ void kit_bg_show(kit_bg_t * b, brew_vstate_t vs, bool animate);
 
 /* ---- history graph ------------------------------------------------------------------------
  * Whatever is buffered, stretched to the full width: the oldest sample at x0, the live reading
- * (the "now" dot) at x1, evenly spaced between. A few minutes of data already fill the graph;
+ * (the "now" dot) at x1, evenly spaced between. A few seconds of data already fill the graph;
  * as samples arrive they squeeze together until the window is full (BREW_HIST_MAX samples),
  * then the oldest drops off and the curve scrolls left.
  * Graph index i (0..brew_model_hist_last()) is sample i, or the live reading when i == hist_n.
+ * More samples than KIT_GRAPH_PTS are averaged into that many points for drawing (a 2 h window
+ * is 3600 samples, the plot ~340 px wide); the live reading is always the last point as is.
  */
-#define KIT_POLY_STEPS 8
+#define KIT_GRAPH_PTS  181
+#define KIT_POLY_STEPS 8     /* smoothing steps per segment, fewer when points are close */
+#define KIT_POLY_MAX   961   /* outline budget: 8 steps up to 121 points, 5 at 181 */
 /* The live point redraws at most this often (a full graph render; cheap enough on the S3 at
  * this rate, and only when the point moved >= 1 px). */
 #define KIT_GRAPH_REDRAW_MS 2000
@@ -130,9 +134,10 @@ typedef struct {
     lv_obj_t * halo;
     lv_obj_t * dot;
     uint8_t * buf;
-    brew_pt_t pts[BREW_HIST_MAX + 1];   /* samples, then the live reading */
+    brew_pt_t pts[KIT_GRAPH_PTS];   /* drawn points (bucketed samples), then the live reading */
     int npts;
-    brew_pt_t poly[BREW_HIST_MAX * KIT_POLY_STEPS + 1];
+    int nsrc;                       /* graph indices behind them: samples + live */
+    brew_pt_t poly[KIT_POLY_MAX];
     int npoly;
     float g_min, g_max;
     bool dirty;
@@ -146,6 +151,8 @@ void kit_graph_render(kit_graph_t * g, const brew_model_t * m);
 void kit_graph_place_marker(kit_graph_t * g, const brew_model_t * m);
 /** The marker's graph index (clamped), or -1 when there is nothing drawn. */
 int kit_graph_marker_index(const kit_graph_t * g, const brew_model_t * m);
+/** x of graph index i (as drawn at the last render). */
+float kit_graph_index_x(const kit_graph_t * g, int i);
 float kit_graph_temp_y(const kit_graph_t * g, float temp_f);
 /** True if the live reading moved enough to be worth redrawing (>= 1 px or off scale). */
 bool kit_graph_live_moved(const kit_graph_t * g, float temp_f);

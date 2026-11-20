@@ -188,7 +188,7 @@ int main()
     }
 
     std::printf("setup applies\n");
-    bd_setup(1, 0.5f, 0.75f, 60, 0, 120, 300, 600, 1);
+    bd_setup(1, 0.5f, 0.75f, 60, 0, 120, 300, 600, 2);
     run_ms(2000);
     drain_log();
     check(field("setup", "law") == 1 && field("setup", "cool_min_off_s") == 300 &&
@@ -206,7 +206,7 @@ int main()
     run_ms(1000);
     check(std::abs(f(field("state", "sp")) - 64.0) < 0.01, "target 64 F");
     auto soak = [](int law, float diff, int cool_off, int gap, double * lo, double * hi) {
-        bd_setup(law, diff, diff, 0, 0, 0, cool_off, gap, 1);
+        bd_setup(law, diff, diff, 0, 0, 0, cool_off, gap, 2);
         bd_set_beer_c(17.78f);   // start at the target
         bd_set_speed(3600);
         run_ms(3000);           // settle 3 h

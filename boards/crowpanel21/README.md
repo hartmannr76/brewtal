@@ -47,7 +47,7 @@ It uses ESP32 Arduino core 3.3.11 (pioarduino `55.03.311`, ESP-IDF 5.5) only as 
 | `ENCODER_COUNTS_PER_DETENT` | `2`     | Quadrature counts per click. The EC28A has 30 clicks and 15 pulses per turn, which gives 2 |
 | `REFRESH_MS`                | `16`    | LVGL refresh period. Elecrow's `lv_conf.h` defaults to 33       |
 | `BACKLIGHT_LEVEL`           | `204`   | Backlight brightness, 0–255                                    |
-| `HISTORY_MINUTES`           | `1`     | Minutes per graph sample (the mean reading). The graph shows 120 samples, so 1 = the last 2 h |
+| `HISTORY_PERIOD_S`          | `2`     | Seconds per graph sample (the mean reading). The graph keeps 3600 samples, so 2 = the last 2 h |
 | `TOUCH_Y_OFFSET`            | `-20`   | Elecrow's touch calibration                                    |
 | `MCP_PIN_HEAT` / `MCP_PIN_COOL` | `4` / `5` | Outputs on the MCP23008 at 0x20 (LEDs now, relays later) |
 

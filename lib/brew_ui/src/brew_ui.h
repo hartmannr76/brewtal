@@ -55,11 +55,11 @@ void brew_ui_set_mode(brew_mode_t mode, bool paused);
 void brew_ui_set_units(bool celsius);
 void brew_ui_set_batch(const char * name, int day);
 /**
- * Replace the history buffer (oldest first; n may be 0). The background graph is a fixed
- * window of 120 samples that fills from the left; the live temperature (brew_ui_set_temp) is
- * drawn as the "now" point after the newest sample.
+ * Replace the history buffer (oldest first; n may be 0). It holds up to BREW_HIST_MAX samples
+ * (2 h at one every 2 s); the graph stretches whatever it holds to the full width, with the
+ * live temperature (brew_ui_set_temp) as the "now" point after the newest sample.
  */
-void brew_ui_set_history(const float * temps_f, int n, int minutes_per_sample);
+void brew_ui_set_history(const float * temps_f, int n, int seconds_per_sample);
 /** Append one sample, dropping the oldest when the window is full. */
 void brew_ui_push_history(float temp_f);
 

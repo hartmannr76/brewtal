@@ -230,7 +230,7 @@ TEST(ui_model_history_scrub_and_rolling_window)
     brew_model_t m;
     brew_model_init(&m, nullptr);
     const float h[3] = { 60.0f, 61.0f, 62.0f };
-    brew_model_set_history(&m, h, 3, 1);
+    brew_model_set_history(&m, h, 3, 60);        // minute samples: one sample per scrub step
     brew_model_set_temp(&m, 63.0f);
     CHECK_EQ(brew_model_hist_last(&m), 3);       // 3 samples + live
     CHECK_NEAR(brew_model_hist_val(&m, 3), 63.0, 1e-6);
@@ -271,15 +271,44 @@ TEST(ui_model_history_window_text_follows_the_sample_interval)
     brew_model_t m;
     brew_model_init(&m, nullptr);
     char t[32];
-    auto window = [&](int min_per) {
+    auto window = [&](int sec_per) {
         const float one = 60.0f;
-        brew_model_set_history(&m, &one, 1, min_per);
+        brew_model_set_history(&m, &one, 1, sec_per);
         brew_model_hist_window_text(&m, t, sizeof(t));
         return std::string(t);
     };
-    CHECK(window(1) == "last 2 hours");   // 120 samples x 1 min (the default)
-    CHECK(window(3) == "last 6 hours");
-    CHECK(window(30) == "last 60 hours");
+    CHECK(window(2) == "last 2 hours");   // 3600 samples x 2 s (the default)
+    CHECK(window(6) == "last 6 hours");
+    CHECK(window(60) == "last 60 hours");
+}
+
+TEST(ui_model_two_second_history_scrubs_a_minute_per_step)
+{
+    brew_model_t m;
+    brew_model_init(&m, nullptr);
+    static float h[300];                          // 10 min at 2 s
+    for(int i = 0; i < 300; i++) h[i] = 60.0f + 0.01f * (float)i;
+    brew_model_set_history(&m, h, 300, 2);
+    brew_model_set_temp(&m, 64.0f);
+    brew_model_press(&m);                         // menu -> History
+    brew_model_encoder(&m, BREW_MENU_HISTORY);
+    brew_model_press(&m);
+    CHECK_EQ(m.hist_idx, 300);                    // "now"
+    CHECK_EQ(brew_model_hist_step(&m), 30);       // 60 s / 2 s
+    brew_model_encoder(&m, -1);
+    CHECK_EQ(m.hist_idx, 270);
+    char t[32];
+    brew_model_hist_time(&m, m.hist_idx, t, sizeof(t));
+    CHECK(std::strcmp(t, "0h 01m ago") == 0 || std::strchr(t, ':') != nullptr);   // or a wall-clock time
+    brew_model_hist_time(&m, 290, t, sizeof(t));
+    CHECK(std::strcmp(t, "20 s ago") == 0 || std::strchr(t, ':') != nullptr);
+    brew_model_encoder(&m, -20);                  // clamps at the oldest sample
+    CHECK_EQ(m.hist_idx, 0);
+    CHECK(!brew_model_can_step(&m, -1));
+    CHECK(brew_model_can_step(&m, 1));
+    brew_model_encoder(&m, 50);                   // and at "now"
+    CHECK_EQ(m.hist_idx, 300);
+    CHECK(!brew_model_can_step(&m, 1));
 }
 
 TEST(ui_model_key_hints_say_what_the_keys_do)

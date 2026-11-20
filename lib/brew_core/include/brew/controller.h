@@ -16,8 +16,8 @@ class Controller {
 public:
     struct Config {
         uint32_t period_ms = 1500;          // sensor -> law -> outputs -> publish
-        uint16_t history_minutes = 1;       // one history sample (the mean reading) every N minutes;
-                                            // the graph window is History::kCapacity samples
+        uint16_t history_period_s = 2;      // one history sample (the mean reading) every N seconds;
+                                            // the graph window is History::kCapacity samples (2 h)
         float    setpoint_c[kModeCount] = { f_to_c(66.0f), f_to_c(34.0f) };   // defaults
         const char * batch = "Pale ale";
         uint16_t day = 1;
@@ -38,7 +38,10 @@ public:
 
     /** Direct access for demo/sim seeding. Call syncHistory() after editing. */
     History & history() { return hist_; }
+    /** (Re)starts sending the whole history. A full window is ~150 chunks, more than the
+     *  port can queue, so tick() sends it a chunk at a time as the port has room. */
     void syncHistory();
+    bool syncing() const { return sync_i_ >= 0; }
 
     const State & state() const { return st_; }
     void setBatch(const char * name, uint16_t day);
@@ -47,6 +50,7 @@ private:
     void handle(const Command & c, uint32_t now_ms);
     void evaluate(uint32_t now_ms);
     void persist();
+    void pumpSync();
 
     ControlPort & port_;
     hal::TempSensor & sensor_;
@@ -61,6 +65,8 @@ private:
     uint32_t last_hist_ = 0;
     float hist_sum_ = 0.0f;     // valid readings since the last sample, averaged into it
     uint32_t hist_cnt_ = 0;
+    int sync_i_ = -1;           // next history index to send in a sync, -1 = not syncing
+    bool sync_reset_ = false;   // the next sync chunk is the first (reset) one
     bool started_ = false;
 };
 

@@ -104,13 +104,13 @@ public:
     // ControlPort (control task)
     bool pollCommand(Command & out) override { return commands_.pop(out); }
     void publish(const State & s) override { state_.write(s); }
-    void publish(const HistoryChunk & h) override { history_.push(h); }
+    bool publish(const HistoryChunk & h) override { return history_.push(h); }
 
     void service(uint32_t) override {}   // nothing to pump (overrides both bases)
 
 private:
     SpscRing<Command, 16> commands_;
-    SpscRing<HistoryChunk, 16> history_;   // a full sync is 5 chunks
+    SpscRing<HistoryChunk, 16> history_;   // a full sync (150 chunks) is paced into it by the controller
     Mailbox<State> state_;
     uint32_t seen_ = 0;
 };

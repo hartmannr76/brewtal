@@ -64,9 +64,9 @@ void brew_ui_set_setpoints(float ferment_f, float crash_f) { apply(brew_model_se
 void brew_ui_set_mode(brew_mode_t m, bool paused) { apply(brew_model_set_mode(&S.m, m, paused)); }
 void brew_ui_set_units(bool celsius) { apply(brew_model_set_units(&S.m, celsius)); }
 void brew_ui_set_batch(const char * name, int day) { apply(brew_model_set_batch(&S.m, name, day)); }
-void brew_ui_set_history(const float * t, int n, int minutes_per_sample)
+void brew_ui_set_history(const float * t, int n, int seconds_per_sample)
 {
-    apply(brew_model_set_history(&S.m, t, n, minutes_per_sample));
+    apply(brew_model_set_history(&S.m, t, n, seconds_per_sample));
 }
 void brew_ui_push_history(float f) { apply(brew_model_push_history(&S.m, f)); }
 

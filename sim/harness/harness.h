@@ -44,7 +44,7 @@ public:
         uint32_t heat_min_on_s = 0, heat_min_off_s = 0;
         uint32_t cool_min_on_s = 0, cool_min_off_s = ChamberDefaults::kCoolMinOffMs / 1000u;
         uint32_t changeover_s = ChamberDefaults::kChangeoverMs / 1000u;
-        uint16_t history_minutes = 1;
+        uint16_t history_period_s = 2;
     };
 
     explicit Harness(int size);

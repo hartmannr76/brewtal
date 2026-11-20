@@ -16,7 +16,7 @@ void brew_model_init(brew_model_t * m, const brew_ui_cbs_t * cbs)
     m->temp_f = 66.0f;
     m->sp_f[0] = 66.0f;
     m->sp_f[1] = 34.0f;
-    m->hist_min_per = 1;
+    m->hist_sec_per = 2;
     m->view = BREW_VIEW_HOME;
 }
 
@@ -85,14 +85,15 @@ float brew_model_hist_val(const brew_model_t * m, int i) { return i < m->hist_n 
 void brew_model_hist_time(const brew_model_t * m, int idx, char * buf, size_t n)
 {
     /* sample i covers the interval that ended (hist_n - i) samples ago; hist_n is live */
-    const int back_min = (m->hist_n - idx) * m->hist_min_per;
-    if(idx >= m->hist_n || back_min <= 0) {
+    const int back_s = (m->hist_n - idx) * m->hist_sec_per;
+    const int back_min = back_s / 60;
+    if(idx >= m->hist_n || back_s <= 0) {
         snprintf(buf, n, "Now");
         return;
     }
     time_t now = time(NULL);
     if(now > 1700000000) { /* wall clock is set (SNTP) */
-        time_t t = now - (time_t)back_min * 60;
+        time_t t = now - (time_t)back_s;
         struct tm tmv;
 #ifdef _WIN32
         localtime_s(&tmv, &t);
@@ -103,14 +104,23 @@ void brew_model_hist_time(const brew_model_t * m, int idx, char * buf, size_t n)
         if(h == 0) h = 12;
         snprintf(buf, n, "%d:%02d %s", h, tmv.tm_min, tmv.tm_hour < 12 ? "AM" : "PM");
     }
+    else if(back_s < 60) {
+        snprintf(buf, n, "%d s ago", back_s);
+    }
     else {
         snprintf(buf, n, "%dh %02dm ago", back_min / 60, back_min % 60);
     }
 }
 
+int brew_model_hist_step(const brew_model_t * m)
+{
+    const int s = m->hist_sec_per > 0 ? BREW_SCRUB_S / m->hist_sec_per : 1;
+    return s > 0 ? s : 1;
+}
+
 void brew_model_hist_window_text(const brew_model_t * m, char * buf, size_t n)
 {
-    const int min = BREW_HIST_MAX * (m->hist_min_per > 0 ? m->hist_min_per : 1);
+    const int min = BREW_HIST_MAX * (m->hist_sec_per > 0 ? m->hist_sec_per : 1) / 60;
     if(min < 60) snprintf(buf, n, "last %d min", min);
     else if(min == 60) snprintf(buf, n, "last hour");
     else if(min % 60 == 0) snprintf(buf, n, "last %d hours", min / 60);
@@ -165,10 +175,8 @@ bool brew_model_can_step(const brew_model_t * m, int dir)
             const int i = m->menu_idx + (dir > 0 ? 1 : -1);
             return i >= 0 && i < BREW_MENU_N;
         }
-        case BREW_VIEW_HIST: {
-            const int i = m->hist_idx + (dir > 0 ? 1 : -1);
-            return i >= 0 && i <= brew_model_hist_last(m);
-        }
+        case BREW_VIEW_HIST:
+            return dir > 0 ? m->hist_idx < brew_model_hist_last(m) : m->hist_idx > 0;
     }
     return false;
 }
@@ -227,7 +235,7 @@ uint32_t brew_model_set_batch(brew_model_t * m, const char * name, int day)
     return BREW_CH_REFRESH;
 }
 
-uint32_t brew_model_set_history(brew_model_t * m, const float * t, int n, int minutes_per_sample)
+uint32_t brew_model_set_history(brew_model_t * m, const float * t, int n, int seconds_per_sample)
 {
     if(n > BREW_HIST_MAX) {
         t += n - BREW_HIST_MAX;
@@ -236,7 +244,7 @@ uint32_t brew_model_set_history(brew_model_t * m, const float * t, int n, int mi
     if(n < 0) n = 0;
     if(n > 0) memcpy(m->hist, t, (size_t)n * sizeof(float));
     m->hist_n = n;
-    if(minutes_per_sample > 0) m->hist_min_per = minutes_per_sample;
+    if(seconds_per_sample > 0) m->hist_sec_per = seconds_per_sample;
     if(m->view == BREW_VIEW_HIST) m->hist_idx = brew_model_hist_last(m) > 0 ? brew_model_hist_last(m) : 0;
     return BREW_CH_GRAPH | BREW_CH_REFRESH;
 }
@@ -304,7 +312,7 @@ uint32_t brew_model_encoder(brew_model_t * m, int d)
             return BREW_CH_MENU_MOVE;
         }
         case BREW_VIEW_HIST: {
-            int i = m->hist_idx + d;
+            int i = m->hist_idx + d * brew_model_hist_step(m);   /* a minute per detent */
             if(i > brew_model_hist_last(m)) i = brew_model_hist_last(m);
             if(i < 0) i = 0;
             if(i == m->hist_idx) return 0;

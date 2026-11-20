@@ -262,11 +262,11 @@ void RemoteUiProxy::publish(const State & s)
     if(n) link_.send(b, n);
 }
 
-void RemoteUiProxy::publish(const HistoryChunk & h)
+bool RemoteUiProxy::publish(const HistoryChunk & h)
 {
     uint8_t b[codec::kMaxEncoded];
     const size_t n = codec::encode(h, seq_++, b, sizeof(b));
-    if(n) link_.send(b, n);
+    return n && link_.send(b, n);
 }
 
 }  // namespace brew

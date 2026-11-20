@@ -325,7 +325,7 @@ createBrewDial().then((M) => {
   const applySetup = () => {
     const m = (id) => Math.round(+$(id).value * 60);
     api.setup(+$('law').value, +$('hdiff').value, +$('cdiff').value, m('hon'), m('hoff'), m('con'), m('coff'),
-              m('change'), +$('histmin').value);
+              m('change'), +$('histsec').value);
   };
   for (const [name, p] of Object.entries(PRESETS)) {
     $('preset-' + name).onclick = () => { for (const id of SETUP) $(id).value = p[id]; applySetup(); };
