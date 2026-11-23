@@ -1,9 +1,0 @@
-{
-  "name": "brew_app",
-  "version": "1.0.0",
-  "description": "BrewDial glue: UiBridge (brew_ui <-> UiPort), LVGL port, ESP32 task runtime.",
-  "frameworks": "*",
-  "platforms": "*",
-  "dependencies": [ { "name": "brew_core" }, { "name": "brew_ui" } ],
-  "build": { "includeDir": "include", "srcDir": "src" }
-}

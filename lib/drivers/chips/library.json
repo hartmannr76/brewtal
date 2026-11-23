@@ -1,0 +1,11 @@
+{
+  "name": "brewdial-drivers-chips",
+  "version": "1.0.0",
+  "description": "BrewDial portable chip drivers, one file per chip (PCF8574, MCP23008, CST8xx): they only use the driver interfaces' buses, so they also build on host.",
+  "frameworks": "*",
+  "platforms": "*",
+  "build": {
+    "includeDir": "include",
+    "srcDir": "src"
+  }
+}

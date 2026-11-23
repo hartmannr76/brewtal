@@ -10,28 +10,34 @@ in the script on purpose.
 ## Layout and layering
 
 ```
-lib/brew_hal            interfaces only (DisplayPanel, Touch, Encoder, DigitalIn/Out, I2cBus, ByteStream,
-                        TempSensor, SettingsStore, Link). No implementations, no platform includes.
-lib/brew_core           portable logic: Controller, ControlLaw, OutputGuard, History, KnobInput/TouchTracker,
-                        codec, framing, LocalBus, remote proxies, FakePlant. Includes only std + brew_hal.
-lib/brew_drivers        portable chip drivers on hal buses (PCF8574, MCP23008, CST8xx). Host-testable.
-lib/brew_drivers_esp32  ESP-IDF peripheral drivers (I2C master, GPIO, PCNT, LEDC, esp_lcd RGB/QSPI, UART,
-                        NVS, DS18B20) + startPeriodic(). ESP-IDF APIs only: never Arduino APIs.
-lib/brew_ui             the C view. brew_model.c = UI state + rules (no LVGL, unit-tested); layouts
+lib/drivers/interfaces  driver interfaces only (DisplayPanel, Touch, Encoder, DigitalIn/Out, I2cBus,
+                        ByteStream, TempSensor, SettingsStore, Link), namespace brew::hal, included as
+                        brew/drivers/interfaces/*.h. No implementations, no platform includes.
+lib/core                portable logic: Controller, ControlLaw, OutputGuard, History, KnobInput/TouchTracker,
+                        codec, framing, LocalBus, remote proxies, FakePlant. Includes only std + interfaces.
+lib/drivers/chips       portable chip drivers on interface buses, one file per chip (pcf8574, mcp23008,
+                        cst8xx). Host-testable.
+lib/drivers/esp32       ESP-IDF drivers, one file per peripheral or part (i2c, gpio, pcnt_encoder,
+                        ledc_backlight, rgb_panel, qspi_panel, st7701, uart, nvs_settings, ds18b20) + task.h
+                        (startPeriodic, delayMs). ESP-IDF APIs only: never Arduino APIs.
+lib/ui                  the C view. brew_model.c = UI state + rules (no LVGL, unit-tested); layouts
                         (layout_round.c, layout_square.c, sharing layout_kit.c) draw it behind
                         brew_layout.h; brew_ui.c = API glue.
-                        Knows nothing about controller/hal/drivers.
-lib/brew_fonts_<size>   generated fonts; an env lists exactly one.
-lib/brew_app            UiBridge (brew_ui <-> UiPort), LvglPort, ESP display runtime. Never includes drivers.
+                        Knows nothing about controller/drivers.
+lib/fonts/<size>        generated fonts (tools/gen_fonts.sh); an env lists exactly one.
+lib/app                 UiBridge (brew_ui <-> UiPort), LvglPort, ESP display runtime. Never includes drivers.
+                        Folders carry no brew_ prefix; each library.json names it brewdial-<...>, and
+                        platformio.ini envs list libraries by that name.
 boards/<name>/          composition roots: the ONLY place pins, part numbers, addresses and driver choices
                         live. One PlatformIO env per board/role.
 proto/brewdial.proto    schema of record for board-to-board messages (not compiled yet).
 sim/  test/             host simulator (SDL desk, headless sim, bench) and unit tests (brew_tests).
-sim/harness sim/web     web test harness: real firmware on fake hal devices (sim_devices.h), bd_* C API,
-                        browser page. New hal interfaces get a fake there so the harness can drive them.
+sim/harness sim/web     web test harness: real firmware on fake devices (sim_devices.h), bd_* C API,
+                        browser page. New driver interfaces get a fake there so the harness can drive them.
 ```
 
-- New hardware means a new driver implementing a `brew_hal` interface plus wiring in `boards/<name>/main.cpp`.
+- New hardware means a new driver implementing a `lib/drivers/interfaces` interface (in `lib/drivers/chips` or
+  `lib/drivers/<platform>`, one file per part) plus wiring in `boards/<name>/main.cpp`.
   App/core code never `#if`s on a board.
 - UI and controller talk **only** through `UiPort` / `ControlPort` (`State`, `Command`, `HistoryChunk`).
   Same board: `LocalBus`. Separate boards: `RemoteControllerProxy` / `RemoteUiProxy` over a `hal::Link`.
@@ -44,7 +50,7 @@ sim/harness sim/web     web test harness: real firmware on fake hal devices (sim
 
 ## Wire format rules (keep the nanopb migration a one-file change)
 
-1. App code never touches the wire format. Only `lib/brew_core/src/codec.cpp` turns domain types into
+1. App code never touches the wire format. Only `lib/core/src/codec.cpp` turns domain types into
    bytes and back. `wire_v*.h` is private to it.
 2. No `memcpy`/casts of structs to bytes, no packed structs, no bitfields, no `sizeof(State)` etc. outside
    the codec. Write fields one by one, little-endian, in fixed-width integers (temperatures as

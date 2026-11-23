@@ -1,15 +1,15 @@
 /**
- * Simulated hardware for the test harness. Each class implements a brew_hal interface, so the
+ * Simulated hardware for the test harness. Each class implements a driver interface (lib/drivers/interfaces), so the
  * real Controller / KnobInput / UiBridge / link code runs unchanged on top of them; the web page
  * (or a scripted test) drives them instead of physical parts.
  */
 #pragma once
 
 #include "brew/fake_plant.h"
-#include "brew/hal/input.h"
-#include "brew/hal/io.h"
-#include "brew/hal/platform.h"
-#include "brew/hal/sensor.h"
+#include "brew/drivers/interfaces/input.h"
+#include "brew/drivers/interfaces/io.h"
+#include "brew/drivers/interfaces/platform.h"
+#include "brew/drivers/interfaces/sensor.h"
 
 #include <cmath>
 #include <cstdint>

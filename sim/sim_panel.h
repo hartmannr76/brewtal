@@ -1,7 +1,7 @@
 /* Host DisplayPanel: renders into an in-memory RGB565 framebuffer (headless sim + bench). */
 #pragma once
 
-#include "brew/hal/display.h"
+#include "brew/drivers/interfaces/display.h"
 
 #include <cstdint>
 #include <cstring>

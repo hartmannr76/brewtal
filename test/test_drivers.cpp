@@ -1,5 +1,7 @@
 /* Portable chip drivers against a fake I2C bus. */
-#include "brew/drivers/i2c_chips.h"
+#include "brew/drivers/chips/cst8xx.h"
+#include "brew/drivers/chips/mcp23008.h"
+#include "brew/drivers/chips/pcf8574.h"
 #include "minitest.h"
 
 #include <map>

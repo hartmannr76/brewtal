@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Regenerates the LVGL fonts for a given panel diameter:
-#   tools/gen_fonts.sh 480        -> lib/brew_fonts_480/src/*.c
-#   tools/gen_fonts.sh 360        -> lib/brew_fonts_360/src/*.c  (new sizes: also add a library.json)
+#   tools/gen_fonts.sh 480        -> lib/fonts/480/src/*.c
+#   tools/gen_fonts.sh 360        -> lib/fonts/360/src/*.c  (new sizes: also add a library.json)
 # Needs: node/npm, python3 + fontTools + brotli  (pip install fonttools brotli).
 # PYTHON=python tools/gen_fonts.sh 480  if your python is called that (Windows).
 # Sizes are the mockup's, scaled from a 360 px reference.
 set -euo pipefail
 DIA="${1:-480}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-OUT="$ROOT/lib/brew_fonts_$DIA/src"
+OUT="$ROOT/lib/fonts/$DIA/src"
 mkdir -p "$OUT"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT

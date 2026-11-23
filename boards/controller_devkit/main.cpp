@@ -7,9 +7,11 @@
 #include <Arduino.h>   // only for setup()/loop() and Serial
 
 #include "brew/controller.h"
-#include "brew/drivers/ds18b20.h"
-#include "brew/drivers/esp32.h"
-#include "brew/drivers/esp_task.h"
+#include "brew/drivers/esp32/ds18b20.h"
+#include "brew/drivers/esp32/gpio.h"
+#include "brew/drivers/esp32/nvs_settings.h"
+#include "brew/drivers/esp32/uart.h"
+#include "brew/drivers/esp32/task.h"
 #include "brew/fake_plant.h"
 #include "brew/link.h"
 

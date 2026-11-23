@@ -10,17 +10,18 @@ The screen, the link between display and controller (same chip, UART, ...), and 
 
 ```
 lib/
-  brew_hal/            interfaces: DisplayPanel, Touch, Encoder, DigitalIn/Out, I2cBus, ByteStream,
-                       TempSensor, SettingsStore, Link
-  brew_core/           portable logic: Controller, control laws, OutputGuard, KnobInput, codec,
+  drivers/
+    interfaces/        what each kind of hardware can do: DisplayPanel, Touch, Encoder,
+                       DigitalIn/Out, I2cBus, ByteStream, TempSensor, SettingsStore, Link
+    chips/             portable chip drivers, one file per chip: pcf8574, mcp23008, cst8xx (touch)
+    esp32/             ESP-IDF drivers, one file per part: i2c, gpio, pcnt_encoder, ledc_backlight,
+                       rgb_panel, qspi_panel, st7701, uart, nvs_settings, ds18b20, task
+  core/                portable logic: Controller, control laws, OutputGuard, KnobInput, codec,
                        COBS/CRC framing, LocalBus, remote proxies, FakePlant (demo fermenter)
-  brew_drivers/        portable chip drivers on hal buses: PCF8574, MCP23008, CST8xx touch
-  brew_drivers_esp32/  ESP-IDF drivers: I2C, GPIO, PCNT encoder, LEDC backlight, esp_lcd RGB + QSPI
-                       panels, UART, NVS, DS18B20
-  brew_ui/             the UI (C): brew_model (state + rules, no LVGL) drawn by a layout
+  ui/                  the UI (C): brew_model (state + rules, no LVGL) drawn by a layout
                        (layout_round: ring, digit animation, menu wheel, history scrub)
-  brew_fonts_<size>/   Inter (weights 360/450/560) + Tabler icons, per panel size (360, 480)
-  brew_app/            UiBridge (brew_ui <-> controller), LVGL port, ESP32 display runtime
+  fonts/<size>/        Inter + Tabler icons, per panel size (360, 480)
+  app/                 UiBridge (brew_ui <-> controller), LVGL port, ESP32 display runtime
 boards/                one folder per board: pins + which drivers (the only board-specific code)
   crowpanel21/         Elecrow CrowPanel 2.1" (480)
   controller_devkit/   headless controller (probe + relays) for a two-board setup over UART
@@ -53,7 +54,7 @@ The UI side and the controller side only exchange `Command` / `State` / `History
 
 ## UI API (`brew_ui.h`)
 
-The UI is a pure view. `UiBridge` (lib/brew_app) drives it from the controller's `State`, so you normally don't call this directly. Every temperature that crosses this API is in °F; the UI handles unit display itself.
+The UI is a pure view. `UiBridge` (lib/app) drives it from the controller's `State`, so you normally don't call this directly. Every temperature that crosses this API is in °F; the UI handles unit display itself.
 
 ```c
 brew_ui_create(lv_screen_active(), &(brew_ui_cbs_t){ on_setpoint, on_mode, on_units, NULL });
@@ -170,7 +171,7 @@ The window runs the firmware's real stack: `Controller` + `LocalBus` + `UiBridge
 
 ### The loop
 
-Edit `lib/brew_ui/src/layout_round.c` (looks, colours, timings) or `brew_model.c` (behaviour), then rebuild and relaunch:
+Edit `lib/ui/src/layout_round.c` (looks, colours, timings) or `brew_model.c` (behaviour), then rebuild and relaunch:
 
 ```sh
 cmake --build sim/build -j && ./sim/build/brew_desk
@@ -187,7 +188,7 @@ In VS Code, the CMake Tools extension can open `sim/` as the project with `brew_
 
 ### Where to tweak things
 
-| What                                  | Where (`lib/brew_ui/src/layout_round.c` unless noted) |
+| What                                  | Where (`lib/ui/src/layout_round.c` unless noted) |
 |---------------------------------------|-----------------------------------------------------|
 | Background gradients per state        | `s_grad[]`                                          |
 | Graph line colors, cooling text color | `s_line[]`, `COOL_TEXT`                             |
@@ -224,9 +225,9 @@ This runs a fixed session through the real controller and UI bridge, and writes 
 
 ## Adding hardware
 
-- **A new screen, touch chip, encoder, sensor or relay board:** implement the matching interface in `lib/brew_hal` (portable chip drivers go in `lib/brew_drivers`, ESP-IDF peripheral drivers in `lib/brew_drivers_esp32`), then construct it in your board's `main.cpp`. Nothing else changes.
+- **A new screen, touch chip, encoder, sensor or relay board:** implement the matching interface from `lib/drivers/interfaces` in a new file named after the part (portable chip drivers go in `lib/drivers/chips`, ESP-IDF drivers in `lib/drivers/esp32`), then construct it in your board's `main.cpp`. Nothing else changes.
 - **A new screen shape** (rectangular, a different key arrangement): add a layout next to `layout_round.c` / `layout_square.c` implementing `brew_layout_t` (create, update, destroy), build it from `layout_kit.h`, and pass it to `brew_ui_create_with_layout()`. A square panel with keys already exists: wire the keys to `ButtonInput` and pass `&brew_layout_square`. The model, and so the behaviour, stays the same.
-- **A new board:** add `boards/<name>/main.cpp` and an env in `platformio.ini` with `build_src_filter = +<name/>` and the right `brew_fonts_<size>`.
+- **A new board:** add `boards/<name>/main.cpp` and an env in `platformio.ini` with `build_src_filter = +<name/>` and the right fonts library (`brewdial-fonts-<size>`, from `lib/fonts/<size>`).
 - **Display and controller on separate chips:** give the display board a `RemoteControllerProxy` and the controller board a `RemoteUiProxy`, both over a `StreamPacketLink` on a UART (see `crowpanel21_display` and `controller_devkit`). Any other `hal::Link` (I2C, ESP-NOW, RS-485) drops in the same way.
 
 ## Waveshare ESP32 port (360 px): needs your attention before flashing

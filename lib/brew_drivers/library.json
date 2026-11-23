@@ -1,9 +1,0 @@
-{
-  "name": "brew_drivers",
-  "version": "1.0.0",
-  "description": "BrewDial portable chip drivers (PCF8574, MCP23008, CST8xx): they only use brew_hal buses, so they also build on host.",
-  "frameworks": "*",
-  "platforms": "*",
-  "dependencies": [ { "name": "brew_hal" } ],
-  "build": { "includeDir": "include", "srcDir": "src" }
-}

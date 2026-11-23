@@ -1,0 +1,10 @@
+{
+  "name": "brewdial-fonts-360",
+  "version": "1.0.0",
+  "description": "Generated fonts for a 360px panel (tools/gen_fonts.sh 360). List exactly one lib/fonts/<size> in an env's lib_deps.",
+  "frameworks": "*",
+  "platforms": "*",
+  "build": {
+    "srcDir": "src"
+  }
+}

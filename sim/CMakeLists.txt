@@ -5,7 +5,7 @@ project(brew_sim C CXX)
 #   brew_sim    headless scripted session -> PNG frames
 #   brew_bench  redraw cost per interaction
 #   brew_desk   interactive SDL window (only if SDL2 is found)
-#   brew_tests  unit tests for brew_core, portable drivers and the UI model (ctest)
+#   brew_tests  unit tests for lib/core, the chip drivers and the UI model (ctest)
 #   harness_check  smoke test of the test harness (ctest)
 #   brew_web    the test harness as a web page (Emscripten builds only; see sim/web/README.md)
 
@@ -15,7 +15,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
 # Panel diameter: 480 = Elecrow CrowPanel 2.1", 360 = Waveshare 1.8" knob
-set(BREW_DISP_SIZE 480 CACHE STRING "Round panel diameter in px (needs lib/brew_fonts_<size>)")
+set(BREW_DISP_SIZE 480 CACHE STRING "Round panel diameter in px (needs lib/fonts/<size>)")
 add_compile_definitions(BREW_UI_DISP_SIZE=${BREW_DISP_SIZE})
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release)
@@ -89,43 +89,43 @@ endif()
 
 # ---- libraries (same sources PlatformIO builds from lib/) ----
 add_library(brew_hal INTERFACE)
-target_include_directories(brew_hal INTERFACE ${ROOT}/lib/brew_hal/include)
+target_include_directories(brew_hal INTERFACE ${ROOT}/lib/drivers/interfaces/include)
 
-file(GLOB BREW_CORE_SRC ${ROOT}/lib/brew_core/src/*.cpp)
+file(GLOB BREW_CORE_SRC ${ROOT}/lib/core/src/*.cpp)
 add_library(brew_core STATIC ${BREW_CORE_SRC})
-target_include_directories(brew_core PUBLIC ${ROOT}/lib/brew_core/include)
+target_include_directories(brew_core PUBLIC ${ROOT}/lib/core/include)
 target_link_libraries(brew_core PUBLIC brew_hal)
 target_compile_options(brew_core PRIVATE ${BREW_WARN})
 
-file(GLOB BREW_DRV_SRC ${ROOT}/lib/brew_drivers/src/*.cpp)
+file(GLOB BREW_DRV_SRC ${ROOT}/lib/drivers/chips/src/*.cpp)
 add_library(brew_drivers STATIC ${BREW_DRV_SRC})
-target_include_directories(brew_drivers PUBLIC ${ROOT}/lib/brew_drivers/include)
+target_include_directories(brew_drivers PUBLIC ${ROOT}/lib/drivers/chips/include)
 target_link_libraries(brew_drivers PUBLIC brew_hal)
 target_compile_options(brew_drivers PRIVATE ${BREW_WARN})
 
 # The UI model (state + rules, no LVGL): shared by every layout, unit-tested on its own.
-add_library(brew_ui_model STATIC ${ROOT}/lib/brew_ui/src/brew_model.c)
-target_include_directories(brew_ui_model PUBLIC ${ROOT}/lib/brew_ui/src)
+add_library(brew_ui_model STATIC ${ROOT}/lib/ui/src/brew_model.c)
+target_include_directories(brew_ui_model PUBLIC ${ROOT}/lib/ui/src)
 target_compile_options(brew_ui_model PRIVATE ${BREW_WARN})
 target_link_libraries(brew_ui_model PUBLIC ${BREW_LIBM})
 
-file(GLOB FONT_SRC ${ROOT}/lib/brew_fonts_${BREW_DISP_SIZE}/src/*.c)
+file(GLOB FONT_SRC ${ROOT}/lib/fonts/${BREW_DISP_SIZE}/src/*.c)
 add_library(brew_ui STATIC
-    ${ROOT}/lib/brew_ui/src/brew_ui.c
-    ${ROOT}/lib/brew_ui/src/layout_kit.c
-    ${ROOT}/lib/brew_ui/src/layout_round.c
-    ${ROOT}/lib/brew_ui/src/layout_square.c
-    ${ROOT}/lib/brew_ui/src/brew_bg.c
+    ${ROOT}/lib/ui/src/brew_ui.c
+    ${ROOT}/lib/ui/src/layout_kit.c
+    ${ROOT}/lib/ui/src/layout_round.c
+    ${ROOT}/lib/ui/src/layout_square.c
+    ${ROOT}/lib/ui/src/brew_bg.c
     ${FONT_SRC})
-target_include_directories(brew_ui PUBLIC ${ROOT}/lib/brew_ui/src)
+target_include_directories(brew_ui PUBLIC ${ROOT}/lib/ui/src)
 target_compile_options(brew_ui PRIVATE ${BREW_WARN})
 target_link_libraries(brew_ui PUBLIC brew_ui_model lvgl ${BREW_LIBM})
 
-# portable half of brew_app (the ESP task runtime is firmware-only)
+# portable half of lib/app (the ESP task runtime is firmware-only)
 add_library(brew_app STATIC
-    ${ROOT}/lib/brew_app/src/ui_bridge.cpp
-    ${ROOT}/lib/brew_app/src/lvgl_port.cpp)
-target_include_directories(brew_app PUBLIC ${ROOT}/lib/brew_app/include)
+    ${ROOT}/lib/app/src/ui_bridge.cpp
+    ${ROOT}/lib/app/src/lvgl_port.cpp)
+target_include_directories(brew_app PUBLIC ${ROOT}/lib/app/include)
 target_link_libraries(brew_app PUBLIC brew_core brew_ui)
 target_compile_options(brew_app PRIVATE ${BREW_WARN})
 

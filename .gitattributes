@@ -22,4 +22,4 @@
 *.pdf  binary
 
 # Generated LVGL font sources (tools/gen_fonts.sh): collapsed in GitHub diffs and language stats
-lib/brew_fonts_*/** linguist-generated=true
+lib/fonts/** linguist-generated=true

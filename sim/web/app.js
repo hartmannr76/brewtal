@@ -332,7 +332,7 @@ createBrewDial().then((M) => {
   const PRESETS = {
     // what the firmware ran before: +/-0.3 F deadband, no timing protection
     original:    { law: 0, hdiff: 0.3, cdiff: 0.3, hon: 0, hoff: 0, con: 0, coff: 0, change: 0 },
-    // ChamberDefaults in lib/brew_core/include/brew/control.h (what the boards run)
+    // ChamberDefaults in lib/core/include/brew/control.h (what the boards run)
     recommended: { law: 1, hdiff: 0.5, cdiff: 0.5, hon: 0, hoff: 3, con: 0, coff: 3, change: 0 },
   };
   const applySetup = () => {

@@ -1,8 +1,0 @@
-{
-  "name": "brew_hal",
-  "version": "1.0.0",
-  "description": "BrewDial hardware interfaces (headers only). No implementations, no platform includes.",
-  "frameworks": "*",
-  "platforms": "*",
-  "build": { "includeDir": "include", "srcDir": "src" }
-}

@@ -62,7 +62,7 @@ The page takes its colour from the dial: the room light, primary buttons, switch
 - `sim/web/`: the page (`index.html`, `app.js`, `style.css`), copied next to `brew_web.js` at build time.
 
 To add a new simulated part:
-1. Implement its `brew_hal` interface in `sim_devices.h`.
+1. Implement its interface (from `lib/drivers/interfaces`) in `sim_devices.h`.
 2. Wire it in `Harness`.
 3. Expose a `bd_*` setter.
 4. Add a control in `index.html` and `app.js`.

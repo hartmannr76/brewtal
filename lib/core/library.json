@@ -1,0 +1,11 @@
+{
+  "name": "brewdial-core",
+  "version": "1.0.0",
+  "description": "BrewDial portable logic: controller, control laws, input policy, codec, framing, buses. No platform includes (tools/check_rules.py).",
+  "frameworks": "*",
+  "platforms": "*",
+  "build": {
+    "includeDir": "include",
+    "srcDir": "src"
+  }
+}

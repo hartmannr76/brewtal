@@ -19,29 +19,30 @@ PLATFORM = [r"^esp_", r"^freertos/", r"^driver/", r"^soc/", r"^hal/", r"^nvs", r
             r"^sdkconfig"]
 UI = [r"^lvgl\.h", r"^brew_ui\.h", r"^brew_bg\.h", r"^fonts/", r"^SDL"]
 APP = [r"^brew/app/"]
-DRIVERS = [r"^brew/drivers/"]
-CORE = [r"^brew/(?!hal/)[^/]+\.h$"]   # brew/<x>.h that is not brew/hal/...
+DRIVERS = [r"^brew/drivers/(?!interfaces/)"]   # driver implementations (chips, esp32, ...)
+INTERFACES = [r"^brew/drivers/interfaces/"]
+CORE = [r"^brew/[^/]+\.h$"]                   # brew/<x>.h
 
 LAYERS = {
-    "lib/brew_hal":           PLATFORM + UI + APP + DRIVERS + CORE,
-    "lib/brew_core":          PLATFORM + UI + APP + DRIVERS,
-    "lib/brew_drivers":       PLATFORM + UI + APP + CORE + [r"^brew/drivers/esp"],
-    "lib/brew_drivers_esp32": UI + APP + CORE + [r"^Arduino", r"^Wire\.h"],
-    "lib/brew_app":           DRIVERS + [r"^Arduino", r"^Wire\.h"],
-    "lib/brew_ui":            APP + DRIVERS + CORE + [r"^brew/hal/"] + PLATFORM[:-1],
+    "lib/drivers/interfaces": PLATFORM + UI + APP + DRIVERS + CORE,
+    "lib/core":               PLATFORM + UI + APP + DRIVERS,
+    "lib/drivers/chips":      PLATFORM + UI + APP + CORE + [r"^brew/drivers/esp32/"],
+    "lib/drivers/esp32":      UI + APP + CORE + [r"^brew/drivers/chips/", r"^Arduino", r"^Wire\.h"],
+    "lib/app":                DRIVERS + [r"^Arduino", r"^Wire\.h"],
+    "lib/ui":                 APP + DRIVERS + CORE + INTERFACES + PLATFORM[:-1],
 }
-# brew_ui may use esp_heap_caps.h for its PSRAM allocator (guarded by ESP_PLATFORM).
-LAYER_EXCEPTIONS = {("lib/brew_ui", "esp_heap_caps.h")}
+# lib/ui may use esp_heap_caps.h for its PSRAM allocator (guarded by ESP_PLATFORM).
+LAYER_EXCEPTIONS = {("lib/ui", "esp_heap_caps.h")}
 
 # Stricter rules for single files inside a library. The UI model is shared by every layout
 # and unit-tested on the host, so it must not see LVGL, a layout, or the platform.
 FILE_RULES = [
-    (re.compile(r"^lib/brew_ui/src/(brew_model\.[ch]|brew_ui_types\.h)$"),
+    (re.compile(r"^lib/ui/src/(brew_model\.[ch]|brew_ui_types\.h)$"),
      "the UI model", UI + [r"^brew_layout\.h", r"^layout_"] + PLATFORM),
 ]
 
 # --------------------------------------------------------------------------- wire format
-CODEC_FILES = re.compile(r"lib/brew_core/src/codec[^/]*\.cpp$")
+CODEC_FILES = re.compile(r"lib/core/src/codec[^/]*\.cpp$")
 WIRE_HEADER = re.compile(r'#\s*include\s*"(wire_v\d+\.h)"')
 MSG_TYPES = r"(?:brew::)?(?:State|Command|HistoryChunk|Message)"
 WIRE_SMELLS = [
@@ -87,8 +88,6 @@ def check_layers(root, path, text, errors):
     for lib, forbidden in LAYERS.items():
         if not r.startswith(lib + "/"):
             continue
-        if lib == "lib/brew_drivers" and r.startswith("lib/brew_drivers_esp32/"):
-            continue
         for m in INCLUDE.finditer(text):
             inc = m.group(2)
             if (lib, inc) in LAYER_EXCEPTIONS:
@@ -119,7 +118,7 @@ def check_wire(root, path, text, errors):
     for m in WIRE_HEADER.finditer(code):
         if not is_codec:
             line = code.count("\n", 0, m.start()) + 1
-            errors.append(f"{r}:{line}: wire: {m.group(1)} is private to lib/brew_core/src/codec*.cpp")
+            errors.append(f"{r}:{line}: wire: {m.group(1)} is private to lib/core/src/codec*.cpp")
     if is_codec or r.startswith("test/"):
         return
     for pat, why in WIRE_SMELLS:
@@ -162,13 +161,13 @@ def parse_wire_doc(path):
 
 def check_schema(root, errors):
     proto = os.path.join(root, "proto", "brewdial.proto")
-    wires = sorted(f for f in os.listdir(os.path.join(root, "lib", "brew_core", "src")) if re.match(r"wire_v\d+\.h$", f))
+    wires = sorted(f for f in os.listdir(os.path.join(root, "lib", "core", "src")) if re.match(r"wire_v\d+\.h$", f))
     if not os.path.exists(proto) or not wires:
-        errors.append("schema: proto/brewdial.proto or lib/brew_core/src/wire_v*.h missing")
+        errors.append("schema: proto/brewdial.proto or lib/core/src/wire_v*.h missing")
         return
     want = parse_proto(proto)
     for w in wires:
-        have = parse_wire_doc(os.path.join(root, "lib", "brew_core", "src", w))
+        have = parse_wire_doc(os.path.join(root, "lib", "core", "src", w))
         for msg, fields in want.items():
             if msg not in have:
                 errors.append(f"schema: {w} does not document message {msg} from brewdial.proto")

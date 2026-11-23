@@ -1,6 +1,6 @@
 // BrewDial board-to-board messages: the SCHEMA OF RECORD.
 //
-// Not compiled yet. Wire format v1 is hand-written (lib/brew_core/src/wire_v1.h) and must keep
+// Not compiled yet. Wire format v1 is hand-written (lib/core/src/wire_v1.h) and must keep
 // the same field numbers and names as this file; tools/check_rules.py fails the build if the two
 // drift apart. Moving to nanopb = generate from this file, encode as proto_ver 2 in codec.cpp.
 //

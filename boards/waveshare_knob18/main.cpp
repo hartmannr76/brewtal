@@ -12,9 +12,14 @@
 
 #include "brew/app/runtime.h"
 #include "brew/controller.h"
-#include "brew/drivers/esp32.h"
-#include "brew/drivers/esp_task.h"
-#include "brew/drivers/i2c_chips.h"
+#include "brew/drivers/esp32/i2c.h"
+#include "brew/drivers/esp32/lcd_init.h"
+#include "brew/drivers/esp32/ledc_backlight.h"
+#include "brew/drivers/esp32/nvs_settings.h"
+#include "brew/drivers/esp32/pcnt_encoder.h"
+#include "brew/drivers/esp32/qspi_panel.h"
+#include "brew/drivers/esp32/task.h"
+#include "brew/drivers/chips/cst8xx.h"
 #include "brew/fake_plant.h"
 #include "brew/local_bus.h"
 

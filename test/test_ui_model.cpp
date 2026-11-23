@@ -1,4 +1,4 @@
-/* The UI model (lib/brew_ui/src/brew_model.c): what a turn or a press does in each view, the
+/* The UI model (lib/ui/src/brew_model.c): what a turn or a press does in each view, the
  * auto-commit flags, history scrubbing, and the texts every layout shows. No LVGL involved. */
 #include "brew_model.h"
 #include "minitest.h"

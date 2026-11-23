@@ -1,9 +1,0 @@
-{
-  "name": "brew_drivers_esp32",
-  "version": "1.0.0",
-  "description": "BrewDial ESP32 peripheral drivers on ESP-IDF APIs (I2C master, GPIO, PCNT, LEDC, esp_lcd RGB/QSPI, UART, NVS).",
-  "frameworks": "*",
-  "platforms": "espressif32",
-  "dependencies": [ { "name": "brew_hal" } ],
-  "build": { "includeDir": "include", "srcDir": "src" }
-}

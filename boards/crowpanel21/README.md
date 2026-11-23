@@ -56,7 +56,7 @@ The render buffer height (48 lines, internal RAM) is `draw_lines` in `panelConfi
 
 ## Controller
 
-The controller is the portable `brew::Controller` (lib/brew_core). It is configured in `main.cpp`:
+The controller is the portable `brew::Controller` (lib/core). It is configured in `main.cpp`:
 
 - **Sensor.** `FakePlant` in demo mode, `EspDs18b20` otherwise. Any `hal::TempSensor` works. If the reading goes invalid (three failed reads), every output turns off.
 - **Control law.** `HysteresisLaw` with `ChamberDefaults`: heat on at target − 0.5 °F and cool on at target + 0.5 °F, each running until the target is reached. The original behaviour was `DeadbandLaw(0.3 °F)`, which short-cycles the relays.
@@ -75,7 +75,7 @@ Build env `crowpanel21_display` for the CrowPanel and `controller_devkit` for an
 
 ## Changing the UI
 
-The UI lives in `lib/brew_ui/` and is shared by every board and the desktop simulator, so there's nothing to copy or sync. Build the simulator at 480 to match this board (the default): `cmake -S sim -B sim/build -DBREW_DISP_SIZE=480`.
+The UI lives in `lib/ui/` and is shared by every board and the desktop simulator, so there's nothing to copy or sync. Build the simulator at 480 to match this board (the default): `cmake -S sim -B sim/build -DBREW_DISP_SIZE=480`.
 
 ## What's verified and what isn't
 

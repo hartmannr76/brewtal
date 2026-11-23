@@ -1,0 +1,11 @@
+{
+  "name": "brewdial-driver-interfaces",
+  "version": "1.0.0",
+  "description": "BrewDial driver interfaces (headers only): what each kind of hardware can do. No implementations, no platform includes.",
+  "frameworks": "*",
+  "platforms": "*",
+  "build": {
+    "includeDir": "include",
+    "srcDir": "src"
+  }
+}
