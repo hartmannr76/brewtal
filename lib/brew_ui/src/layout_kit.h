@@ -132,6 +132,8 @@ void kit_bg_show(kit_bg_t * b, brew_vstate_t vs, bool animate);
 /* Drawn points are smoothed with a triangular window this many points either side, so the
  * probe's 0.1 F steps read as gentle slopes, not a staircase. The live point stays exact. */
 #define KIT_GRAPH_SMOOTH 6
+/* The y axis is fixed to the ring's scale, BREW_T_MIN..BREW_T_MAX (30..80 F): it never moves,
+ * whatever the readings or the target do. Readings outside it ride the edge. */
 #define KIT_GRAPH_FADE_HAIRLINE 0.50f
 #define KIT_GRAPH_FADE_MIST     0.42f
 

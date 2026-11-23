@@ -306,6 +306,8 @@ float kit_graph_index_x(const kit_graph_t * g, int i) { return point_x(g, i, g->
 
 float kit_graph_temp_y(const kit_graph_t * g, float f)
 {
+    if(f < g->g_min) f = g->g_min;   /* off the fixed scale: ride the edge */
+    if(f > g->g_max) f = g->g_max;
     return g->yt + (g->yb - g->yt) * (1.0f - (f - g->g_min) / (g->g_max - g->g_min));
 }
 
@@ -362,8 +364,7 @@ void kit_graph_place_marker(kit_graph_t * g, const brew_model_t * m)
 
 bool kit_graph_live_moved(const kit_graph_t * g, float f)
 {
-    return g->npts == 0 || fabsf(kit_graph_temp_y(g, f) - g->pts[g->npts - 1].y) >= 1.0f || f < g->g_min ||
-           f > g->g_max;
+    return g->npts == 0 || fabsf(kit_graph_temp_y(g, f) - g->pts[g->npts - 1].y) >= 1.0f;
 }
 
 void kit_graph_render(kit_graph_t * g, const brew_model_t * m)
@@ -384,20 +385,7 @@ void kit_graph_render(kit_graph_t * g, const brew_model_t * m)
         return;
     }
     const float tg = m->sp_f[m->mode];
-    float mn = tg, mx = tg;
-    for(int i = 0; i < n; i++) {
-        const float v = brew_model_hist_val(m, i);
-        if(v < mn) mn = v;
-        if(v > mx) mx = v;
-    }
-    if(mx - mn < 1.0f) {   /* at least 1 F tall, centred, so a steady hold sits mid-graph */
-        const float mid = (mn + mx) * 0.5f;
-        mn = mid - 0.5f;
-        mx = mid + 0.5f;
-    }
-    const float span = mx - mn;
-    mn -= span * 0.15f;
-    mx += span * 0.15f;
+    const float mn = BREW_T_MIN, mx = BREW_T_MAX;   /* fixed scale: never rescaled */
     g->g_min = mn;
     g->g_max = mx;
 
