@@ -228,6 +228,14 @@ uint32_t brew_model_set_units(brew_model_t * m, bool celsius)
     return BREW_CH_REFRESH;
 }
 
+uint32_t brew_model_set_graph_style(brew_model_t * m, brew_graph_style_t style)
+{
+    if((int)style < 0 || style >= BREW_GRAPH_STYLE_N) style = BREW_GRAPH_HAIRLINE;
+    if(style == m->graph_style) return 0;
+    m->graph_style = style;
+    return BREW_CH_REFRESH | BREW_CH_GRAPH;
+}
+
 uint32_t brew_model_set_batch(brew_model_t * m, const char * name, int day)
 {
     snprintf(m->batch, sizeof(m->batch), "%s", name ? name : "");

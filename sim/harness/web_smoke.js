@@ -47,6 +47,11 @@ create().then((M) => {
   check(Math.abs(toF(s.state.sp[0]) - (sp0 + 1.0)) < 0.05, `square layout: down + select (${toF(s.state.sp[0]).toFixed(2)} F)`);
   M._bd_layout(0); run(300);
   check(status().layout === 'round', 'and back to round');
+  check(status().graph_style === 'hairline', 'graph style defaults to hairline');
+  M._bd_graph_style(1); run(300);
+  check(status().graph_style === 'mist', 'graph style switched to mist');
+  M._bd_graph_style(0); run(300);
+  check(status().graph_style === 'hairline', 'and back to hairline');
 
   let line, n = 0;
   while ((line = M.UTF8ToString(M._bd_next_log()))) n++;

@@ -66,6 +66,8 @@ public:
     /** Which screen layout the display draws: false = round dial, true = square panel. Swapped
      *  live; what's on screen (and an adjustment in progress) carries over. */
     void setSquare(bool square);
+    /** How the display draws the history graph: 0 = hairline (default), 1 = mist. */
+    void setGraphStyle(int style);
 
     /* ---- beer / probe ---- */
     void setBeerC(float c);

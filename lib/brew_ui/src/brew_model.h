@@ -69,6 +69,7 @@ typedef struct {
     int hist_sec_per;         /* seconds per history sample */
     char batch[32];
     int day;
+    brew_graph_style_t graph_style;   /* how layouts draw the history graph */
 
     /* interaction */
     brew_view_t view;
@@ -90,6 +91,8 @@ uint32_t brew_model_set_setpoints(brew_model_t * m, float ferment_f, float crash
 uint32_t brew_model_set_mode(brew_model_t * m, brew_mode_t mode, bool paused);
 uint32_t brew_model_set_units(brew_model_t * m, bool celsius);
 uint32_t brew_model_set_batch(brew_model_t * m, const char * name, int day);
+/** Out-of-range styles fall back to BREW_GRAPH_HAIRLINE. Redraws the graph only if it changed. */
+uint32_t brew_model_set_graph_style(brew_model_t * m, brew_graph_style_t style);
 uint32_t brew_model_set_history(brew_model_t * m, const float * temps_f, int n, int seconds_per_sample);
 uint32_t brew_model_push_history(brew_model_t * m, float temp_f);
 

@@ -413,49 +413,80 @@ void kit_graph_render(kit_graph_t * g, const brew_model_t * m)
         g->pts[k].y = kit_graph_temp_y(g, brew_model_hist_val(m, n - 1));
         g->npts = KIT_GRAPH_PTS;
     }
+    {
+        /* smooth all but the live point; the window shrinks near the ends so the curve still
+         * starts at the oldest point and meets the live one */
+        static float sm[KIT_GRAPH_PTS];
+        const int last = g->npts - 1;
+        for(int i = 0; i < last; i++) {
+            int r = KIT_GRAPH_SMOOTH;
+            if(i < r) r = i;
+            if(last - i < r) r = last - i;
+            float sum = 0.0f, wsum = 0.0f;
+            for(int j = -r; j <= r; j++) {
+                const float w = (float)(r + 1 - (j < 0 ? -j : j));
+                sum += g->pts[i + j].y * w;
+                wsum += w;
+            }
+            sm[i] = sum / wsum;
+        }
+        for(int i = 0; i < last; i++) g->pts[i].y = sm[i];
+    }
     int steps = g->npts > 1 ? (KIT_POLY_MAX - 1) / (g->npts - 1) : 1;
     if(steps > KIT_POLY_STEPS) steps = KIT_POLY_STEPS;
     if(steps < 1) steps = 1;
     g->npoly = g->npts < 2 ? 0 : brew_curve_sample(g->pts, g->npts, g->poly, KIT_POLY_MAX, steps);
 
     const uint32_t lc = kit_line[brew_model_vstate(m)];
+    const bool mist = m->graph_style == BREW_GRAPH_MIST;
     /* the fill works in parent rows; shift x into the canvas (a no-op for full-width canvases) */
     if(g->cx != 0)
         for(int i = 0; i < g->npoly; i++) g->poly[i].x -= (float)g->cx;
-    brew_graph_fill(g->buf, g->cw, g->ch, g->cy, g->poly, g->npoly, lc, 0.38f, 0.02f);
+    if(mist) brew_graph_fill(g->buf, g->cw, g->ch, g->cy, g->poly, g->npoly, lc, 0.38f, 0.0f);
+    else memset(g->buf, 0, (size_t)g->cw * g->ch * 4);
 
     lv_layer_t layer;
-    lv_canvas_init_layer(g->canvas, &layer);
-
-    /* setpoint reference: dotted, 22% white */
-    const float sy = g->yt + (g->yb - g->yt) * (1.0f - (tg - mn) / (mx - mn)) - (float)g->cy;
     lv_draw_line_dsc_t d;
+    lv_canvas_init_layer(g->canvas, &layer);
+    /* the curve; Mist puts a soft glow under it (two wider, faint passes) */
+    const int passes = mist ? 3 : 1;
+    for(int p = 0; p < passes; p++) {
+        lv_draw_line_dsc_init(&d);
+        d.color = lv_color_hex(lc);
+        const float w = p == passes - 1 ? g->line_w : g->line_w * (p == 0 ? 3.6f : 2.2f);
+        d.opa = p == passes - 1 ? LV_OPA_COVER : (p == 0 ? 18 : 36);
+        d.width = (int32_t)lroundf(w);
+        d.round_start = 1;
+        d.round_end = 1;
+        for(int i = 0; i < g->npoly - 1; i++) {
+            d.p1.x = g->poly[i].x;
+            d.p1.y = g->poly[i].y - (float)g->cy;
+            d.p2.x = g->poly[i + 1].x;
+            d.p2.y = g->poly[i + 1].y - (float)g->cy;
+            lv_draw_line(&layer, &d);
+        }
+    }
+    lv_canvas_finish_layer(g->canvas, &layer);
+
+    /* fade in from the left, cut to the round glass */
+    const float fx0 = g->x0 - (float)g->cx;
+    const float fx1 = fx0 + (g->x1 - g->x0) * (mist ? KIT_GRAPH_FADE_MIST : KIT_GRAPH_FADE_HAIRLINE);
+    brew_graph_mask(g->buf, g->cw, g->ch, g->cy, fx0, fx1, g->clip_cx - (float)g->cx, g->clip_cy, g->clip_r);
+
+    /* setpoint reference on top, unfaded: dotted, 22% white, across the plot */
+    lv_canvas_init_layer(g->canvas, &layer);
+    const float sy = g->yt + (g->yb - g->yt) * (1.0f - (tg - mn) / (mx - mn)) - (float)g->cy;
     lv_draw_line_dsc_init(&d);
     d.color = lv_color_white();
     d.opa = 56;
     d.width = 1;
     d.dash_width = 2;
     d.dash_gap = 6;
-    d.p1.x = 0;
+    d.p1.x = fx0;
     d.p1.y = sy;
-    d.p2.x = (lv_value_precise_t)g->cw;
+    d.p2.x = g->x1 - (float)g->cx;
     d.p2.y = sy;
     lv_draw_line(&layer, &d);
-
-    /* the curve */
-    lv_draw_line_dsc_init(&d);
-    d.color = lv_color_hex(lc);
-    d.opa = LV_OPA_COVER;
-    d.width = (int32_t)lroundf(g->line_w);
-    d.round_start = 1;
-    d.round_end = 1;
-    for(int i = 0; i < g->npoly - 1; i++) {
-        d.p1.x = g->poly[i].x;
-        d.p1.y = g->poly[i].y - (float)g->cy;
-        d.p2.x = g->poly[i + 1].x;
-        d.p2.y = g->poly[i + 1].y - (float)g->cy;
-        lv_draw_line(&layer, &d);
-    }
     lv_canvas_finish_layer(g->canvas, &layer);
     lv_obj_invalidate(g->canvas);
 

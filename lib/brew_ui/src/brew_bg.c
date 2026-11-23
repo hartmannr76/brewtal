@@ -4,6 +4,7 @@
 #include "brew_bg.h"
 
 #include <math.h>
+#include <stdbool.h>
 #include <string.h>
 
 /* 4x4 Bayer matrix, values 0..15 */
@@ -100,6 +101,38 @@ int brew_curve_sample(const brew_pt_t * P, int n, brew_pt_t * out, int out_max, 
         }
     }
     return k;
+}
+
+void brew_graph_mask(uint8_t * argb, int w, int h, int y0, float fade_x0, float fade_x1,
+                     float clip_cx, float clip_cy, float clip_r)
+{
+    const bool fade = fade_x1 > fade_x0;
+    for(int r = 0; r < h; r++) {
+        uint8_t * row = argb + (size_t)r * (size_t)w * 4;
+        /* the circle's span on this row: inside [in0, in1] untouched, AA within 1 px of the edge */
+        float in0 = -1e9f, in1 = 1e9f;
+        if(clip_r > 0.0f) {
+            const float dy = (float)(y0 + r) + 0.5f - clip_cy;
+            const float q = clip_r * clip_r - dy * dy;
+            if(q <= 0.0f) {
+                memset(row, 0, (size_t)w * 4);
+                continue;
+            }
+            const float hw = sqrtf(q);
+            in0 = clip_cx - hw;
+            in1 = clip_cx + hw;
+        }
+        for(int x = 0; x < w; x++) {
+            uint8_t * px = row + (size_t)x * 4;
+            if(px[3] == 0) continue;
+            const float fx = (float)x + 0.5f;
+            float k = 1.0f;
+            if(fade) k = clampf((fx - fade_x0) / (fade_x1 - fade_x0), 0.0f, 1.0f);
+            if(fx < in0 + 1.0f) k *= clampf(fx - in0 + 0.5f, 0.0f, 1.0f);
+            else if(fx > in1 - 1.0f) k *= clampf(in1 - fx + 0.5f, 0.0f, 1.0f);
+            if(k < 1.0f) px[3] = (uint8_t)((float)px[3] * k + 0.5f);
+        }
+    }
 }
 
 void brew_graph_fill(uint8_t * argb, int w, int h, int y0,

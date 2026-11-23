@@ -54,6 +54,9 @@ void brew_ui_set_setpoints(float ferment_f, float crash_f);
 void brew_ui_set_mode(brew_mode_t mode, bool paused);
 void brew_ui_set_units(bool celsius);
 void brew_ui_set_batch(const char * name, int day);
+/** How the history graph is drawn (default BREW_GRAPH_HAIRLINE). */
+void brew_ui_set_graph_style(brew_graph_style_t style);
+brew_graph_style_t brew_ui_graph_style(void);
 /**
  * Replace the history buffer (oldest first; n may be 0). It holds up to BREW_HIST_MAX samples
  * (2 h at one every 2 s); the graph stretches whatever it holds to the full width, with the

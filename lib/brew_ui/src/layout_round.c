@@ -6,7 +6,7 @@
  *
  * Layer stack (bottom -> top):
  *   bg[0], bg[1]   RGB565 canvases, dithered radial gradient; cross-faded on state change
- *   graph          ARGB8888 canvas with the area chart + line (dimmable)
+ *   graph          ARGB8888 canvas with the history line, in the model's graph style (dimmable)
  *   halo, dot      "now"/scrub marker on the curve
  *   ticks          lv_scale, only visible while adjusting
  *   arc, knob      setpoint ring
@@ -299,6 +299,9 @@ static void round_create(lv_obj_t * screen, const brew_model_t * m)
     U.g.line_w = DS(1.8f);
     U.g.halo_d = (int32_t)lroundf(DS(12));
     U.g.dot_d = (int32_t)lroundf(DS(6));
+    U.g.clip_cx = (float)DISP / 2.0f;
+    U.g.clip_cy = (float)DISP / 2.0f;
+    U.g.clip_r = (float)DISP / 2.0f - DS(2);
     kit_graph_create(&U.g, U.root);
 
     /* ticks (only while adjusting) */

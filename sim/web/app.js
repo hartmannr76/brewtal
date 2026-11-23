@@ -35,7 +35,7 @@ createBrewDial().then((M) => {
     beer: M._bd_set_beer_c, physics: M._bd_set_physics, plant: M._bd_plant,
     fault: M._bd_set_fault, noise: M._bd_set_noise, offset: M._bd_set_offset,
     speed: M._bd_set_speed, reboot: M._bd_reboot, factory: M._bd_factory_reset, setup: M._bd_setup,
-    split: M._bd_set_split, link: M._bd_link, key: M._bd_key, layout: M._bd_layout,
+    split: M._bd_set_split, link: M._bd_link, key: M._bd_key, layout: M._bd_layout, graphStyle: M._bd_graph_style,
     status: () => JSON.parse(M.UTF8ToString(M._bd_status())),
     nextLog: () => M.UTF8ToString(M._bd_next_log()),
   };
@@ -254,9 +254,22 @@ createBrewDial().then((M) => {
     try { localStorage.setItem('brewdial.device', k); } catch (_) { /* private mode: not remembered */ }
   };
   segment('device-kind', 'kind', setKind);
+
+  /* ------------------------------------------------------------ graph style (brew_ui_set_graph_style) */
+  const setGraphStyle = (s) => {
+    if (s !== 'mist') s = 'hairline';
+    api.graphStyle(s === 'mist' ? 1 : 0);
+    document.querySelectorAll('#graph-style button').forEach((b) => b.classList.toggle('on', b.dataset.style === s));
+    syncThumb($('graph-style'));
+    try { localStorage.setItem('brewdial.graph', s); } catch (_) { /* private mode: not remembered */ }
+  };
+  segment('graph-style', 'style', setGraphStyle);
   let savedKind = null;
   try { savedKind = localStorage.getItem('brewdial.device'); } catch (_) { /* ignore */ }
   setKind(qs.get('device') || savedKind || 'round');
+  let savedGraph = null;
+  try { savedGraph = localStorage.getItem('brewdial.graph'); } catch (_) { /* ignore */ }
+  setGraphStyle(qs.get('graph') || savedGraph || 'hairline');
   requestAnimationFrame(syncAllThumbs);
 
   /* ------------------------------------------------------------ beer + probe */

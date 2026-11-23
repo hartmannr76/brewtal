@@ -41,6 +41,8 @@ BD_API void bd_click() { H->click(); }
 BD_API void bd_key(int which, int down) { H->key(which, down != 0); }
 /* screen layout: 0 = round dial, 1 = square panel (swapped live) */
 BD_API void bd_layout(int square) { H->setSquare(square != 0); }
+/* history graph style: 0 = hairline (default), 1 = mist */
+BD_API void bd_graph_style(int style) { H->setGraphStyle(style); }
 BD_API void bd_touch(int x, int y, int down) { H->touch(x, y, down != 0); }
 
 /* beer / probe */

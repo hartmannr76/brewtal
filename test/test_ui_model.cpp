@@ -358,3 +358,15 @@ TEST(ui_model_key_hints_say_what_the_keys_do)
     brew_model_encoder(&m, BREW_MENU_PAUSE);
     CHECK(hint() == "Resume");
 }
+
+TEST(ui_model_graph_style_defaults_to_hairline_and_redraws_only_on_change)
+{
+    brew_model_t m;
+    brew_model_init(&m, nullptr);
+    CHECK(m.graph_style == BREW_GRAPH_HAIRLINE);
+    CHECK_EQ(brew_model_set_graph_style(&m, BREW_GRAPH_HAIRLINE), 0u);
+    CHECK(brew_model_set_graph_style(&m, BREW_GRAPH_MIST) & BREW_CH_GRAPH);
+    CHECK(m.graph_style == BREW_GRAPH_MIST);
+    brew_model_set_graph_style(&m, static_cast<brew_graph_style_t>(7));   // unknown: hairline
+    CHECK(m.graph_style == BREW_GRAPH_HAIRLINE);
+}

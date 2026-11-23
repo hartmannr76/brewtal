@@ -49,6 +49,16 @@ void brew_graph_fill(uint8_t * argb, int w, int h, int y0,
                      const brew_pt_t * poly, int np,
                      uint32_t rgb, float a_top, float a_bot);
 
+/**
+ * Scale the alpha of an ARGB8888 buffer covering screen rows [y0, y0+h) (x from 0):
+ *   - columns fade in from 0 at fade_x0 to full at fade_x1 (and stay full after);
+ *     fade_x1 <= fade_x0 turns the fade off
+ *   - with clip_r > 0, everything outside the circle (clip_cx, clip_cy, clip_r) is cleared,
+ *     with an anti-aliased edge.
+ */
+void brew_graph_mask(uint8_t * argb, int w, int h, int y0, float fade_x0, float fade_x1,
+                     float clip_cx, float clip_cy, float clip_r);
+
 #ifdef __cplusplus
 }
 #endif

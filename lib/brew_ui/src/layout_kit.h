@@ -107,6 +107,8 @@ void kit_bg_create(kit_bg_t * b, lv_obj_t * parent);
 void kit_bg_show(kit_bg_t * b, brew_vstate_t vs, bool animate);
 
 /* ---- history graph ------------------------------------------------------------------------
+ * Drawn in the model's graph_style: BREW_GRAPH_HAIRLINE (a thin line, no fill) or
+ * BREW_GRAPH_MIST (the line with a soft glow over a fill fading into the background).
  * Whatever is buffered, stretched to the full width: the oldest sample at x0, the live reading
  * (the "now" dot) at x1, evenly spaced between. A few seconds of data already fill the graph;
  * as samples arrive they squeeze together until the window is full (BREW_HIST_MAX samples),
@@ -121,6 +123,13 @@ void kit_bg_show(kit_bg_t * b, brew_vstate_t vs, bool animate);
 /* The live point redraws at most this often (a full graph render; cheap enough on the S3 at
  * this rate, and only when the point moved >= 1 px). */
 #define KIT_GRAPH_REDRAW_MS 2000
+/* The line (and Mist's fill) fade in from nothing at x0 to full over this share of the width,
+ * so the window has no hard left edge. */
+/* Drawn points are smoothed with a triangular window this many points either side, so the
+ * probe's 0.1 F steps read as gentle slopes, not a staircase. The live point stays exact. */
+#define KIT_GRAPH_SMOOTH 6
+#define KIT_GRAPH_FADE_HAIRLINE 0.50f
+#define KIT_GRAPH_FADE_MIST     0.42f
 
 typedef struct {
     /* geometry: fill in before kit_graph_create(). Everything is in the parent's coordinates. */
@@ -129,6 +138,7 @@ typedef struct {
     float yt, yb;                 /* plot top / bottom */
     float line_w;
     int32_t halo_d, dot_d;        /* "now" / scrub marker */
+    float clip_cx, clip_cy, clip_r;   /* round glass: nothing drawn outside it (clip_r 0 = no clip) */
 
     lv_obj_t * canvas;
     lv_obj_t * halo;
