@@ -7,14 +7,18 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const brew_grad_t s_grad[BREW_VS_N] = {
-    {{0x3070b0, 0x20456b, 0x1c2a37, 0x171f27}, {0.0f, 0.42f, 0.78f, 1.0f}}, /* cool  */
-    {{0x3070b0, 0x20456b, 0x1c2a37, 0x171f27}, {0.0f, 0.42f, 0.78f, 1.0f}}, /* idle  */
-    {{0xff8f3a, 0xc4561a, 0x4a2516, 0x2a1912}, {0.0f, 0.40f, 0.78f, 1.0f}}, /* heat  */
-    {{0x8c5ff2, 0x4b2e98, 0x241c3e, 0x18142a}, {0.0f, 0.42f, 0.78f, 1.0f}}, /* crash */
-    {{0x5f6871, 0x383f46, 0x22272c, 0x1a1d21}, {0.0f, 0.45f, 0.80f, 1.0f}}, /* pause */
+/* "Smoked glass": a near-black face lit from below by the state colour (the web harness's
+ * palette: --s, --s-deep). Light at (50%, 87.5%), reaching 70% of the width. */
+#define GLASS(s, deep) { 0x0b0e11, (s), (deep), 0.5f, 0.875f, 0.708f, 0.6f }
+static const brew_glass_t s_glass[BREW_VS_N] = {
+    GLASS(0x3070b0, 0x20456b),   /* cool  */
+    GLASS(0x3070b0, 0x20456b),   /* idle  */
+    GLASS(0xff8f3a, 0xc4561a),   /* heat  */
+    GLASS(0x8c5ff2, 0x4b2e98),   /* crash */
+    GLASS(0x5f6871, 0x383f46),   /* pause */
 };
 const uint32_t kit_line[BREW_VS_N] = { 0x7cd4ff, 0x7cd4ff, 0xffcf8a, 0xd8bcff, 0xc3cad1 };
+const uint32_t kit_base[BREW_VS_N] = { 0x3070b0, 0x3070b0, 0xff8f3a, 0x8c5ff2, 0x5f6871 };
 
 /* ------------------------------------------------------------------ setters */
 
@@ -151,6 +155,8 @@ void kit_nv_create(kit_numview_t * nv, lv_obj_t * parent, const lv_font_t * font
     lv_label_set_text(nv->deg, "\xC2\xB0");
 }
 
+void kit_nv_set_unit(kit_numview_t * nv, const char * unit) { kit_set_text(nv->deg, unit); }
+
 void kit_nv_set_color(kit_numview_t * nv, lv_color_t c)
 {
     if(nv->color_set && kit_col_eq(nv->color, c)) return;
@@ -225,7 +231,7 @@ static uint16_t * bg_get(int gid)
     if(!s_bg_cache[gid]) {
         s_bg_cache[gid] = BREW_UI_ALLOC((size_t)KIT_DISP * KIT_DISP * 2);
         LV_ASSERT_MALLOC(s_bg_cache[gid]);
-        brew_bg_render(s_bg_cache[gid], KIT_DISP, KIT_DISP, &s_grad[s_gid_vs[gid]]);
+        brew_bg_render_glass(s_bg_cache[gid], KIT_DISP, KIT_DISP, &s_glass[s_gid_vs[gid]]);
     }
     return s_bg_cache[gid];
 }

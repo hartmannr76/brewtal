@@ -7,10 +7,11 @@
 
 #include "lvgl.h"
 
-LV_FONT_DECLARE(brew_font_num_big);   /* Inter 360 - home temperature digits    */
-LV_FONT_DECLARE(brew_font_num_hist);  /* Inter 360 - history temperature digits */
-LV_FONT_DECLARE(brew_font_deg_big);   /* Inter 450 - degree sign (home)         */
-LV_FONT_DECLARE(brew_font_deg_hist);  /* Inter 450 - degree sign (history)      */
+LV_FONT_DECLARE(brew_font_num_big);   /* Inter 200 - home temperature digits    */
+LV_FONT_DECLARE(brew_font_num_hist);  /* Inter 200 - history temperature digits */
+LV_FONT_DECLARE(brew_font_deg_big);   /* Inter 300 - unit, ° C F (home)         */
+LV_FONT_DECLARE(brew_font_deg_hist);  /* Inter 300 - unit, ° C F (history)      */
+LV_FONT_DECLARE(brew_font_caps);      /* Inter 600 - spaced caps (status pill)  */
 LV_FONT_DECLARE(brew_font_status);    /* Inter 450 - status line                */
 LV_FONT_DECLARE(brew_font_small);     /* Inter 450 - secondary text             */
 LV_FONT_DECLARE(brew_font_menu);      /* Inter 450 + icons - menu items         */

@@ -121,6 +121,13 @@ bool brew_model_waiting(const brew_model_t * m);
 void brew_model_status_text(const brew_model_t * m, char * buf, size_t n);
 /** "Pale ale · Day 4", or "Pale ale · Cold crash". */
 void brew_model_batch_text(const brew_model_t * m, char * buf, size_t n);
+/** The status as a short word for a pill: "COOLING", "HOLDING", "HEATING", "CRASHING", "PAUSED",
+ *  "COOLING IN 3 MIN" while held off, "SET TARGET" while adjusting. */
+void brew_model_pill_text(const brew_model_t * m, char * buf, size_t n);
+/** The line under the reading: "Target 66.0° · Pale ale · Day 4", or the adjust hint. */
+void brew_model_detail_text(const brew_model_t * m, char * buf, size_t n);
+/** The unit after a reading: "°F" or "°C". */
+const char * brew_model_unit(const brew_model_t * m);
 
 /* History: index i in 0..brew_model_hist_last() is sample i (oldest first), or the live
  * reading when i == hist_n. -1 = nothing to show yet. */

@@ -385,3 +385,37 @@ TEST(ui_model_200ms_history_scrubs_a_minute_per_step)
     brew_model_hist_time(&m, 1200 - 50, t, sizeof(t));   // 50 samples back = 10 s
     CHECK(std::strcmp(t, "10 s ago") == 0 || std::strchr(t, ':') != nullptr);
 }
+
+TEST(ui_model_pill_and_detail_texts)
+{
+    brew_model_t m;
+    brew_model_init(&m, nullptr);
+    char b[64];
+    auto pill = [&]() { brew_model_pill_text(&m, b, sizeof(b)); return std::string(b); };
+    auto detail = [&]() { brew_model_detail_text(&m, b, sizeof(b)); return std::string(b); };
+    brew_model_set_batch(&m, "Pale ale", 4);
+    brew_model_set_temp(&m, 68.0f);
+    brew_model_set_action(&m, BREW_ACTION_COOLING);
+    CHECK(pill() == "COOLING");
+    CHECK(detail() == "Target 66.0\xC2\xB0 \xC2\xB7 Pale ale \xC2\xB7 Day 4");
+    CHECK(std::string(brew_model_unit(&m)) == "\xC2\xB0" "F");
+    brew_model_set_action(&m, BREW_ACTION_IDLE);
+    CHECK(pill() == "HOLDING");
+    brew_model_set_pending(&m, BREW_ACTION_COOLING, 150);
+    CHECK(pill() == "COOLING IN 3 MIN");
+    brew_model_set_pending(&m, BREW_ACTION_IDLE, 0);
+    brew_model_set_action(&m, BREW_ACTION_HEATING);
+    CHECK(pill() == "HEATING");
+    brew_model_set_mode(&m, BREW_MODE_CRASH, false);
+    CHECK(pill() == "CRASHING");
+    CHECK(detail() == "Target 34.0\xC2\xB0 \xC2\xB7 Pale ale \xC2\xB7 Cold crash");
+    brew_model_set_mode(&m, BREW_MODE_CRASH, true);
+    CHECK(pill() == "PAUSED");
+    brew_model_set_mode(&m, BREW_MODE_FERMENT, false);
+    brew_model_encoder(&m, 1);                       // start adjusting the target
+    CHECK(m.setting);
+    CHECK(pill() == "SET TARGET");
+    CHECK(detail() == "Turn to adjust \xC2\xB7 press to set");
+    brew_model_set_units(&m, true);
+    CHECK(std::string(brew_model_unit(&m)) == "\xC2\xB0" "C");
+}

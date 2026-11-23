@@ -79,6 +79,76 @@ void brew_bg_render(uint16_t * buf, int w, int h, const brew_grad_t * g)
     }
 }
 
+static inline float chan(uint32_t c, int sh) { return (float)((c >> sh) & 0xFF); }
+
+void brew_bg_render_glass(uint16_t * buf, int w, int h, const brew_glass_t * g)
+{
+    const float gx = g->cx * (float)w, gy = g->cy * (float)h, gr = g->radius * (float)w;
+    const float vr = (float)(w < h ? w : h) * 0.5f;            /* vignette: 55%..100% of the half width */
+    const float shx = (float)w * 0.5f, shy = (float)h * 0.1875f;  /* sheen ellipse (mockup: 240,90 / 200x120) */
+    const float shrx = (float)w * 0.4167f, shry = (float)h * 0.25f;
+    for(int y = 0; y < h; y++) {
+        uint16_t * row = buf + (size_t)y * (size_t)w;
+        const float py = (float)y + 0.5f;
+        for(int x = 0; x < w; x++) {
+            const float px = (float)x + 0.5f;
+            float r = chan(g->base, 16), gg = chan(g->base, 8), b = chan(g->base, 0);
+
+            /* the state light: (s, strength) -> (deep, 0.45 strength) at 45% -> nothing */
+            const float dx = px - gx, dy = py - gy;
+            const float t = sqrtf(dx * dx + dy * dy) / gr;
+            if(t < 1.0f) {
+                float a, cr, cg, cb;
+                if(t < 0.45f) {
+                    const float f = t / 0.45f;
+                    a = g->strength * (1.0f - f) + g->strength * 0.45f * f;
+                    cr = chan(g->s, 16) + (chan(g->deep, 16) - chan(g->s, 16)) * f;
+                    cg = chan(g->s, 8) + (chan(g->deep, 8) - chan(g->s, 8)) * f;
+                    cb = chan(g->s, 0) + (chan(g->deep, 0) - chan(g->s, 0)) * f;
+                }
+                else {
+                    a = g->strength * 0.45f * (1.0f - (t - 0.45f) / 0.55f);
+                    cr = chan(g->deep, 16);
+                    cg = chan(g->deep, 8);
+                    cb = chan(g->deep, 0);
+                }
+                r += (cr - r) * a;
+                gg += (cg - gg) * a;
+                b += (cb - b) * a;
+            }
+
+            /* edge vignette */
+            const float ex = px - (float)w * 0.5f, ey = py - (float)h * 0.5f;
+            const float vt = (sqrtf(ex * ex + ey * ey) / vr - 0.55f) / 0.45f;
+            if(vt > 0.0f) {
+                const float k = 1.0f - 0.55f * clampf(vt, 0.0f, 1.0f);
+                r *= k;
+                gg *= k;
+                b *= k;
+            }
+
+            /* sheen: white 5% at the top, fading out by mid-height, inside an ellipse */
+            const float sx = (px - shx) / shrx, sy = (py - shy) / shry;
+            const float se = sx * sx + sy * sy;
+            if(se < 1.0f) {   /* soft rim: no visible ellipse edge */
+                const float a = 0.05f * clampf(1.0f - py / ((float)h * 0.5f), 0.0f, 1.0f) * (1.0f - se);
+                r += (255.0f - r) * a;
+                gg += (255.0f - gg) * a;
+                b += (255.0f - b) * a;
+            }
+
+            const float d = (float)s_bayer[y & 3][x & 3] / 16.0f;
+            int r5 = (int)((r + d * 8.0f) / 8.0f);
+            int g6 = (int)((gg + d * 4.0f) / 4.0f);
+            int b5 = (int)((b + d * 8.0f) / 8.0f);
+            if(r5 > 31) r5 = 31;
+            if(g6 > 63) g6 = 63;
+            if(b5 > 31) b5 = 31;
+            row[x] = (uint16_t)((r5 << 11) | (g6 << 5) | b5);
+        }
+    }
+}
+
 int brew_curve_sample(const brew_pt_t * P, int n, brew_pt_t * out, int out_max, int steps)
 {
     if(n <= 0 || out_max <= 0) return 0;

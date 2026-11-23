@@ -33,6 +33,19 @@ typedef struct {
 void brew_bg_render(uint16_t * buf, int w, int h, const brew_grad_t * g);
 
 /**
+ * "Smoked glass": a near-black face lit from (cx, cy) (fractions of w, h) by the state colour.
+ * The light fades from `s` at the centre through `deep` (at 45% of the radius) to nothing at
+ * `radius` (a fraction of w), scaled by `strength`. An edge vignette and a faint sheen at the
+ * top finish the glass. Dithered to RGB565 like brew_bg_render().
+ */
+typedef struct {
+    uint32_t base, s, deep;
+    float cx, cy, radius, strength;
+} brew_glass_t;
+
+void brew_bg_render_glass(uint16_t * buf, int w, int h, const brew_glass_t * g);
+
+/**
  * Turn a list of data points into a dense polyline using the same
  * Catmull-Rom -> cubic Bezier construction as the mockup.
  * Returns the number of points written to `out`.

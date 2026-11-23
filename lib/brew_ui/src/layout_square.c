@@ -238,6 +238,7 @@ static void refresh(bool animate)
         kit_nv_set_color(&U.big, white);
         kit_set_text(U.sub_lbl, "Up / down to adjust");
         brew_model_fmt_temp(M, t, sizeof(t), M->draft_f);
+        kit_nv_set_unit(&U.big, brew_model_unit(M));
         kit_nv_set(&U.big, t, animate);
     }
     else {
@@ -252,12 +253,14 @@ static void refresh(bool animate)
         brew_model_batch_text(M, s, sizeof(s));
         kit_set_text(U.sub_lbl, s);
         brew_model_fmt_temp(M, t, sizeof(t), M->temp_f);
+        kit_nv_set_unit(&U.big, brew_model_unit(M));
         kit_nv_set(&U.big, t, animate);
     }
 
     if(M->view == BREW_VIEW_HIST && brew_model_hist_last(M) >= 0) {
         brew_model_fmt_temp(M, t, sizeof(t), brew_model_hist_val(M, M->hist_idx));
         kit_nv_set(&U.hval, t, animate);
+        kit_nv_set_unit(&U.hval, brew_model_unit(M));
         kit_nv_set_color(&U.hval, vs == BREW_VS_COOL ? cool : white);
         brew_model_hist_time(M, M->hist_idx, s, sizeof(s));
         kit_set_text(U.htime, s);
@@ -369,7 +372,7 @@ static void square_create(lv_obj_t * screen, const brew_model_t * m)
     kit_breathe(U.st_dot);
     U.st_lbl = label(st_row, &brew_font_status, LV_OPA_COVER);
 
-    kit_nv_create(&U.big, U.v_home, &brew_font_num_big, &brew_font_deg_big, SQ(30), SQ(3));
+    kit_nv_create(&U.big, U.v_home, &brew_font_num_big, &brew_font_deg_big, SQ(38), SQ(7));
     lv_obj_set_pos(U.big.box, PAD - SQ(5), SQ(78));
 
     U.sub_lbl = label(U.v_home, &brew_font_small, 140);
@@ -450,7 +453,7 @@ static void square_create(lv_obj_t * screen, const brew_model_t * m)
     lv_obj_set_style_opa(U.v_hist, LV_OPA_TRANSP, 0);
     U.htime = label(U.v_hist, &brew_font_status, 200);
     lv_obj_set_pos(U.htime, PAD, SQ(30));
-    kit_nv_create(&U.hval, U.v_hist, &brew_font_num_hist, &brew_font_deg_hist, SQ(21), SQ(3));
+    kit_nv_create(&U.hval, U.v_hist, &brew_font_num_hist, &brew_font_deg_hist, SQ(28), SQ(5));
     lv_obj_set_pos(U.hval.box, PAD - SQ(4), SQ(72));
     U.hhint = label(U.v_hist, &brew_font_small, 140);
     lv_obj_set_pos(U.hhint, PAD, SQ(190));

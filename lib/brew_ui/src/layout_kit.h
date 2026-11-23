@@ -49,8 +49,10 @@ extern "C" {
 #define KIT_DISP      BREW_UI_DISP_SIZE
 #define KIT_COOL_TEXT 0x7cd4ff    /* cooling status text and big digits */
 
-/** Line / accent colour per visual state (graph, ring, gauge). */
+/** Line / accent colour per visual state (graph, ring, gauge, tinted numerals): the harness's --s-hi. */
 extern const uint32_t kit_line[BREW_VS_N];
+/** The state colour itself (the harness's --s): pill fill, the light behind the glass. */
+extern const uint32_t kit_base[BREW_VS_N];
 
 /* ---- change-guarded setters --------------------------------------------------------------
  * LVGL invalidates (and re-renders) an object's whole area on every style/text set, even
@@ -92,9 +94,11 @@ typedef struct {
 void kit_nv_create(kit_numview_t * nv, lv_obj_t * parent, const lv_font_t * font, const lv_font_t * deg_font,
                    int32_t deg_dy, int32_t deg_pad);
 void kit_nv_set_color(kit_numview_t * nv, lv_color_t c);
+/** The text after the digits (default "°"), e.g. "°F". */
+void kit_nv_set_unit(kit_numview_t * nv, const char * unit);
 void kit_nv_set(kit_numview_t * nv, const char * str, bool animate);
 
-/* ---- background: the dithered radial gradient per state, cross-faded on change ---------- */
+/* ---- background: the smoked-glass face per state (brew_bg_render_glass), cross-faded ---- */
 typedef struct {
     lv_obj_t * bg[2];
     int front;

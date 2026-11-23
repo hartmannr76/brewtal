@@ -1,15 +1,18 @@
 /**
- * layout_round.c - the round dial layout (LVGL 9.3): the original BrewDial look.
+ * layout_round.c - the round dial layout (LVGL 9.3), "smoked glass": a near-black face lit by
+ * the state colour, a status pill, thin tinted numerals and a glowing setpoint ring.
  *
  * Draws a brew_model_t (brew_model.h); owns no state of its own except presentation state
  * (objects, animations, the rendered graph). Selected through brew_layout_round.
  *
  * Layer stack (bottom -> top):
- *   bg[0], bg[1]   RGB565 canvases, dithered radial gradient; cross-faded on state change
+ *   bg[0], bg[1]   RGB565 canvases, smoked glass lit by the state colour; cross-faded on change
  *   graph          ARGB8888 canvas with the history line, in the model's graph style (dimmable)
  *   halo, dot      "now"/scrub marker on the curve
- *   ticks          lv_scale, only visible while adjusting
- *   arc, knob      setpoint ring
+ *   ticks5         lv_scale, a tick every 5 degrees (brighter every 10)
+ *   ticks          lv_scale, every degree, only visible while adjusting
+ *   arc_glow, arc, knob   setpoint ring: hairline track, glowing arc from the scale's start to
+ *                  the target, a white knob with a glow
  *   v_home / v_menu / v_hist   content views, cross-faded
  *
  * Geometry is authored in the mockup's units and scaled:
@@ -46,13 +49,16 @@ static struct {
     kit_bg_t bg;
     kit_graph_t g;
 
+    lv_obj_t * ticks5;
     lv_obj_t * ticks;
+    lv_obj_t * arc_glow;
     lv_obj_t * arc;
     lv_obj_t * knob;
 
     lv_obj_t * v_home;
     lv_obj_t * v_menu;
     lv_obj_t * v_hist;
+    lv_obj_t * pill;
     lv_obj_t * st_dot;
     lv_obj_t * st_lbl;
     lv_obj_t * sub_lbl;
@@ -96,15 +102,16 @@ static void graph_timer_cb(lv_timer_t * t)
 static void update_ring(void)
 {
     const float target = M->setting ? M->draft_f : M->sp_f[M->mode];
-    const float a = frac_t(M->temp_f), b = frac_t(target);
-    const float lo = a < b ? a : b, hi = a < b ? b : a;
-    lv_arc_set_angles(U.arc, norm_deg(A0 + SWEEP * lo), norm_deg(A0 + SWEEP * hi + 0.6f));
+    const float b = frac_t(target);
+    const lv_value_precise_t a0 = (lv_value_precise_t)A0, a1 = (lv_value_precise_t)norm_deg(A0 + SWEEP * b + 0.6f);
+    lv_arc_set_angles(U.arc, a0, a1);
+    lv_arc_set_angles(U.arc_glow, a0, a1);
     const lv_color_t ac = lv_color_hex(kit_line[brew_model_vstate(M)]);
-    if(!kit_col_eq(lv_obj_get_style_arc_color(U.arc, LV_PART_INDICATOR), ac))
+    if(!kit_col_eq(lv_obj_get_style_arc_color(U.arc, LV_PART_INDICATOR), ac)) {
         lv_obj_set_style_arc_color(U.arc, ac, LV_PART_INDICATOR);
-    const lv_opa_t ao = M->setting ? LV_OPA_COVER : 179;
-    if(lv_obj_get_style_arc_opa(U.arc, LV_PART_INDICATOR) != ao)
-        lv_obj_set_style_arc_opa(U.arc, ao, LV_PART_INDICATOR);
+        lv_obj_set_style_arc_color(U.arc_glow, ac, LV_PART_INDICATOR);
+        lv_obj_set_style_shadow_color(U.knob, ac, 0);
+    }
 
     const float ang = (A0 + SWEEP * b) * 3.14159265f / 180.0f;
     const int32_t ks = lv_obj_get_width(U.knob);
@@ -126,6 +133,8 @@ static void update_visibility(void)
     kit_set_hidden(U.v_hist, M->view != BREW_VIEW_HIST && lv_obj_get_style_opa(U.v_hist, 0) == 0 && !lv_anim_get(U.v_hist, kit_opa_exec));
 
     kit_fade_to(U.arc, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
+    kit_fade_to(U.arc_glow, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
+    kit_fade_to(U.ticks5, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
     kit_fade_to(U.knob, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
     kit_fade_to(U.ticks, home && M->setting ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
 
@@ -203,38 +212,31 @@ static void refresh(bool animate)
 
     char t[24], s[48];
     const lv_color_t white = lv_color_white();
-    const lv_color_t cool = lv_color_hex(KIT_COOL_TEXT);
+    const lv_color_t hi = lv_color_hex(kit_line[vs]);
+    /* the pill: the state colour at 14% with a 35% hairline; white while adjusting */
+    const lv_color_t pill = M->setting ? white : lv_color_hex(kit_base[vs]);
+    const lv_color_t ink = M->setting ? white : hi;
+    kit_set_bg_color(U.pill, pill);
+    if(lv_obj_get_style_bg_opa(U.pill, 0) != (M->setting ? 20 : 36)) lv_obj_set_style_bg_opa(U.pill, M->setting ? 20 : 36, 0);
+    if(!kit_col_eq(lv_obj_get_style_border_color(U.pill, 0), ink)) lv_obj_set_style_border_color(U.pill, ink, 0);
+    brew_model_pill_text(M, s, sizeof(s));
+    kit_set_text(U.st_lbl, s);
+    kit_set_text_color(U.st_lbl, ink);
+    kit_set_bg_color(U.st_dot, ink);
+    kit_set_hidden(U.st_dot, M->setting);
 
-    if(M->setting) {
-        kit_set_text(U.st_lbl, "Target");
-        kit_set_text_color(U.st_lbl, white);
-        kit_set_text_opa(U.st_lbl, 179);
-        kit_set_hidden(U.st_dot, true);
-        kit_nv_set_color(&U.big, white);
-        kit_set_text(U.sub_lbl, "Turn to adjust \xC2\xB7 press to set");
-        brew_model_fmt_temp(M, t, sizeof(t), M->draft_f);
-        kit_nv_set(&U.big, t, animate);
-    }
-    else {
-        brew_model_status_text(M, s, sizeof(s));
-        kit_set_text(U.st_lbl, s);
-        const bool is_cool = vs == BREW_VS_COOL;
-        kit_set_text_color(U.st_lbl, is_cool ? cool : white);
-        kit_set_text_opa(U.st_lbl, is_cool ? LV_OPA_COVER : 224);
-        kit_set_bg_color(U.st_dot, is_cool ? cool : white);
-        kit_set_hidden(U.st_dot, vs == BREW_VS_IDLE || vs == BREW_VS_PAUSE);
-        kit_nv_set_color(&U.big, is_cool ? cool : white);
-
-        brew_model_batch_text(M, s, sizeof(s));
-        kit_set_text(U.sub_lbl, s);
-        brew_model_fmt_temp(M, t, sizeof(t), M->temp_f);
-        kit_nv_set(&U.big, t, animate);
-    }
+    kit_nv_set_color(&U.big, M->setting ? white : hi);
+    kit_nv_set_unit(&U.big, brew_model_unit(M));
+    brew_model_detail_text(M, s, sizeof(s));
+    kit_set_text(U.sub_lbl, s);
+    brew_model_fmt_temp(M, t, sizeof(t), M->setting ? M->draft_f : M->temp_f);
+    kit_nv_set(&U.big, t, animate);
 
     if(M->view == BREW_VIEW_HIST && brew_model_hist_last(M) >= 0) {
         brew_model_fmt_temp(M, t, sizeof(t), brew_model_hist_val(M, M->hist_idx));
         kit_nv_set(&U.hval, t, animate);
-        kit_nv_set_color(&U.hval, vs == BREW_VS_COOL ? cool : white);
+        kit_nv_set_color(&U.hval, hi);
+        kit_nv_set_unit(&U.hval, brew_model_unit(M));
         brew_model_hist_time(M, M->hist_idx, s, sizeof(s));
         kit_set_text(U.htime, s);
         char w[32];
@@ -304,6 +306,30 @@ static void round_create(lv_obj_t * screen, const brew_model_t * m)
     U.g.clip_r = (float)DISP / 2.0f - DS(2);
     kit_graph_create(&U.g, U.root);
 
+    /* a tick every 5 degrees, brighter every 10, just inside the ring */
+    const int32_t t5_d = (int32_t)lroundf((RING_R - DS(3.5f)) * 2.0f);
+    U.ticks5 = lv_scale_create(U.root);
+    lv_obj_remove_style_all(U.ticks5);
+    lv_obj_set_size(U.ticks5, t5_d, t5_d);
+    lv_obj_center(U.ticks5);
+    lv_scale_set_mode(U.ticks5, LV_SCALE_MODE_ROUND_INNER);
+    lv_scale_set_range(U.ticks5, (int32_t)BREW_T_MIN, (int32_t)BREW_T_MAX);
+    lv_scale_set_total_tick_count(U.ticks5, (uint32_t)((BREW_T_MAX - BREW_T_MIN) / 5.0f) + 1);
+    lv_scale_set_major_tick_every(U.ticks5, 2);
+    lv_scale_set_label_show(U.ticks5, false);
+    lv_scale_set_angle_range(U.ticks5, (uint32_t)SWEEP);
+    lv_scale_set_rotation(U.ticks5, (int32_t)A0);
+    lv_obj_set_style_arc_width(U.ticks5, 0, LV_PART_MAIN);
+    lv_obj_set_style_line_color(U.ticks5, lv_color_white(), LV_PART_ITEMS);
+    lv_obj_set_style_line_opa(U.ticks5, 26, LV_PART_ITEMS);
+    lv_obj_set_style_line_width(U.ticks5, (int32_t)lroundf(DS(0.75f)), LV_PART_ITEMS);
+    lv_obj_set_style_length(U.ticks5, (int32_t)lroundf(DS(2.5f)), LV_PART_ITEMS);
+    lv_obj_set_style_line_color(U.ticks5, lv_color_white(), LV_PART_INDICATOR);
+    lv_obj_set_style_line_opa(U.ticks5, 56, LV_PART_INDICATOR);
+    lv_obj_set_style_line_width(U.ticks5, (int32_t)lroundf(DS(0.75f)), LV_PART_INDICATOR);
+    lv_obj_set_style_length(U.ticks5, (int32_t)lroundf(DS(2.5f)), LV_PART_INDICATOR);
+    lv_obj_remove_flag(U.ticks5, LV_OBJ_FLAG_CLICKABLE);
+
     /* ticks (only while adjusting) */
     const int32_t tick_d = (int32_t)lroundf(DS(107) * 2.0f);
     U.ticks = lv_scale_create(U.root);
@@ -331,9 +357,22 @@ static void round_create(lv_obj_t * screen, const brew_model_t * m)
     lv_obj_set_style_opa(U.ticks, LV_OPA_TRANSP, 0);
     lv_obj_remove_flag(U.ticks, LV_OBJ_FLAG_CLICKABLE);
 
-    /* setpoint ring */
-    const int32_t ring_w = (int32_t)lroundf(DS(3));
+    /* setpoint ring: a soft glow (a wide faint arc) under a hairline arc */
+    const int32_t ring_w = (int32_t)lroundf(DS(1.6f));
+    const int32_t glow_w = (int32_t)lroundf(DS(6));
     const int32_t ring_d = (int32_t)lroundf(RING_R * 2.0f) + ring_w;
+    U.arc_glow = lv_arc_create(U.root);
+    lv_obj_remove_style_all(U.arc_glow);
+    lv_obj_set_size(U.arc_glow, ring_d - ring_w + glow_w, ring_d - ring_w + glow_w);
+    lv_obj_center(U.arc_glow);
+    lv_arc_set_rotation(U.arc_glow, 0);
+    lv_arc_set_bg_angles(U.arc_glow, 0, 0);
+    lv_obj_set_style_arc_width(U.arc_glow, 0, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(U.arc_glow, glow_w, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_opa(U.arc_glow, 38, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_rounded(U.arc_glow, true, LV_PART_INDICATOR);
+    lv_obj_remove_flag(U.arc_glow, LV_OBJ_FLAG_CLICKABLE);
+
     U.arc = lv_arc_create(U.root);
     lv_obj_remove_style_all(U.arc);
     lv_obj_set_size(U.arc, ring_d, ring_d);
@@ -342,39 +381,49 @@ static void round_create(lv_obj_t * screen, const brew_model_t * m)
     lv_arc_set_bg_angles(U.arc, (lv_value_precise_t)A0, (lv_value_precise_t)norm_deg(A0 + SWEEP));
     lv_obj_set_style_arc_width(U.arc, ring_w, LV_PART_MAIN);
     lv_obj_set_style_arc_color(U.arc, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_arc_opa(U.arc, 26, LV_PART_MAIN);
+    lv_obj_set_style_arc_opa(U.arc, 20, LV_PART_MAIN);
     lv_obj_set_style_arc_rounded(U.arc, true, LV_PART_MAIN);
     lv_obj_set_style_arc_width(U.arc, ring_w, LV_PART_INDICATOR);
     lv_obj_set_style_arc_rounded(U.arc, true, LV_PART_INDICATOR);
     lv_obj_remove_flag(U.arc, LV_OBJ_FLAG_CLICKABLE);
 
     U.knob = kit_plain(U.root);
-    lv_obj_set_size(U.knob, (int32_t)lroundf(DS(10)), (int32_t)lroundf(DS(10)));
+    lv_obj_set_size(U.knob, (int32_t)lroundf(DS(8)), (int32_t)lroundf(DS(8)));
     lv_obj_set_style_radius(U.knob, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(U.knob, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(U.knob, LV_OPA_COVER, 0);
+    lv_obj_set_style_shadow_width(U.knob, (int32_t)lroundf(DS(7)), 0);
+    lv_obj_set_style_shadow_opa(U.knob, 200, 0);
 
     /* ---- home view ---- */
     U.v_home = make_view(U.root, DC(62), DC(10));
-    lv_obj_t * st_row = kit_plain(U.v_home);
-    lv_obj_set_size(st_row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_set_flex_flow(st_row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(st_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(st_row, DC(7), 0);
-    U.st_dot = kit_plain(st_row);
-    lv_obj_set_size(U.st_dot, DC(6), DC(6));
+    /* status pill: "● COOLING" in spaced caps */
+    U.pill = kit_plain(U.v_home);
+    lv_obj_set_size(U.pill, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(U.pill, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(U.pill, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_radius(U.pill, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(U.pill, 36, 0);
+    lv_obj_set_style_border_width(U.pill, 1, 0);
+    lv_obj_set_style_border_opa(U.pill, 90, 0);
+    lv_obj_set_style_pad_left(U.pill, (int32_t)lroundf(DS(8)), 0);
+    lv_obj_set_style_pad_right(U.pill, (int32_t)lroundf(DS(9)), 0);
+    lv_obj_set_style_pad_ver(U.pill, (int32_t)lroundf(DS(4.5f)), 0);
+    lv_obj_set_style_pad_column(U.pill, (int32_t)lroundf(DS(4)), 0);
+    U.st_dot = kit_plain(U.pill);
+    lv_obj_set_size(U.st_dot, (int32_t)lroundf(DS(4)), (int32_t)lroundf(DS(4)));
     lv_obj_set_style_radius(U.st_dot, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_opa(U.st_dot, LV_OPA_COVER, 0);
     kit_breathe(U.st_dot);
-    U.st_lbl = lv_label_create(st_row);
-    lv_obj_set_style_text_font(U.st_lbl, &brew_font_status, 0);
+    U.st_lbl = lv_label_create(U.pill);
+    lv_obj_set_style_text_font(U.st_lbl, &brew_font_caps, 0);
+    lv_obj_set_style_text_letter_space(U.st_lbl, (int32_t)lroundf(DS(1.6f)), 0);
 
-    kit_nv_create(&U.big, U.v_home, &brew_font_num_big, &brew_font_deg_big, DC(17), DC(2));
+    kit_nv_create(&U.big, U.v_home, &brew_font_num_big, &brew_font_deg_big, DC(22), DC(4));
 
     U.sub_lbl = lv_label_create(U.v_home);
     lv_obj_set_style_text_font(U.sub_lbl, &brew_font_small, 0);
-    lv_obj_set_style_text_color(U.sub_lbl, lv_color_white(), 0);
-    lv_obj_set_style_text_opa(U.sub_lbl, 140, 0);
+    lv_obj_set_style_text_color(U.sub_lbl, lv_color_hex(0xa9b3bd), 0);
 
     /* ---- menu view ---- */
     U.v_menu = kit_plain(U.root);
@@ -406,7 +455,7 @@ static void round_create(lv_obj_t * screen, const brew_model_t * m)
     lv_obj_set_style_text_font(U.htime, &brew_font_small, 0);
     lv_obj_set_style_text_color(U.htime, lv_color_white(), 0);
     lv_obj_set_style_text_opa(U.htime, 140, 0);
-    kit_nv_create(&U.hval, U.v_hist, &brew_font_num_hist, &brew_font_deg_hist, DC(12), DC(2));
+    kit_nv_create(&U.hval, U.v_hist, &brew_font_num_hist, &brew_font_deg_hist, DC(16), DC(3));
     U.hhint = lv_label_create(U.v_hist);   /* text set in refresh(): the window comes from the model */
     lv_obj_set_style_text_font(U.hhint, &brew_font_small, 0);
     lv_obj_set_style_text_color(U.hhint, lv_color_white(), 0);

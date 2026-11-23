@@ -87,6 +87,43 @@ void brew_model_batch_text(const brew_model_t * m, char * buf, size_t n)
     else snprintf(buf, n, "%s%sDay %d", m->batch, sep, m->day);
 }
 
+void brew_model_pill_text(const brew_model_t * m, char * buf, size_t n)
+{
+    if(m->setting) {
+        snprintf(buf, n, "SET TARGET");
+        return;
+    }
+    const brew_vstate_t vs = brew_model_vstate(m);
+    if(brew_model_waiting(m) && (vs == BREW_VS_IDLE || vs == BREW_VS_CRASH)) {
+        const char * what = m->wanted == BREW_ACTION_HEATING ? "HEATING"
+                            : vs == BREW_VS_CRASH            ? "CRASHING"
+                                                             : "COOLING";
+        snprintf(buf, n, "%s IN %d MIN", what, m->wait_min);
+        return;
+    }
+    switch(vs) {
+        case BREW_VS_COOL:  snprintf(buf, n, "COOLING"); break;
+        case BREW_VS_IDLE:  snprintf(buf, n, "HOLDING"); break;
+        case BREW_VS_HEAT:  snprintf(buf, n, "HEATING"); break;
+        case BREW_VS_CRASH: snprintf(buf, n, "CRASHING"); break;
+        default:            snprintf(buf, n, "PAUSED"); break;
+    }
+}
+
+void brew_model_detail_text(const brew_model_t * m, char * buf, size_t n)
+{
+    if(m->setting) {
+        snprintf(buf, n, "Turn to adjust \xC2\xB7 press to set");
+        return;
+    }
+    char t[16], b[48];
+    brew_model_fmt_temp(m, t, sizeof(t), m->sp_f[m->mode]);
+    brew_model_batch_text(m, b, sizeof(b));
+    snprintf(buf, n, "Target %s\xC2\xB0 \xC2\xB7 %s", t, b);
+}
+
+const char * brew_model_unit(const brew_model_t * m) { return m->celsius ? "\xC2\xB0" "C" : "\xC2\xB0" "F"; }
+
 int brew_model_hist_last(const brew_model_t * m) { return m->temp_known ? m->hist_n : m->hist_n - 1; }
 
 float brew_model_hist_val(const brew_model_t * m, int i) { return i < m->hist_n ? m->hist[i] : m->temp_f; }

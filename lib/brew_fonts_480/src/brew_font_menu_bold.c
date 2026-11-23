@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 33 px
  * Bpp: 4
- * Opts: --no-compress --bpp 4 --format lvgl --lv-include lvgl.h --size 33 --font Inter-560.ttf -r 0x20-0x7E,0xB0,0xB7 --font node_modules/@tabler/icons-webfont/dist/fonts/tabler-icons.ttf -r 0xefa1,0xec0b,0xed45,0xed46,0xea5c,0xeb38 --lv-font-name brew_font_menu_bold -o /home/claude/brewdial/src/fonts/480/brew_font_menu_bold.c
+ * Opts: --no-compress --bpp 4 --format lvgl --lv-include lvgl.h --size 33 --font Inter-560.ttf -r 0x20-0x7E,0xB0,0xB7 --font node_modules/@tabler/icons-webfont/dist/fonts/tabler-icons.ttf -r 0xefa1,0xec0b,0xed45,0xed46,0xea5c,0xeb38 --lv-font-name brew_font_menu_bold -o C:/Users/hartm/Downloads/brewdial/brewdial/lib/brew_fonts_480/src/brew_font_menu_bold.c
  ******************************************************************************/
 
 #ifdef LV_LVGL_H_INCLUDE_SIMPLE
