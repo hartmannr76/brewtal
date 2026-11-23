@@ -181,6 +181,7 @@ void brew_model_menu_label(const brew_model_t * m, int i, char * buf, size_t n)
         case BREW_MENU_PAUSE:   snprintf(buf, n, "%s", m->paused ? "Resume" : "Pause"); break;
         case BREW_MENU_HISTORY: snprintf(buf, n, "History"); break;
         case BREW_MENU_UNITS:   snprintf(buf, n, "Units \xC2\xB7 \xC2\xB0%c", m->celsius ? 'C' : 'F'); break;
+        case BREW_MENU_RESET_DAY: snprintf(buf, n, "Reset day count"); break;
         default:                if(n) buf[0] = 0; break;
     }
 }
@@ -203,6 +204,7 @@ const char * brew_model_press_hint(const brew_model_t * m)
                 case BREW_MENU_PAUSE:   return m->paused ? "Resume" : "Pause";
                 case BREW_MENU_HISTORY: return "Open";
                 case BREW_MENU_UNITS:   return "Switch";
+                case BREW_MENU_RESET_DAY: return "Reset";
             }
             break;
     }
@@ -403,6 +405,10 @@ uint32_t brew_model_press(brew_model_t * m)
                     m->celsius = !m->celsius;
                     if(m->cbs.on_units) m->cbs.on_units(m->celsius, m->cbs.user);
                     return BREW_CH_REFRESH;
+                case BREW_MENU_RESET_DAY:
+                    m->day = 1;   /* the controller confirms in its next State */
+                    if(m->cbs.on_reset_day) m->cbs.on_reset_day(m->cbs.user);
+                    return BREW_CH_REFRESH | set_view(m, BREW_VIEW_HOME);
             }
             break;
     }

@@ -108,7 +108,6 @@ int main(int, char **)
     HysteresisLaw law(ChamberDefaults::kHeatDiffF * 5.0f / 9.0f, ChamberDefaults::kCoolDiffF * 5.0f / 9.0f);
     OutputGuard guard(&plant.heat(), &plant.cool(), ChamberDefaults::guard());
     Controller::Config cc;
-    cc.day = 4;
     Controller ctl(bus, plant, law, guard, nullptr, cc);
     ctl.begin(lv_tick_get());
 

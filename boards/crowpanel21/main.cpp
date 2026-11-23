@@ -102,8 +102,6 @@ Controller::Config controllerConfig()
     Controller::Config c;
     c.period_ms = CONTROL_PERIOD_MS;
     c.history_period_ms = HISTORY_PERIOD_MS;
-    c.batch = "Pale ale";
-    c.day = 4;
     return c;
 }
 Controller controller(bus, sensor, law, guard, &settings, controllerConfig());

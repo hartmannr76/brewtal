@@ -115,7 +115,7 @@ DecodeResult decodeCommand(Reader & r, Command & c)
     c = Command{};
     const uint8_t kind = r.u8();
     if(kind < static_cast<uint8_t>(Command::Kind::SetSetpoint) ||
-       kind > static_cast<uint8_t>(Command::Kind::RequestSync))
+       kind > static_cast<uint8_t>(Command::Kind::StartDayCount))
         return DecodeResult::BadPayload;
     c.kind = static_cast<Command::Kind>(kind);
     const uint8_t mode = r.u8();

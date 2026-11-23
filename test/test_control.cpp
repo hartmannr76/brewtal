@@ -211,6 +211,72 @@ TEST(controller_commands_persist_and_reevaluate)
     CHECK_NEAR(c_to_f(port2.last.setpoint_c[0]), 70.0, 0.01);
 }
 
+/* Advances a controller in 1 s ticks: the day count only needs seconds. */
+static void run_s(Controller & ctl, uint32_t & now, uint32_t seconds)
+{
+    for(uint32_t i = 0; i < seconds; i++) ctl.tick(now += 1000);
+}
+
+TEST(controller_manual_day_count_survives_restarts_and_resets)
+{
+    CapturePort port;
+    FakeSensor s;
+    s.set(f_to_c(66.0f));
+    DeadbandLaw law(0.3f * 5.0f / 9.0f);
+    FakeOut h, c;
+    OutputGuard guard(&h, &c, {});
+    MemStore store;
+    Controller::Config cfg;
+    cfg.clock_save_s = 600;
+    constexpr uint32_t kDay = 24u * 3600u;
+
+    uint32_t now = 0;
+    Controller ctl(port, s, law, guard, &store, cfg);
+    ctl.begin(now);
+    ctl.tick(now);
+    CHECK_EQ(std::string(port.last.batch), std::string("Manual"));
+    CHECK_EQ(port.last.day, static_cast<uint16_t>(1));    // first start: Day 1 begins now
+    CHECK_EQ(store.i["day0_s"], 0);
+
+    run_s(ctl, now, kDay - 1);
+    CHECK_EQ(port.last.day, static_cast<uint16_t>(1));
+    run_s(ctl, now, 2);
+    CHECK_EQ(port.last.day, static_cast<uint16_t>(2));
+    run_s(ctl, now, 3 * kDay);
+    CHECK_EQ(port.last.day, static_cast<uint16_t>(5));
+    /* the clock is saved every 10 min, so a power cut loses at most that */
+    const int32_t saved = store.i["clk_s"];
+    CHECK(static_cast<uint32_t>(saved) <= ctl.clockS() && ctl.clockS() - static_cast<uint32_t>(saved) < 600u);
+
+    /* power cut: a new controller (uptime restarts at 0) picks up the saved clock and day */
+    CapturePort port2;
+    uint32_t now2 = 0;
+    Controller ctl2(port2, s, law, guard, &store, cfg);
+    ctl2.begin(now2);
+    ctl2.tick(now2);
+    CHECK_EQ(port2.last.day, static_cast<uint16_t>(5));
+    CHECK_EQ(ctl2.dayStartS(), 0u);
+
+    /* reset: Day 1 starts now, and that's saved too */
+    run_s(ctl2, now2, 2 * kDay);
+    CHECK_EQ(port2.last.day, static_cast<uint16_t>(7));
+    port2.in.push(Command::startDayCount());
+    ctl2.tick(now2 += 20);
+    CHECK_EQ(port2.last.day, static_cast<uint16_t>(1));
+    CHECK_EQ(static_cast<uint32_t>(store.i["day0_s"]), ctl2.clockS());
+    run_s(ctl2, now2, kDay);
+    CHECK_EQ(port2.last.day, static_cast<uint16_t>(2));
+
+    /* ticks keep counting across the 49-day millis wrap */
+    CapturePort port3;
+    uint32_t now3 = 0xFFFFFFFFu - 1500u;
+    Controller ctl3(port3, s, law, guard, &store, cfg);
+    ctl3.begin(now3);
+    const uint32_t c0 = ctl3.clockS();
+    run_s(ctl3, now3, 5);
+    CHECK_EQ(ctl3.clockS() - c0, 5u);
+}
+
 TEST(controller_publishes_what_it_wants_while_the_guard_holds_it_off)
 {
     CapturePort port;

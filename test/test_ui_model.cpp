@@ -9,7 +9,7 @@
 namespace {
 
 struct Calls {
-    int setpoints = 0, modes = 0, units = 0;
+    int setpoints = 0, modes = 0, units = 0, day_resets = 0;
     brew_mode_t mode = BREW_MODE_FERMENT;
     float temp_f = 0;
     bool paused = false, celsius = false;
@@ -36,6 +36,7 @@ brew_ui_cbs_t cbs_for(Calls & c)
         k.units++;
         k.celsius = c;
     };
+    cbs.on_reset_day = [](void * u) { static_cast<Calls *>(u)->day_resets++; };
     return cbs;
 }
 
@@ -155,6 +156,18 @@ TEST(ui_model_menu_navigation_and_choices)
     CHECK(ch & BREW_CH_REFRESH);
     brew_model_menu_label(&m, BREW_MENU_UNITS, label, sizeof(label));
     CHECK(std::strcmp(label, "Units \xC2\xB7 \xC2\xB0" "C") == 0);
+
+    /* reset day count: last item; Day 1 shows straight away and the controller is told */
+    brew_model_set_batch(&m, "Manual", 6);
+    brew_model_encoder(&m, 99);
+    CHECK_EQ(m.menu_idx, static_cast<int>(BREW_MENU_RESET_DAY));
+    brew_model_menu_label(&m, BREW_MENU_RESET_DAY, label, sizeof(label));
+    CHECK(std::strcmp(label, "Reset day count") == 0);
+    ch = brew_model_press(&m);
+    CHECK_EQ(c.day_resets, 1);
+    CHECK_EQ(m.day, 1);
+    CHECK(m.view == BREW_VIEW_HOME);
+    CHECK(ch & BREW_CH_REFRESH);
 }
 
 TEST(ui_model_status_follows_the_action)
@@ -338,9 +351,11 @@ TEST(ui_model_key_hints_say_what_the_keys_do)
     CHECK(hint() == "Open");
     brew_model_encoder(&m, 1);
     CHECK(hint() == "Switch");
+    brew_model_encoder(&m, 1);
+    CHECK(hint() == "Reset");                    // Reset day count, the last item
     CHECK(!brew_model_can_step(&m, 1));
 
-    brew_model_encoder(&m, -1);
+    brew_model_encoder(&m, -2);
     brew_model_press(&m);                        // History
     CHECK(m.view == BREW_VIEW_HIST);
     CHECK(hint() == "Back");

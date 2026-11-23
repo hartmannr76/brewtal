@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 94 px
  * Bpp: 4
- * Opts: --no-compress --bpp 4 --format lvgl --lv-include lvgl.h --size 94 --font Inter-200.ttf -r 0x2D-0x2E,0x30-0x39 --lv-font-name brew_font_num_big -o C:/Users/hartm/Downloads/brewdial/brewdial/lib/brew_fonts_360/src/brew_font_num_big.c
+ * Opts: --no-compress --bpp 4 --format lvgl --lv-include lvgl.h --size 94 --font Inter-200.ttf -r 0x2D-0x2E,0x30-0x39 --lv-font-name brew_font_num_big -o C:/Users/hartm/Downloads/brewdial/brewdial/lib/fonts/360/src/brew_font_num_big.c
  ******************************************************************************/
 
 #ifdef LV_LVGL_H_INCLUDE_SIMPLE

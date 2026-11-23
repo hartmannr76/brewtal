@@ -134,7 +134,8 @@ static void update_rail(void)
 
 static void update_menu_items(void)
 {
-    static const char * icons[BREW_MENU_N] = { BREW_ICON_BEER, BREW_ICON_SNOWFLAKE, BREW_ICON_PAUSE, BREW_ICON_CHART, BREW_ICON_TEMP };
+    static const char * icons[BREW_MENU_N] = { BREW_ICON_BEER, BREW_ICON_SNOWFLAKE, BREW_ICON_PAUSE, BREW_ICON_CHART, BREW_ICON_TEMP,
+                                                 BREW_ICON_CALENDAR };
     char text[32];
     for(int i = 0; i < BREW_MENU_N; i++) {
         kit_set_text(U.item_ico[i], i == BREW_MENU_PAUSE && M->paused ? BREW_ICON_PLAY : icons[i]);

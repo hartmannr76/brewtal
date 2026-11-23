@@ -85,7 +85,7 @@ int main(void)
     lv_display_set_flush_cb(d, flush_cb);
 
     brew_ui_create(lv_screen_active(), NULL);
-    brew_ui_set_batch("Pale ale", 4);
+    brew_ui_set_batch("Manual", 6);
     brew_ui_set_setpoints(66, 34);
     float h[48];
     for(int i = 0; i < 48; i++) h[i] = 66 + 2.4f * (1 - i / 47.0f) + 0.5f * sinf(i * 0.4f);

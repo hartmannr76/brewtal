@@ -35,7 +35,9 @@ typedef enum { BREW_VS_COOL, BREW_VS_IDLE, BREW_VS_HEAT, BREW_VS_CRASH, BREW_VS_
 typedef enum { BREW_VIEW_HOME, BREW_VIEW_MENU, BREW_VIEW_HIST } brew_view_t;
 
 typedef enum {
-    BREW_MENU_FERMENT, BREW_MENU_CRASH, BREW_MENU_PAUSE, BREW_MENU_HISTORY, BREW_MENU_UNITS, BREW_MENU_N
+    BREW_MENU_FERMENT, BREW_MENU_CRASH, BREW_MENU_PAUSE, BREW_MENU_HISTORY, BREW_MENU_UNITS,
+    BREW_MENU_RESET_DAY,   /* last: the one item that can't be undone is the hardest to land on */
+    BREW_MENU_N
 } brew_menu_item_t;
 
 /* What changed (returned by every mutating call). */
@@ -119,12 +121,12 @@ bool brew_model_waiting(const brew_model_t * m);
 /** "Cooling to 66°", "Holding at 66°", "Heating to 66°", "Crashing to 34°", "Paused";
  * while waiting: "Cooling in 4 min", "Heating in 9 min", "Crashing in 4 min". */
 void brew_model_status_text(const brew_model_t * m, char * buf, size_t n);
-/** "Pale ale · Day 4", or "Pale ale · Cold crash". */
+/** "Manual · Day 4", or "Manual · Cold crash". */
 void brew_model_batch_text(const brew_model_t * m, char * buf, size_t n);
 /** The status as a short word for a pill: "COOLING", "HOLDING", "HEATING", "CRASHING", "PAUSED",
  *  "COOLING IN 3 MIN" while held off, "SET TARGET" while adjusting. */
 void brew_model_pill_text(const brew_model_t * m, char * buf, size_t n);
-/** The line under the reading: "Target 66.0° · Pale ale · Day 4", or the adjust hint. */
+/** The line under the reading: "Target 66.0° · Manual · Day 4", or the adjust hint. */
 void brew_model_detail_text(const brew_model_t * m, char * buf, size_t n);
 /** The unit after a reading: "°F" or "°C". */
 const char * brew_model_unit(const brew_model_t * m);

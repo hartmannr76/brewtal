@@ -173,6 +173,12 @@ TEST(codec_round_trips)
     CHECK(codec::decode(b, n, m) == codec::DecodeResult::Ok);
     CHECK(m.type == codec::MsgType::Command);
     CHECK(m.command.kind == Command::Kind::SetMode && m.command.mode == Mode::Crash && m.command.paused);
+
+    n = codec::encode(Command::startDayCount(), 4, b, sizeof(b));
+    CHECK(codec::decode(b, n, m) == codec::DecodeResult::Ok);
+    CHECK(m.command.kind == Command::Kind::StartDayCount);
+    b[4] = 6;   // a kind this version doesn't know is refused, not guessed at
+    CHECK(codec::decode(b, n, m) == codec::DecodeResult::BadPayload);
 }
 
 TEST(codec_rejects_bad_input_and_ignores_trailing_fields)

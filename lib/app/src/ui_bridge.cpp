@@ -27,6 +27,7 @@ extern "C" {
 static void cb_setpoint(brew_mode_t m, float f, void * u) { UiBridge::onSetpointThunk(static_cast<int>(m), f, u); }
 static void cb_mode(brew_mode_t m, bool p, void * u) { UiBridge::onModeThunk(static_cast<int>(m), p, u); }
 static void cb_units(bool c, void * u) { UiBridge::onUnitsThunk(c, u); }
+static void cb_reset_day(void * u) { UiBridge::onResetDayThunk(u); }
 }
 
 void UiBridge::create(lv_obj_t * screen, const brew_layout * layout)
@@ -35,6 +36,7 @@ void UiBridge::create(lv_obj_t * screen, const brew_layout * layout)
     cbs.on_setpoint = cb_setpoint;
     cbs.on_mode = cb_mode;
     cbs.on_units = cb_units;
+    cbs.on_reset_day = cb_reset_day;
     cbs.user = this;
     brew_ui_create_with_layout(screen, &cbs, layout);
     port_.send(Command::requestSync());
@@ -64,6 +66,13 @@ void UiBridge::onUnitsThunk(bool celsius, void * user)
     auto * self = static_cast<UiBridge *>(user);
     self->shown_.celsius = celsius;
     self->port_.send(Command::setUnits(celsius));
+}
+
+void UiBridge::onResetDayThunk(void * user)
+{
+    auto * self = static_cast<UiBridge *>(user);
+    self->shown_.day = 1;   // the UI already shows Day 1
+    self->port_.send(Command::startDayCount());
 }
 
 /* ---- controller -> UI ---- */

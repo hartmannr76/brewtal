@@ -172,7 +172,8 @@ static void update_visibility(void)
 
 static void update_menu_items(void)
 {
-    static const char * icons[BREW_MENU_N] = { BREW_ICON_BEER, BREW_ICON_SNOWFLAKE, BREW_ICON_PAUSE, BREW_ICON_CHART, BREW_ICON_TEMP };
+    static const char * icons[BREW_MENU_N] = { BREW_ICON_BEER, BREW_ICON_SNOWFLAKE, BREW_ICON_PAUSE, BREW_ICON_CHART, BREW_ICON_TEMP,
+                                                 BREW_ICON_CALENDAR };
     char text[32];
     for(int i = 0; i < BREW_MENU_N; i++) {
         const char * ico = icons[i];
@@ -193,7 +194,7 @@ static void layout_wheel(void)
      * Depth comes from opacity + weight rather than transform_scale: in LVGL 9.3
      * transformed rows that scroll in from outside their parent render clipped. */
     const float pos = (float)U.wheel_pos / 256.0f;
-    for(int i = 0; i < 5; i++) {
+    for(int i = 0; i < BREW_MENU_N; i++) {
         const float o = (float)i - pos, ao = fabsf(o);
         float op = 1.0f - 0.5f * ao;
         if(op < 0.0f) op = 0.0f;
@@ -474,7 +475,7 @@ static void round_create(lv_obj_t * screen, const brew_model_t * m)
     U.v_menu = kit_plain(U.root);
     lv_obj_set_size(U.v_menu, DISP, DISP);
     lv_obj_set_style_opa(U.v_menu, LV_OPA_TRANSP, 0);
-    for(int i = 0; i < 5; i++) {
+    for(int i = 0; i < BREW_MENU_N; i++) {
         lv_obj_t * it = kit_plain(U.v_menu);
         lv_obj_set_size(it, LV_SIZE_CONTENT, DC(44));
         lv_obj_set_flex_flow(it, LV_FLEX_FLOW_ROW);

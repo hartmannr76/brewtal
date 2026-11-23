@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 18 px
  * Bpp: 4
- * Opts: --no-compress --bpp 4 --format lvgl --lv-include lvgl.h --size 18 --font Inter-450.ttf -r 0x20-0x7E,0xB0,0xB7 --lv-font-name brew_font_status -o C:/Users/hartm/Downloads/brewdial/brewdial/lib/brew_fonts_360/src/brew_font_status.c
+ * Opts: --no-compress --bpp 4 --format lvgl --lv-include lvgl.h --size 18 --font Inter-450.ttf -r 0x20-0x7E,0xB0,0xB7 --lv-font-name brew_font_status -o C:/Users/hartm/Downloads/brewdial/brewdial/lib/fonts/360/src/brew_font_status.c
  ******************************************************************************/
 
 #ifdef LV_LVGL_H_INCLUDE_SIMPLE

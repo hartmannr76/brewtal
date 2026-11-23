@@ -35,6 +35,8 @@ typedef struct {
     void (*on_mode)(brew_mode_t mode, bool paused, void * user);
     /** User toggled display units. */
     void (*on_units)(bool celsius, void * user);
+    /** User picked "Reset day count": Day 1 starts now. */
+    void (*on_reset_day)(void * user);
     void * user;
 } brew_ui_cbs_t;
 

@@ -68,7 +68,6 @@ OutputGuard guard(&plant.heat(), &plant.cool(), {});
 Controller::Config ctlConfig()
 {
     Controller::Config c;
-    c.day = 4;
     return c;
 }
 Controller ctl(bus, plant, law, guard, nullptr, ctlConfig());

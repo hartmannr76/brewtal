@@ -45,6 +45,8 @@ struct Command {
         SetMode = 2,       // mode, paused
         SetUnits = 3,      // celsius
         RequestSync = 4,   // controller re-sends State + full history
+        StartDayCount = 5, // day count starts over at Day 1 now ("day 1 begins now": repeating it
+                           // moments later changes nothing visible)
     };
 
     Kind  kind = Kind::RequestSync;
@@ -57,6 +59,7 @@ struct Command {
     static Command setMode(Mode m, bool p)      { Command x; x.kind = Kind::SetMode; x.mode = m; x.paused = p; return x; }
     static Command setUnits(bool c)             { Command x; x.kind = Kind::SetUnits; x.celsius = c; return x; }
     static Command requestSync()                { return Command{}; }
+    static Command startDayCount()              { Command x; x.kind = Kind::StartDayCount; return x; }
 };
 
 /**

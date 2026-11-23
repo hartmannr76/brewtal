@@ -24,3 +24,4 @@ LV_FONT_DECLARE(brew_font_menu_bold); /* Inter 560 + icons - selected menu item 
 #define BREW_ICON_PLAY      "\xEE\xB5\x86" /* U+ED46 */
 #define BREW_ICON_CHART     "\xEE\xA9\x9C" /* U+EA5C */
 #define BREW_ICON_TEMP      "\xEE\xAC\xB8" /* U+EB38 */
+#define BREW_ICON_CALENDAR  "\xEF\xAB\x92" /* U+FAD2 calendar-repeat */

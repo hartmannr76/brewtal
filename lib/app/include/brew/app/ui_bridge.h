@@ -34,6 +34,7 @@ public:
     static void onSetpointThunk(int mode, float temp_f, void * user);
     static void onModeThunk(int mode, bool paused, void * user);
     static void onUnitsThunk(bool celsius, void * user);
+    static void onResetDayThunk(void * user);
 
 private:
     struct Shown {

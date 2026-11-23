@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 91 px
  * Bpp: 4
- * Opts: --no-compress --bpp 4 --format lvgl --lv-include lvgl.h --size 91 --font Inter-200.ttf -r 0x2D-0x2E,0x30-0x39 --lv-font-name brew_font_num_hist -o C:/Users/hartm/Downloads/brewdial/brewdial/lib/brew_fonts_480/src/brew_font_num_hist.c
+ * Opts: --no-compress --bpp 4 --format lvgl --lv-include lvgl.h --size 91 --font Inter-200.ttf -r 0x2D-0x2E,0x30-0x39 --lv-font-name brew_font_num_hist -o C:/Users/hartm/Downloads/brewdial/brewdial/lib/fonts/480/src/brew_font_num_hist.c
  ******************************************************************************/
 
 #ifdef LV_LVGL_H_INCLUDE_SIMPLE

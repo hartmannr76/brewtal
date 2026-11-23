@@ -29,7 +29,8 @@ message State {
 
 // msg_type 2, display -> controller. Idempotent.
 message Command {
-  uint32 kind = 1;      // 1 set_setpoint, 2 set_mode, 3 set_units, 4 request_sync
+  uint32 kind = 1;      // 1 set_setpoint, 2 set_mode, 3 set_units, 4 request_sync,
+                        // 5 start_day_count
   uint32 mode = 2;
   sint32 setpoint_cc = 3;
   uint32 flags = 4;     // bit0 paused, bit1 celsius

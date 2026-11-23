@@ -151,7 +151,6 @@ void Harness::buildController()
 
     Controller::Config c;
     c.history_period_ms = setup_.history_period_ms;
-    c.day = 4;
     ctl_ = std::make_unique<Controller>(*ctl_front_, probe_, *law_, *guard_, &settings_, c);
     boots_++;
     last_action_ = Action::Idle;

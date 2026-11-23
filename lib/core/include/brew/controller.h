@@ -19,8 +19,10 @@ public:
         uint32_t history_period_ms = 200;   // one history sample (the mean reading) every N ms; the
                                             // graph window is History::kCapacity samples (1 h)
         float    setpoint_c[kModeCount] = { f_to_c(66.0f), f_to_c(34.0f) };   // defaults
-        const char * batch = "Pale ale";
-        uint16_t day = 1;
+        /* The day count's clock: seconds the controller has been powered, saved every this many
+         * seconds so it carries on after a power cut (an outage loses at most this much, plus
+         * the time unplugged). Becomes real time once there is WiFi/NTP. */
+        uint32_t clock_save_s = 600;
     };
 
     Controller(ControlPort & port, hal::TempSensor & sensor, ControlLaw & law, OutputGuard & guard,
@@ -44,13 +46,18 @@ public:
     bool syncing() const { return sync_i_ >= 0; }
 
     const State & state() const { return st_; }
-    void setBatch(const char * name, uint16_t day);
+    /** The day count's clock (seconds) and when Day 1 began on it. */
+    uint32_t clockS() const { return clk_s_; }
+    uint32_t dayStartS() const { return day0_s_; }
 
 private:
     void handle(const Command & c, uint32_t now_ms);
     void evaluate(uint32_t now_ms);
     void persist();
     void pumpSync();
+    void advanceClock(uint32_t now_ms);
+    void saveClock();
+    void updateDay();
 
     ControlPort & port_;
     hal::TempSensor & sensor_;
@@ -68,6 +75,13 @@ private:
     int sync_i_ = -1;           // next history index to send in a sync, -1 = not syncing
     bool sync_reset_ = false;   // the next sync chunk is the first (reset) one
     bool started_ = false;
+
+    /* day count */
+    uint32_t clk_s_ = 0;         // seconds on the day-count clock
+    uint32_t clk_ms_ = 0;        // milliseconds toward the next second
+    uint32_t clk_last_ms_ = 0;   // tick time the clock last advanced to
+    uint32_t clk_saved_s_ = 0;   // clk_s_ as last saved
+    uint32_t day0_s_ = 0;        // clk_s_ when Day 1 began
 };
 
 }  // namespace brew
