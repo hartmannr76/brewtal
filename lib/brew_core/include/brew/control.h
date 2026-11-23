@@ -8,6 +8,7 @@
 #include "brew/types.h"
 #include "brew/hal/io.h"
 
+#include <memory>
 #include <cstdint>
 
 namespace brew {
@@ -136,12 +137,13 @@ struct ChamberDefaults {
 
 /**
  * Fixed-capacity history, oldest first: the graph's time window. Capacity matches brew_ui's
- * BREW_HIST_MAX (3600 samples = 2 h at the default one sample every 2 s). When full, push()
- * drops the oldest.
+ * BREW_HIST_MAX (18000 samples = 1 h at the default one sample every 200 ms). When full, push()
+ * drops the oldest. The buffer (72 KB) is on the heap, so on boards with PSRAM it lands there
+ * instead of in internal RAM.
  */
 class History {
 public:
-    static constexpr int kCapacity = 3600;
+    static constexpr int kCapacity = 18000;
 
     void clear() { n_ = 0; }
     void push(float c);
@@ -150,7 +152,7 @@ public:
     float at(int i) const { return buf_[i]; }
 
 private:
-    float buf_[kCapacity] = {};
+    std::unique_ptr<float[]> buf_{ new float[kCapacity]() };
     int n_ = 0;
 };
 

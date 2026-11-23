@@ -41,5 +41,6 @@ message HistoryChunk {
   uint32 minutes_per_sample = 2;   // rounded; superseded by seconds_per_sample
   uint32 n = 3;
   repeated sint32 temps_cc = 4;    // <= 24 per chunk
-  uint32 seconds_per_sample = 5;
+  uint32 seconds_per_sample = 5;  // rounded; superseded by ms_per_sample
+  uint32 ms_per_sample = 6;
 }

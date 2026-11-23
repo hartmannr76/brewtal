@@ -230,7 +230,7 @@ TEST(ui_model_history_scrub_and_rolling_window)
     brew_model_t m;
     brew_model_init(&m, nullptr);
     const float h[3] = { 60.0f, 61.0f, 62.0f };
-    brew_model_set_history(&m, h, 3, 60);        // minute samples: one sample per scrub step
+    brew_model_set_history(&m, h, 3, 60000);     // minute samples: one sample per scrub step
     brew_model_set_temp(&m, 63.0f);
     CHECK_EQ(brew_model_hist_last(&m), 3);       // 3 samples + live
     CHECK_NEAR(brew_model_hist_val(&m, 3), 63.0, 1e-6);
@@ -271,15 +271,16 @@ TEST(ui_model_history_window_text_follows_the_sample_interval)
     brew_model_t m;
     brew_model_init(&m, nullptr);
     char t[32];
-    auto window = [&](int sec_per) {
+    auto window = [&](int ms_per) {
         const float one = 60.0f;
-        brew_model_set_history(&m, &one, 1, sec_per);
+        brew_model_set_history(&m, &one, 1, ms_per);
         brew_model_hist_window_text(&m, t, sizeof(t));
         return std::string(t);
     };
-    CHECK(window(2) == "last 2 hours");   // 3600 samples x 2 s (the default)
-    CHECK(window(6) == "last 6 hours");
-    CHECK(window(60) == "last 60 hours");
+    CHECK(window(200) == "last hour");     // 18000 samples x 200 ms (the default)
+    CHECK(window(100) == "last 30 min");
+    CHECK(window(400) == "last 2 hours");
+    CHECK(window(300) == "last 1h 30m");
 }
 
 TEST(ui_model_two_second_history_scrubs_a_minute_per_step)
@@ -288,7 +289,7 @@ TEST(ui_model_two_second_history_scrubs_a_minute_per_step)
     brew_model_init(&m, nullptr);
     static float h[300];                          // 10 min at 2 s
     for(int i = 0; i < 300; i++) h[i] = 60.0f + 0.01f * (float)i;
-    brew_model_set_history(&m, h, 300, 2);
+    brew_model_set_history(&m, h, 300, 2000);
     brew_model_set_temp(&m, 64.0f);
     brew_model_press(&m);                         // menu -> History
     brew_model_encoder(&m, BREW_MENU_HISTORY);
@@ -345,7 +346,7 @@ TEST(ui_model_key_hints_say_what_the_keys_do)
     CHECK(hint() == "Back");
     CHECK(!brew_model_can_step(&m, 1) && !brew_model_can_step(&m, -1));   // nothing recorded yet
     const float h[3] = { 66.0f, 66.5f, 67.0f };
-    brew_model_set_history(&m, h, 3, 1);
+    brew_model_set_history(&m, h, 3, 1000);
     CHECK(!brew_model_can_step(&m, 1) && brew_model_can_step(&m, -1));   // at "now"
 
     brew_model_press(&m);                        // back home, then pause from the menu
@@ -369,4 +370,18 @@ TEST(ui_model_graph_style_defaults_to_hairline_and_redraws_only_on_change)
     CHECK(m.graph_style == BREW_GRAPH_MIST);
     brew_model_set_graph_style(&m, static_cast<brew_graph_style_t>(7));   // unknown: hairline
     CHECK(m.graph_style == BREW_GRAPH_HAIRLINE);
+}
+
+TEST(ui_model_200ms_history_scrubs_a_minute_per_step)
+{
+    brew_model_t m;
+    brew_model_init(&m, nullptr);
+    static float h[1200];                         // 4 min at 200 ms (the default interval)
+    for(int i = 0; i < 1200; i++) h[i] = 60.0f;
+    brew_model_set_history(&m, h, 1200, 0);       // 0: keep the default
+    CHECK_EQ(m.hist_ms_per, 200);
+    CHECK_EQ(brew_model_hist_step(&m), 300);      // 60 s / 200 ms
+    char t[32];
+    brew_model_hist_time(&m, 1200 - 50, t, sizeof(t));   // 50 samples back = 10 s
+    CHECK(std::strcmp(t, "10 s ago") == 0 || std::strchr(t, ':') != nullptr);
 }

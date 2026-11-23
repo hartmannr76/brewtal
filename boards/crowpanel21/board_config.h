@@ -20,7 +20,8 @@
 #endif
 #define ENCODER_COUNTS_PER_DETENT 2   /* EC28A: 30 detents, 15 pulses/rev */
 #define BACKLIGHT_LEVEL      204      /* 0..255 */
-#define HISTORY_PERIOD_S     2        /* one graph sample (mean reading) every N seconds; window = 3600 samples */
+#define CONTROL_PERIOD_MS    200      /* controller: read -> decide -> relays -> publish State */
+#define HISTORY_PERIOD_MS    200      /* one graph sample (mean reading) every N ms; window = 18000 samples */
 #define REFRESH_MS           16       /* LVGL refresh period */
 #define TOUCH_Y_OFFSET       (-20)    /* Elecrow's touch offset */
 

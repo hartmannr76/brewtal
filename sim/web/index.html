@@ -211,7 +211,7 @@
       <div class="grid2">
         <div class="field"><label for="law">Control law</label>
           <select id="law"><option value="1" selected>Differential: run to target</option><option value="0">Deadband: stop at band</option></select></div>
-        <div class="field"><label for="histsec">History every <u>s</u></label><input type="number" id="histsec" min="1" max="3600" value="2"></div>
+        <div class="field"><label for="histms">History every <u>ms</u></label><input type="number" id="histms" min="100" max="3600000" step="100" value="200"></div>
         <div class="field"><label for="hdiff">Heat differential <u>°F</u></label><input type="number" id="hdiff" step="0.1" min="0" value="0.5"></div>
         <div class="field"><label for="cdiff">Cool differential <u>°F</u></label><input type="number" id="cdiff" step="0.1" min="0" value="0.5"></div>
         <div class="field"><label for="hon">Heat min on <u>min</u></label><input type="number" id="hon" step="0.5" min="0" value="0"></div>

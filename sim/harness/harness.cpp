@@ -150,7 +150,7 @@ void Harness::buildController()
     guard_ = std::make_unique<OutputGuard>(&plant_.heat(&heat_), &plant_.cool(&cool_), g);
 
     Controller::Config c;
-    c.history_period_s = setup_.history_period_s;
+    c.history_period_ms = setup_.history_period_ms;
     c.day = 4;
     ctl_ = std::make_unique<Controller>(*ctl_front_, probe_, *law_, *guard_, &settings_, c);
     boots_++;
@@ -376,7 +376,7 @@ std::string Harness::statusJson() const
         "\"link\":{\"unplugged\":%s,\"drop\":%g,\"corrupt\":%g,\"bytes_to_ctl\":%llu,\"bytes_to_ui\":%llu,"
         "\"bytes_lost\":%llu,\"bytes_corrupted\":%llu,\"bad_frames_display\":%u,\"bad_frames_controller\":%u},"
         "\"setup\":{\"law\":%d,\"heat_diff_f\":%g,\"cool_diff_f\":%g,\"heat_min_on_s\":%u,\"heat_min_off_s\":%u,"
-        "\"cool_min_on_s\":%u,\"cool_min_off_s\":%u,\"changeover_s\":%u,\"history_period_s\":%u},"
+        "\"cool_min_on_s\":%u,\"cool_min_off_s\":%u,\"changeover_s\":%u,\"history_period_ms\":%u},"
         "\"knob\":{\"button\":%s},\"layout\":\"%s\",\"graph_style\":\"%s\","
         "\"pending\":{\"wanted\":%d,\"wait_s\":%u},\"ui_status\":\"%s\"}",
         ui_ms_, sim_ms_, static_cast<double>(speed_), split_ ? "true" : "false", static_cast<unsigned>(boots_),
@@ -404,7 +404,7 @@ std::string Harness::statusJson() const
         static_cast<double>(setup_.cool_diff_f), static_cast<unsigned>(setup_.heat_min_on_s),
         static_cast<unsigned>(setup_.heat_min_off_s), static_cast<unsigned>(setup_.cool_min_on_s),
         static_cast<unsigned>(setup_.cool_min_off_s),
-        static_cast<unsigned>(setup_.changeover_s), static_cast<unsigned>(setup_.history_period_s),
+        static_cast<unsigned>(setup_.changeover_s), static_cast<unsigned>(setup_.history_period_ms),
         button_.down() ? "true" : "false", brew_ui_layout_name(),
         brew_ui_graph_style() == BREW_GRAPH_MIST ? "mist" : "hairline", static_cast<int>(s.wanted),
         static_cast<unsigned>(s.wait_s), ui_status);

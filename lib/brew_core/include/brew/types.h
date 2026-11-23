@@ -69,7 +69,7 @@ struct HistoryChunk {
 
     bool     reset = false;
     bool     more = false;            // more chunks of the same sync follow
-    uint16_t seconds_per_sample = 0;  // meaningful when reset
+    uint32_t ms_per_sample = 0;       // meaningful when reset
     uint8_t n = 0;
     float   temps_c[kMax] = {};
 };

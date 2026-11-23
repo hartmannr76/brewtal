@@ -73,7 +73,7 @@ BD_API void bd_set_speed(float x) { H->setSpeed(x); }
 BD_API void bd_reboot() { H->rebootController(); }
 BD_API void bd_factory_reset() { H->factoryReset(); }
 BD_API void bd_setup(int law, float heat_diff_f, float cool_diff_f, int heat_min_on_s, int heat_min_off_s,
-                     int cool_min_on_s, int cool_min_off_s, int changeover_s, int history_s)
+                     int cool_min_on_s, int cool_min_off_s, int changeover_s, int history_ms)
 {
     auto nn = [](int v) { return static_cast<uint32_t>(v < 0 ? 0 : v); };
     auto & s = H->setup();
@@ -85,7 +85,7 @@ BD_API void bd_setup(int law, float heat_diff_f, float cool_diff_f, int heat_min
     s.cool_min_on_s = nn(cool_min_on_s);
     s.cool_min_off_s = nn(cool_min_off_s);
     s.changeover_s = nn(changeover_s);
-    s.history_period_s = static_cast<uint16_t>(history_s < 1 ? 1 : history_s > 3600 ? 3600 : history_s);
+    s.history_period_ms = static_cast<uint32_t>(history_ms < 100 ? 100 : history_ms > 3600000 ? 3600000 : history_ms);
     H->rebootController();
 }
 

@@ -93,6 +93,10 @@ public:
             plant_.update(now);           // keep its clock moving
             plant_.set(hold_c_);          // ...but the temperature stays where the page put it
         }
+        /* like a DS18B20 at 12 bits: a new reading every period_ms, held in between */
+        if(have_ && now - read_ms_ < period_ms) return;
+        have_ = true;
+        read_ms_ = now;
         hal::TempReading r = plant_.latest();
         r.celsius += offset_c;
         switch(fault) {
@@ -125,9 +129,12 @@ public:
     Fault fault = Fault::None;
     float noise_c = 0.3f;    // 1 sigma
     float offset_c = 0.0f;   // calibration error
+    uint32_t period_ms = 800;   // how often a new reading lands (the real probe: ~800 ms)
 
 private:
     FakePlant & plant_;
+    bool have_ = false;
+    uint32_t read_ms_ = 0;
     hal::TempReading last_;
     float hold_c_ = 20.0f;
     float stuck_c_ = 0.0f;

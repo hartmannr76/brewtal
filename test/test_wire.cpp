@@ -106,32 +106,38 @@ TEST(codec_command_and_history_golden_v1)
     CHECK_EQ(hex(bytes(b, n)), std::string("010201000100" "3a07" "00"));
     HistoryChunk h;
     h.reset = true;
-    h.seconds_per_sample = 30 * 60;
+    h.ms_per_sample = 30u * 60u * 1000u;
     h.n = 2;
     h.temps_c[0] = -1.0f;
     h.temps_c[1] = 2.5f;
     n = codec::encode(h, 2, b, sizeof(b));
-    /* original v1 bytes, then #5 seconds_per_sample (appended): 1800 = 0x0708 */
-    CHECK_EQ(hex(bytes(b, n)), std::string("01030200" "011e02" "9cff" "fa00") + "0807");
+    /* original v1 bytes, then (appended) #5 seconds_per_sample 1800 = 0x0708,
+     * then #6 ms_per_sample 1800000 = 0x001b7740 */
+    CHECK_EQ(hex(bytes(b, n)), std::string("01030200" "011e02" "9cff" "fa00") + "0807" + "40771b00");
 }
 
-TEST(codec_history_seconds_per_sample)
+TEST(codec_history_ms_per_sample)
 {
     uint8_t b[codec::kMaxEncoded];
     codec::Message m;
     HistoryChunk h;
     h.reset = true;
-    h.seconds_per_sample = 2;
+    h.ms_per_sample = 200;
     h.n = 1;
     h.temps_c[0] = 18.0f;
     size_t n = codec::encode(h, 0, b, sizeof(b));
     CHECK_EQ(b[5], static_cast<uint8_t>(0));                // #2 minutes: under a minute rounds to 0
     CHECK(codec::decode(b, n, m) == codec::DecodeResult::Ok);
-    CHECK_EQ(m.history.seconds_per_sample, static_cast<uint16_t>(2));
+    CHECK_EQ(b[9], static_cast<uint8_t>(1));                // #5 seconds: never 0 for a set interval
+    CHECK_EQ(m.history.ms_per_sample, 200u);
     /* an older controller sends no #5: whole minutes it is */
     const uint8_t old[] = { 0x01, 0x03, 0x02, 0x00, 0x01, 0x01, 0x01, 0x08, 0x07 };
     CHECK(codec::decode(old, sizeof(old), m) == codec::DecodeResult::Ok);
-    CHECK_EQ(m.history.seconds_per_sample, static_cast<uint16_t>(60));
+    CHECK_EQ(m.history.ms_per_sample, 60000u);
+    /* one that predates #6 sends whole seconds */
+    const uint8_t secs[] = { 0x01, 0x03, 0x02, 0x00, 0x01, 0x00, 0x01, 0x08, 0x07, 0x02, 0x00 };
+    CHECK(codec::decode(secs, sizeof(secs), m) == codec::DecodeResult::Ok);
+    CHECK_EQ(m.history.ms_per_sample, 2000u);
     CHECK_EQ(m.history.n, static_cast<uint8_t>(1));
     CHECK_NEAR(m.history.temps_c[0], 18.0, 1e-6);
 }

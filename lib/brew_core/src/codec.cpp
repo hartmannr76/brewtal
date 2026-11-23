@@ -59,11 +59,16 @@ size_t encode(const HistoryChunk & h, uint16_t seq, uint8_t * buf, size_t max)
     header(w, MsgType::History, seq);
     const uint8_t n = h.n > HistoryChunk::kMax ? HistoryChunk::kMax : h.n;
     w.u8(static_cast<uint8_t>((h.reset ? 1u : 0u) | (h.more ? 2u : 0u)));   // #1
-    const unsigned min = (h.seconds_per_sample + 30u) / 60u;       // whole minutes; 0 under 30 s
+    const uint32_t ms = h.ms_per_sample;
+    const uint32_t min = (ms + 30000u) / 60000u;                    // whole minutes; 0 under 30 s
     w.u8(static_cast<uint8_t>(min > 255u ? 255u : min));            // #2
     w.u8(n);                                                        // #3
     for(uint8_t i = 0; i < n; i++) w.i16(to_cc(h.temps_c[i]));      // #4
-    w.u16(h.seconds_per_sample);                                    // #5
+    uint32_t sec = (ms + 500u) / 1000u;                             // whole seconds, >= 1
+    if(sec == 0 && ms > 0) sec = 1;
+    w.u16(static_cast<uint16_t>(sec > 0xFFFFu ? 0xFFFFu : sec));    // #5
+    w.u16(static_cast<uint16_t>(ms & 0xFFFFu));                     // #6 ms, low half
+    w.u16(static_cast<uint16_t>(ms >> 16));                         //    ...high half (u32 LE)
     return w.size();
 }
 
@@ -134,8 +139,13 @@ DecodeResult decodeHistory(Reader & r, HistoryChunk & h)
     h.n = r.u8();
     if(h.n > HistoryChunk::kMax || !r.has(static_cast<size_t>(h.n) * 2)) return DecodeResult::BadPayload;
     for(uint8_t i = 0; i < h.n; i++) h.temps_c[i] = from_cc(r.i16());
-    /* #5 appended later: an older controller only sends whole minutes */
-    h.seconds_per_sample = r.has(2) ? r.u16() : static_cast<uint16_t>(minutes * 60u);
+    /* #5 and #6 appended later: an older controller sends whole minutes, then whole seconds */
+    h.ms_per_sample = static_cast<uint32_t>(minutes) * 60000u;
+    if(r.has(2)) h.ms_per_sample = static_cast<uint32_t>(r.u16()) * 1000u;
+    if(r.has(4)) {
+        const uint32_t lo = r.u16();
+        h.ms_per_sample = lo | (static_cast<uint32_t>(r.u16()) << 16);
+    }
     return DecodeResult::Ok;
 }
 

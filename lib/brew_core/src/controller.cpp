@@ -78,7 +78,7 @@ void Controller::tick(uint32_t now)
 
     if(now - last_eval_ >= cfg_.period_ms) evaluate(now);
 
-    const uint32_t hist_ms = static_cast<uint32_t>(cfg_.history_period_s) * 1000u;
+    const uint32_t hist_ms = cfg_.history_period_ms;
     if(hist_ms && now - last_hist_ >= hist_ms) {
         last_hist_ = now;
         if(hist_cnt_ > 0) {
@@ -173,12 +173,12 @@ void Controller::syncHistory()
 void Controller::pumpSync()
 {
     /* One chunk per tick: at the boards' 20 ms tick that's ~3 KB/s, well inside a 115200 baud
-     * UART and the display's 1 KB receive buffer (a chunk is ~60 bytes on the wire), and a
-     * full 2 h window (150 chunks) still arrives in ~3 s. */
+     * UART and the display's 1 KB receive buffer (a chunk is ~65 bytes on the wire). A full
+     * window (18000 samples, 750 chunks) takes ~15 s; the graph fills in as it arrives. */
     if(syncing()) {
         HistoryChunk h;
         h.reset = sync_reset_;
-        h.seconds_per_sample = cfg_.history_period_s;
+        h.ms_per_sample = cfg_.history_period_ms;
         int i = sync_i_;
         while(i < hist_.size() && h.n < HistoryChunk::kMax) h.temps_c[h.n++] = hist_.at(i++);
         h.more = i < hist_.size();

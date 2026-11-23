@@ -263,7 +263,7 @@ TEST(controller_history_sync_and_sampling)
     DeadbandLaw law(0.1f);
     OutputGuard guard(nullptr, nullptr, {});
     Controller::Config cfg;
-    cfg.history_period_s = 60;
+    cfg.history_period_ms = 60000;
     Controller ctl(port, s, law, guard, nullptr, cfg);
     float h[50];
     for(int i = 0; i < 50; i++) h[i] = 10.0f + i;
@@ -282,7 +282,7 @@ TEST(controller_history_sync_and_sampling)
     for(uint32_t t = 30; t <= 60; t += 10) ctl.tick(t);
     CHECK_EQ(port.hist.size(), static_cast<size_t>(3));   // 24 + 24 + 2
     CHECK(port.hist[0].reset);
-    CHECK_EQ(port.hist[0].seconds_per_sample, static_cast<uint16_t>(60));
+    CHECK_EQ(port.hist[0].ms_per_sample, 60000u);
     CHECK(!port.hist[1].reset);
     CHECK(port.hist[0].more && port.hist[1].more && !port.hist[2].more);
     CHECK_EQ(port.hist[2].n, static_cast<uint8_t>(2));
@@ -304,17 +304,17 @@ TEST(controller_full_history_sync_waits_for_room_and_keeps_order)
     s.set(18.0f);
     DeadbandLaw law(0.1f);
     OutputGuard guard(nullptr, nullptr, {});
-    Controller ctl(port, s, law, guard, nullptr, Controller::Config{});   // 2 s samples
+    Controller ctl(port, s, law, guard, nullptr, Controller::Config{});   // 200 ms samples
     static float h[History::kCapacity];
     for(int i = 0; i < History::kCapacity; i++) h[i] = static_cast<float>(i);
-    ctl.history().assign(h, History::kCapacity);   // a full 2 h window
+    ctl.history().assign(h, History::kCapacity);   // a full 1 h window
     ctl.begin(0);
     std::vector<float> got;
     bool reset_first = false;
     uint32_t t = 0;
-    for(int guard_n = 0; guard_n < 2000 && (ctl.syncing() || port.hist.size()); guard_n++) {
+    for(int guard_n = 0; guard_n < 10000 && (ctl.syncing() || port.hist.size()); guard_n++) {
         t += 20;
-        ctl.tick(t);                               // a new sample every 2 s lands mid-sync
+        ctl.tick(t);                               // a new sample every 200 ms lands mid-sync
         if(guard_n % 3 == 0 && !port.hist.empty()) {   // the UI takes one chunk now and then
             const HistoryChunk c = port.hist.front();
             port.hist.erase(port.hist.begin());
@@ -341,7 +341,7 @@ TEST(controller_history_sample_is_the_mean_reading)
     DeadbandLaw law(0.1f);
     OutputGuard guard(nullptr, nullptr, {});
     Controller::Config cfg;
-    cfg.history_period_s = 60;
+    cfg.history_period_ms = 60000;
     cfg.period_ms = 1000;
     Controller ctl(port, s, law, guard, nullptr, cfg);
     ctl.begin(0);

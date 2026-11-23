@@ -31,7 +31,8 @@
  *   #2 minutes_per_sample u8  rounded; 0 under 30 s (for decoders that predate #5)
  *   #3 n                u8    <= 24
  *   #4 temps_cc         i16 x n
- *   #5 seconds_per_sample u16 (missing: minutes_per_sample x 60)
+ *   #5 seconds_per_sample u16 rounded, >= 1 (for decoders that predate #6; missing: #2 x 60)
+ *   #6 ms_per_sample    u32   (missing: seconds_per_sample x 1000)
  */
 #pragma once
 

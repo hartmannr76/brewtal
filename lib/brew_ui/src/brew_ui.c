@@ -32,6 +32,7 @@ static void commit_timer_cb(lv_timer_t * t)
 
 void brew_ui_create_with_layout(lv_obj_t * screen, const brew_ui_cbs_t * cbs, const brew_layout_t * layout)
 {
+    brew_model_free(&S.m);   /* a second create (tests, the harness) doesn't leak the old buffer */
     brew_model_init(&S.m, cbs);
     S.screen = screen;
     S.layout = layout ? layout : &brew_layout_round;
@@ -66,9 +67,9 @@ void brew_ui_set_units(bool celsius) { apply(brew_model_set_units(&S.m, celsius)
 void brew_ui_set_batch(const char * name, int day) { apply(brew_model_set_batch(&S.m, name, day)); }
 void brew_ui_set_graph_style(brew_graph_style_t style) { apply(brew_model_set_graph_style(&S.m, style)); }
 brew_graph_style_t brew_ui_graph_style(void) { return S.m.graph_style; }
-void brew_ui_set_history(const float * t, int n, int seconds_per_sample)
+void brew_ui_set_history(const float * t, int n, int ms_per_sample)
 {
-    apply(brew_model_set_history(&S.m, t, n, seconds_per_sample));
+    apply(brew_model_set_history(&S.m, t, n, ms_per_sample));
 }
 void brew_ui_push_history(float f) { apply(brew_model_push_history(&S.m, f)); }
 

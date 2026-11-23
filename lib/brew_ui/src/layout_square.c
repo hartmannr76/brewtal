@@ -467,7 +467,7 @@ static void square_create(lv_obj_t * screen, const brew_model_t * m)
     U.sel_lbl = label(U.rail, &brew_font_small, 200);
     lv_obj_align(U.sel_lbl, LV_ALIGN_RIGHT_MID, -(DISP - RAIL_X) - SQ(16), 0);
 
-    U.graph_t = lv_timer_create(graph_timer_cb, 250, NULL);   /* checks; renders per KIT_GRAPH_REDRAW_MS */
+    U.graph_t = lv_timer_create(graph_timer_cb, 50, NULL);    /* checks; renders per KIT_GRAPH_REDRAW_MS */
 
     U.wheel_pos = m->menu_idx * 256;
     update_menu_items();

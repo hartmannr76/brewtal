@@ -23,8 +23,8 @@
 extern "C" {
 #endif
 
-#define BREW_HIST_MAX  3600     /* history window in samples: 2 h at one every 2 s */
-#define BREW_SCRUB_S   60       /* the history view moves this far back/forward per step */
+#define BREW_HIST_MAX  18000    /* history window in samples: 1 h at one every 200 ms */
+#define BREW_SCRUB_MS  60000    /* the history view moves this far back/forward per step */
 #define BREW_T_MIN     30.0f    /* adjustable target range, F */
 #define BREW_T_MAX     80.0f
 #define BREW_COMMIT_MS 2800     /* an adjusted target commits itself after this long */
@@ -64,9 +64,9 @@ typedef struct {
     brew_action_t wanted;     /* what the controller wants to do; differs from action while held off */
     int wait_min;             /* ...and in how many minutes it may (rounded up, >= 1 while waiting) */
     bool celsius;             /* display units */
-    float hist[BREW_HIST_MAX];
+    float * hist;             /* BREW_HIST_MAX samples, heap (PSRAM where there is some); NULL = none */
     int hist_n;
-    int hist_sec_per;         /* seconds per history sample */
+    int hist_ms_per;          /* milliseconds per history sample */
     char batch[32];
     int day;
     brew_graph_style_t graph_style;   /* how layouts draw the history graph */
@@ -79,7 +79,9 @@ typedef struct {
     int hist_idx;             /* scrub position: 0..brew_model_hist_last() */
 } brew_model_t;
 
+/** Allocates the history buffer (72 KB): pair with brew_model_free() before re-initialising. */
 void brew_model_init(brew_model_t * m, const brew_ui_cbs_t * cbs);
+void brew_model_free(brew_model_t * m);
 
 /* ---- controller -> model ---- */
 uint32_t brew_model_set_temp(brew_model_t * m, float temp_f);
@@ -93,7 +95,7 @@ uint32_t brew_model_set_units(brew_model_t * m, bool celsius);
 uint32_t brew_model_set_batch(brew_model_t * m, const char * name, int day);
 /** Out-of-range styles fall back to BREW_GRAPH_HAIRLINE. Redraws the graph only if it changed. */
 uint32_t brew_model_set_graph_style(brew_model_t * m, brew_graph_style_t style);
-uint32_t brew_model_set_history(brew_model_t * m, const float * temps_f, int n, int seconds_per_sample);
+uint32_t brew_model_set_history(brew_model_t * m, const float * temps_f, int n, int ms_per_sample);
 uint32_t brew_model_push_history(brew_model_t * m, float temp_f);
 
 /* ---- input -> model ---- */
@@ -126,7 +128,7 @@ int brew_model_hist_last(const brew_model_t * m);
 float brew_model_hist_val(const brew_model_t * m, int i);
 /** "Now", "2:41 PM" (wall clock set), "40 s ago" or "1h 05m ago". */
 void brew_model_hist_time(const brew_model_t * m, int i, char * buf, size_t n);
-/** Samples per history-view step (BREW_SCRUB_S worth, at least 1). */
+/** Samples per history-view step (BREW_SCRUB_MS worth, at least 1). */
 int brew_model_hist_step(const brew_model_t * m);
 /** How far back the history window reaches: "last 2 hours", "last hour", "last 45 min". */
 void brew_model_hist_window_text(const brew_model_t * m, char * buf, size_t n);

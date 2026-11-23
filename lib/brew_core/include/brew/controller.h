@@ -15,9 +15,9 @@ namespace brew {
 class Controller {
 public:
     struct Config {
-        uint32_t period_ms = 1500;          // sensor -> law -> outputs -> publish
-        uint16_t history_period_s = 2;      // one history sample (the mean reading) every N seconds;
-                                            // the graph window is History::kCapacity samples (2 h)
+        uint32_t period_ms = 200;           // sensor -> law -> outputs -> publish
+        uint32_t history_period_ms = 200;   // one history sample (the mean reading) every N ms; the
+                                            // graph window is History::kCapacity samples (1 h)
         float    setpoint_c[kModeCount] = { f_to_c(66.0f), f_to_c(34.0f) };   // defaults
         const char * batch = "Pale ale";
         uint16_t day = 1;

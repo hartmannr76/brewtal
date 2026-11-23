@@ -5,6 +5,7 @@
 #include "brew_model.h"
 
 #include <math.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -13,11 +14,19 @@ void brew_model_init(brew_model_t * m, const brew_ui_cbs_t * cbs)
 {
     memset(m, 0, sizeof(*m));
     if(cbs) m->cbs = *cbs;
+    m->hist = (float *)calloc(BREW_HIST_MAX, sizeof(float));   /* large: malloc puts it in PSRAM on the S3 */
     m->temp_f = 66.0f;
     m->sp_f[0] = 66.0f;
     m->sp_f[1] = 34.0f;
-    m->hist_sec_per = 2;
+    m->hist_ms_per = 200;
     m->view = BREW_VIEW_HOME;
+}
+
+void brew_model_free(brew_model_t * m)
+{
+    free(m->hist);
+    m->hist = NULL;
+    m->hist_n = 0;
 }
 
 /* ------------------------------------------------------------------ derived */
@@ -85,7 +94,7 @@ float brew_model_hist_val(const brew_model_t * m, int i) { return i < m->hist_n 
 void brew_model_hist_time(const brew_model_t * m, int idx, char * buf, size_t n)
 {
     /* sample i covers the interval that ended (hist_n - i) samples ago; hist_n is live */
-    const int back_s = (m->hist_n - idx) * m->hist_sec_per;
+    const int back_s = (int)((long)(m->hist_n - idx) * m->hist_ms_per / 1000);
     const int back_min = back_s / 60;
     if(idx >= m->hist_n || back_s <= 0) {
         snprintf(buf, n, "Now");
@@ -114,13 +123,13 @@ void brew_model_hist_time(const brew_model_t * m, int idx, char * buf, size_t n)
 
 int brew_model_hist_step(const brew_model_t * m)
 {
-    const int s = m->hist_sec_per > 0 ? BREW_SCRUB_S / m->hist_sec_per : 1;
+    const int s = m->hist_ms_per > 0 ? BREW_SCRUB_MS / m->hist_ms_per : 1;
     return s > 0 ? s : 1;
 }
 
 void brew_model_hist_window_text(const brew_model_t * m, char * buf, size_t n)
 {
-    const int min = BREW_HIST_MAX * (m->hist_sec_per > 0 ? m->hist_sec_per : 1) / 60;
+    const int min = (int)((long long)BREW_HIST_MAX * (m->hist_ms_per > 0 ? m->hist_ms_per : 1) / 60000);
     if(min < 60) snprintf(buf, n, "last %d min", min);
     else if(min == 60) snprintf(buf, n, "last hour");
     else if(min % 60 == 0) snprintf(buf, n, "last %d hours", min / 60);
@@ -243,22 +252,23 @@ uint32_t brew_model_set_batch(brew_model_t * m, const char * name, int day)
     return BREW_CH_REFRESH;
 }
 
-uint32_t brew_model_set_history(brew_model_t * m, const float * t, int n, int seconds_per_sample)
+uint32_t brew_model_set_history(brew_model_t * m, const float * t, int n, int ms_per_sample)
 {
     if(n > BREW_HIST_MAX) {
         t += n - BREW_HIST_MAX;
         n = BREW_HIST_MAX;
     }
-    if(n < 0) n = 0;
+    if(n < 0 || !m->hist) n = 0;
     if(n > 0) memcpy(m->hist, t, (size_t)n * sizeof(float));
     m->hist_n = n;
-    if(seconds_per_sample > 0) m->hist_sec_per = seconds_per_sample;
+    if(ms_per_sample > 0) m->hist_ms_per = ms_per_sample;
     if(m->view == BREW_VIEW_HIST) m->hist_idx = brew_model_hist_last(m) > 0 ? brew_model_hist_last(m) : 0;
     return BREW_CH_GRAPH | BREW_CH_REFRESH;
 }
 
 uint32_t brew_model_push_history(brew_model_t * m, float f)
 {
+    if(!m->hist) return 0;
     const bool was_live = m->hist_idx >= m->hist_n;   /* scrubbing: keep the same moment selected */
     if(m->hist_n == BREW_HIST_MAX) {
         memmove(m->hist, m->hist + 1, (BREW_HIST_MAX - 1) * sizeof(float));

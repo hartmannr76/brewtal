@@ -67,7 +67,7 @@ Action OutputGuard::apply(Action want, uint32_t now)
 void History::push(float c)
 {
     if(n_ == kCapacity) {
-        std::memmove(buf_, buf_ + 1, (kCapacity - 1) * sizeof(float));
+        std::memmove(buf_.get(), buf_.get() + 1, (kCapacity - 1) * sizeof(float));
         n_--;
     }
     buf_[n_++] = c;
@@ -79,7 +79,7 @@ void History::assign(const float * c, int n)
         c += n - kCapacity;
         n = kCapacity;
     }
-    std::memcpy(buf_, c, static_cast<size_t>(n) * sizeof(float));
+    std::memcpy(buf_.get(), c, static_cast<size_t>(n) * sizeof(float));
     n_ = n;
 }
 

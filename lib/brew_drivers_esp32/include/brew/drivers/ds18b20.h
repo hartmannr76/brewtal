@@ -16,7 +16,7 @@ class EspDs18b20 final : public hal::TempSensor {
 public:
     struct Config {
         int      pin = -1;
-        uint32_t period_ms = 2000;
+        uint32_t period_ms = 800;     // a 12-bit conversion takes 750 ms: about as fast as it goes
         float    offset_c = 0.0f;     // calibration
         bool     internal_pullup = true;
         const char * label = "ds18b20";

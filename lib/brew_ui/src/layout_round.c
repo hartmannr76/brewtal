@@ -412,7 +412,7 @@ static void round_create(lv_obj_t * screen, const brew_model_t * m)
     lv_obj_set_style_text_color(U.hhint, lv_color_white(), 0);
     lv_obj_set_style_text_opa(U.hhint, 140, 0);
 
-    U.graph_t = lv_timer_create(graph_timer_cb, 250, NULL);   /* checks; renders per KIT_GRAPH_REDRAW_MS */
+    U.graph_t = lv_timer_create(graph_timer_cb, 50, NULL);    /* checks; renders per KIT_GRAPH_REDRAW_MS */
 
     U.wheel_pos = m->menu_idx * 256;   /* a live layout swap can land mid-menu */
     update_menu_items();

@@ -47,7 +47,8 @@ It uses ESP32 Arduino core 3.3.11 (pioarduino `55.03.311`, ESP-IDF 5.5) only as 
 | `ENCODER_COUNTS_PER_DETENT` | `2`     | Quadrature counts per click. The EC28A has 30 clicks and 15 pulses per turn, which gives 2 |
 | `REFRESH_MS`                | `16`    | LVGL refresh period. Elecrow's `lv_conf.h` defaults to 33       |
 | `BACKLIGHT_LEVEL`           | `204`   | Backlight brightness, 0–255                                    |
-| `HISTORY_PERIOD_S`          | `2`     | Seconds per graph sample (the mean reading). The graph keeps 3600 samples, so 2 = the last 2 h |
+| `CONTROL_PERIOD_MS`         | `200`   | How often the controller decides and publishes State. The DS18B20 itself reads every ~800 ms (12-bit) |
+| `HISTORY_PERIOD_MS`         | `200`   | Milliseconds per graph sample (the mean reading). The graph keeps 18000 samples, so 200 = the last hour |
 | `TOUCH_Y_OFFSET`            | `-20`   | Elecrow's touch calibration                                    |
 | `MCP_PIN_HEAT` / `MCP_PIN_COOL` | `4` / `5` | Outputs on the MCP23008 at 0x20 (LEDs now, relays later) |
 

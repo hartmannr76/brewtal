@@ -59,10 +59,10 @@ void brew_ui_set_graph_style(brew_graph_style_t style);
 brew_graph_style_t brew_ui_graph_style(void);
 /**
  * Replace the history buffer (oldest first; n may be 0). It holds up to BREW_HIST_MAX samples
- * (2 h at one every 2 s); the graph stretches whatever it holds to the full width, with the
+ * (1 h at one every 200 ms); the graph stretches whatever it holds to the full width, with the
  * live temperature (brew_ui_set_temp) as the "now" point after the newest sample.
  */
-void brew_ui_set_history(const float * temps_f, int n, int seconds_per_sample);
+void brew_ui_set_history(const float * temps_f, int n, int ms_per_sample);
 /** Append one sample, dropping the oldest when the window is full. */
 void brew_ui_push_history(float temp_f);
 
