@@ -11,8 +11,10 @@
  *   halo, dot      "now"/scrub marker on the curve
  *   ticks5         lv_scale, a tick every 5 degrees (brighter every 10)
  *   ticks          lv_scale, every degree, only visible while adjusting
- *   arc_glow, arc, knob   setpoint ring: hairline track, glowing arc from the scale's start to
- *                  the target, a white knob with a glow
+ *   arc_glow, arc  ring: hairline track; a glowing arc spans the reading to the target ("how far
+ *                  to go"), hidden while adjusting
+ *   now, target    on the ring: a small dot at the reading, a hollow white ring at the target
+ *   tgt_lbl        the target's number just inside the ring
  *   v_home / v_menu / v_hist   content views, cross-faded
  *
  * Geometry is authored in the mockup's units and scaled:
@@ -53,7 +55,9 @@ static struct {
     lv_obj_t * ticks;
     lv_obj_t * arc_glow;
     lv_obj_t * arc;
-    lv_obj_t * knob;
+    lv_obj_t * now;
+    lv_obj_t * target;
+    lv_obj_t * tgt_lbl;
 
     lv_obj_t * v_home;
     lv_obj_t * v_menu;
@@ -99,25 +103,45 @@ static void graph_timer_cb(lv_timer_t * t)
 /* Refresh                                                            */
 /* ------------------------------------------------------------------ */
 
+static void ring_place(lv_obj_t * o, float frac, float r)
+{
+    const float ang = (A0 + SWEEP * frac) * 3.14159265f / 180.0f;
+    lv_obj_align(o, LV_ALIGN_CENTER, (int32_t)lroundf(r * cosf(ang)), (int32_t)lroundf(r * sinf(ang)));
+}
+
 static void update_ring(void)
 {
     const float target = M->setting ? M->draft_f : M->sp_f[M->mode];
-    const float b = frac_t(target);
-    const lv_value_precise_t a0 = (lv_value_precise_t)A0, a1 = (lv_value_precise_t)norm_deg(A0 + SWEEP * b + 0.6f);
+    const float bt = frac_t(target);
+    const float bn = M->temp_known ? frac_t(M->temp_f) : bt;
+
+    /* the arc spans the reading to the target (empty while adjusting or with no reading) */
+    const float lo = M->setting ? bt : (bn < bt ? bn : bt), hi_f = M->setting ? bt : (bn < bt ? bt : bn);
+    const lv_value_precise_t a0 = (lv_value_precise_t)norm_deg(A0 + SWEEP * lo);
+    const lv_value_precise_t a1 = (lv_value_precise_t)norm_deg(A0 + SWEEP * hi_f);
     lv_arc_set_angles(U.arc, a0, a1);
     lv_arc_set_angles(U.arc_glow, a0, a1);
+
     const lv_color_t ac = lv_color_hex(kit_line[brew_model_vstate(M)]);
     if(!kit_col_eq(lv_obj_get_style_arc_color(U.arc, LV_PART_INDICATOR), ac)) {
         lv_obj_set_style_arc_color(U.arc, ac, LV_PART_INDICATOR);
         lv_obj_set_style_arc_color(U.arc_glow, ac, LV_PART_INDICATOR);
-        lv_obj_set_style_shadow_color(U.knob, ac, 0);
+        lv_obj_set_style_shadow_color(U.target, ac, 0);
+        lv_obj_set_style_shadow_color(U.now, ac, 0);
+        lv_obj_set_style_bg_color(U.now, ac, 0);
     }
+    kit_set_text_color(U.tgt_lbl, M->setting ? lv_color_white() : ac);
 
-    const float ang = (A0 + SWEEP * b) * 3.14159265f / 180.0f;
-    const int32_t ks = lv_obj_get_width(U.knob);
-    lv_obj_set_pos(U.knob,
-                   (int32_t)lroundf(DISP / 2.0f + RING_R * cosf(ang)) - ks / 2,
-                   (int32_t)lroundf(DISP / 2.0f + RING_R * sinf(ang)) - ks / 2);
+    ring_place(U.target, bt, RING_R);
+    ring_place(U.now, bn, RING_R);
+
+    /* the number: whole degrees when the target is whole, tenths while adjusting */
+    const float d = brew_model_to_disp(M, target);
+    char t[12];
+    if(M->setting || fabsf(d - roundf(d)) >= 0.05f) snprintf(t, sizeof(t), "%.1f", (double)d);
+    else snprintf(t, sizeof(t), "%d", (int)lroundf(d));
+    kit_set_text(U.tgt_lbl, t);
+    ring_place(U.tgt_lbl, bt, RING_R - DS(17));
 }
 
 static void update_visibility(void)
@@ -135,7 +159,9 @@ static void update_visibility(void)
     kit_fade_to(U.arc, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
     kit_fade_to(U.arc_glow, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
     kit_fade_to(U.ticks5, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
-    kit_fade_to(U.knob, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
+    kit_fade_to(U.target, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
+    kit_fade_to(U.tgt_lbl, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
+    kit_fade_to(U.now, home && !M->setting && M->temp_known ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
     kit_fade_to(U.ticks, home && M->setting ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
 
     const lv_opa_t g = M->view == BREW_VIEW_MENU ? 64 : (M->setting ? 102 : LV_OPA_COVER);
@@ -387,13 +413,32 @@ static void round_create(lv_obj_t * screen, const brew_model_t * m)
     lv_obj_set_style_arc_rounded(U.arc, true, LV_PART_INDICATOR);
     lv_obj_remove_flag(U.arc, LV_OBJ_FLAG_CLICKABLE);
 
-    U.knob = kit_plain(U.root);
-    lv_obj_set_size(U.knob, (int32_t)lroundf(DS(8)), (int32_t)lroundf(DS(8)));
-    lv_obj_set_style_radius(U.knob, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(U.knob, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(U.knob, LV_OPA_COVER, 0);
-    lv_obj_set_style_shadow_width(U.knob, (int32_t)lroundf(DS(7)), 0);
-    lv_obj_set_style_shadow_opa(U.knob, 200, 0);
+    /* the reading: a small dot in the state colour, ringed in the glass colour to lift it off the arc */
+    U.now = kit_plain(U.root);
+    lv_obj_set_size(U.now, (int32_t)lroundf(DS(6.5f)), (int32_t)lroundf(DS(6.5f)));
+    lv_obj_set_style_radius(U.now, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(U.now, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(U.now, lv_color_hex(0x0b0e11), 0);
+    lv_obj_set_style_border_width(U.now, (int32_t)lroundf(DS(1.25f)), 0);
+    lv_obj_set_style_border_opa(U.now, LV_OPA_COVER, 0);
+    lv_obj_set_style_shadow_width(U.now, (int32_t)lroundf(DS(4)), 0);
+    lv_obj_set_style_shadow_opa(U.now, 150, 0);
+
+    /* the target: a hollow white ring with a glow */
+    U.target = kit_plain(U.root);
+    lv_obj_set_size(U.target, (int32_t)lroundf(DS(9)), (int32_t)lroundf(DS(9)));
+    lv_obj_set_style_radius(U.target, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(U.target, lv_color_hex(0x0b0e11), 0);
+    lv_obj_set_style_bg_opa(U.target, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(U.target, lv_color_white(), 0);
+    lv_obj_set_style_border_width(U.target, (int32_t)lroundf(DS(1.25f)), 0);
+    lv_obj_set_style_border_opa(U.target, LV_OPA_COVER, 0);
+    lv_obj_set_style_shadow_width(U.target, (int32_t)lroundf(DS(6)), 0);
+    lv_obj_set_style_shadow_opa(U.target, 200, 0);
+
+    /* the target's number, just inside the ring */
+    U.tgt_lbl = lv_label_create(U.root);
+    lv_obj_set_style_text_font(U.tgt_lbl, &brew_font_caps, 0);
 
     /* ---- home view ---- */
     U.v_home = make_view(U.root, DC(62), DC(10));
