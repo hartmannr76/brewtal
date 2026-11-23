@@ -34,7 +34,7 @@ struct State {
     char     batch[kBatchLen] = { 0 };
     uint16_t day = 0;
     Action   wanted = Action::Idle;        // what the control law asks for; differs from `action`
-                                           // while OutputGuard holds it off (compressor delay, ...)
+                                           // while OutputGuard holds it off (restart delay, ...)
     uint16_t wait_s = 0;                   // how long until `wanted` may start (0 = not waiting)
 };
 

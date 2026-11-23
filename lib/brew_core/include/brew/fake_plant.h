@@ -13,8 +13,8 @@
  *            neoprene jacket ~1.8, thick foam jacket ~0.8, inside a chest freezer ~0.5
  *
  * Elements don't switch instantly: their delivered power follows the relay with a first-order
- * lag (heat_lag_s / cool_lag_s). A heat wrap keeps heating after it turns off, which is where
- * overshoot comes from.
+ * lag (heat_lag_s / cool_lag_s; 0 by default = instant). A heat wrap keeps heating after it turns
+ * off, which is where overshoot comes from.
  *
  * Wire it between the controller and the real relays:
  *     FakePlant plant(cfg);
@@ -40,8 +40,8 @@ public:
         float heat_w = 50.0f;           // heat wrap
         float cool_w = 150.0f;          // glycol coil with a small chiller
         float loss_w_per_k = 1.8f;      // UA: neoprene jacket on a 5 gal fermenter
-        float heat_lag_s = 240.0f;      // a wrap has mass: warms up and cools down slowly
-        float cool_lag_s = 60.0f;       // glycol in the coil keeps cooling briefly
+        float heat_lag_s = 0.0f;        // e.g. 240: a wrap has mass, warms up and cools down slowly
+        float cool_lag_s = 0.0f;        // e.g. 60: glycol in the coil keeps cooling briefly
         float yeast_w = 0.0f;           // active ale fermentation, 5 gal: ~10-20 W at peak
         float quantum_c = 0.0625f;      // DS18B20 resolution; 0 = exact
         bool  frozen = false;           // never changes on its own (scripted sims)

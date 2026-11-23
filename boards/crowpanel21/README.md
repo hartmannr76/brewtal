@@ -59,7 +59,7 @@ The controller is the portable `brew::Controller` (lib/brew_core). It is configu
 
 - **Sensor.** `FakePlant` in demo mode, `EspDs18b20` otherwise. Any `hal::TempSensor` works. If the reading goes invalid (three failed reads), every output turns off.
 - **Control law.** `HysteresisLaw` with `ChamberDefaults`: heat on at target − 0.5 °F and cool on at target + 0.5 °F, each running until the target is reached. The original behaviour was `DeadbandLaw(0.3 °F)`, which short-cycles the relays.
-- **Outputs.** `OutputGuard` drives the two MCP23008 pins, never both at once, with `ChamberDefaults::guard()`: cooling rests 5 min after it stops and after power-up (compressor delay), and heating and cooling are 10 min apart. Per-relay `min_on_ms` / `min_off_ms` are in `OutputGuard::Config`.
+- **Outputs.** `OutputGuard` drives the two MCP23008 pins, never both at once, with `ChamberDefaults::guard()`: each relay has a 3 min restart delay once it switches off; nothing waits at power-up and there's no heat↔cool gap. Per-relay `min_on_ms` / `min_off_ms` are in `OutputGuard::Config`.
 - **Settings.** Setpoints, mode, pause and units are saved in NVS and restored at boot.
 
 ## Running display and controller on separate boards

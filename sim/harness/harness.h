@@ -41,8 +41,8 @@ public:
         int      law = 1;               // 0 = DeadbandLaw, 1 = HysteresisLaw
         float    heat_diff_f = ChamberDefaults::kHeatDiffF;
         float    cool_diff_f = ChamberDefaults::kCoolDiffF;
-        uint32_t heat_min_on_s = 0, heat_min_off_s = 0;
-        uint32_t cool_min_on_s = 0, cool_min_off_s = ChamberDefaults::kCoolMinOffMs / 1000u;
+        uint32_t heat_min_on_s = 0, heat_min_off_s = ChamberDefaults::kRestartDelayMs / 1000u;
+        uint32_t cool_min_on_s = 0, cool_min_off_s = ChamberDefaults::kRestartDelayMs / 1000u;
         uint32_t changeover_s = ChamberDefaults::kChangeoverMs / 1000u;
         uint16_t history_period_s = 2;
     };

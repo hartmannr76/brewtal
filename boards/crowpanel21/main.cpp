@@ -87,7 +87,7 @@ hal::DigitalOut & coolOut = relays.out(MCP_PIN_COOL);
 #endif
 
 HysteresisLaw law(ChamberDefaults::kHeatDiffF * 5.0f / 9.0f, ChamberDefaults::kCoolDiffF * 5.0f / 9.0f);   // see ChamberDefaults
-OutputGuard guard(&heatOut, &coolOut, ChamberDefaults::guard());   // compressor delay + changeover gap
+OutputGuard guard(&heatOut, &coolOut, ChamberDefaults::guard());   // 3 min restart delay per relay
 
 Controller::Config controllerConfig()
 {

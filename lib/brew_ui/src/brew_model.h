@@ -83,7 +83,7 @@ void brew_model_init(brew_model_t * m, const brew_ui_cbs_t * cbs);
 /* ---- controller -> model ---- */
 uint32_t brew_model_set_temp(brew_model_t * m, float temp_f);
 uint32_t brew_model_set_action(brew_model_t * m, brew_action_t a);
-/** What the controller wants and how long until it may start it (compressor delay etc.).
+/** What the controller wants and how long until it may start it (restart delay etc.).
  * Changes are reported only when the minute shown changes. */
 uint32_t brew_model_set_pending(brew_model_t * m, brew_action_t wanted, int wait_s);
 uint32_t brew_model_set_setpoints(brew_model_t * m, float ferment_f, float crash_f);
@@ -109,7 +109,7 @@ float brew_model_shown_target(const brew_model_t * m);
 float brew_model_to_disp(const brew_model_t * m, float temp_f);
 /** "68.4" in display units. */
 void brew_model_fmt_temp(const brew_model_t * m, char * buf, size_t n, float temp_f);
-/** The controller wants to cool or heat but is held off (compressor delay, changeover gap). */
+/** The controller wants to cool or heat but is held off (restart delay, changeover gap). */
 bool brew_model_waiting(const brew_model_t * m);
 /** "Cooling to 66°", "Holding at 66°", "Heating to 66°", "Crashing to 34°", "Paused";
  * while waiting: "Cooling in 4 min", "Heating in 9 min", "Crashing in 4 min". */

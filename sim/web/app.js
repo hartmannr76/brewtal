@@ -272,9 +272,9 @@ createBrewDial().then((M) => {
   const PLANT_IDS = ['vol', 'room', 'loss', 'heatw', 'heatlag', 'coolw', 'coollag', 'yeast'];
   /* lags are entered in minutes. loss = W per degree C between beer and room */
   const PLANTS = {
-    jacket:  { vol: 5, room: 68, loss: 1.8, heatw: 50, heatlag: 4, coolw: 150, coollag: 1, yeast: 0 },
-    freezer: { vol: 5, room: 68, loss: 0.5, heatw: 25, heatlag: 5, coolw: 80, coollag: 10, yeast: 0 },
-    bare:    { vol: 5, room: 68, loss: 3.0, heatw: 50, heatlag: 4, coolw: 150, coollag: 1, yeast: 0 },
+    jacket:  { vol: 5, room: 68, loss: 1.8, heatw: 50, heatlag: 0, coolw: 150, coollag: 0, yeast: 0 },
+    freezer: { vol: 5, room: 68, loss: 0.5, heatw: 25, heatlag: 0, coolw: 80, coollag: 0, yeast: 0 },
+    bare:    { vol: 5, room: 68, loss: 3.0, heatw: 50, heatlag: 0, coolw: 150, coollag: 0, yeast: 0 },
     fast:    { vol: 5, room: 68, loss: 20, heatw: 3000, heatlag: 0, coolw: 3000, coollag: 0, yeast: 0 },
   };
   const INSULATION = { bare: 3.0, neoprene: 1.8, foam: 0.8, freezer: 0.5 };
@@ -320,7 +320,7 @@ createBrewDial().then((M) => {
     // what the firmware ran before: +/-0.3 F deadband, no timing protection
     original:    { law: 0, hdiff: 0.3, cdiff: 0.3, hon: 0, hoff: 0, con: 0, coff: 0, change: 0 },
     // ChamberDefaults in lib/brew_core/include/brew/control.h (what the boards run)
-    recommended: { law: 1, hdiff: 0.5, cdiff: 0.5, hon: 0, hoff: 0, con: 0, coff: 5, change: 10 },
+    recommended: { law: 1, hdiff: 0.5, cdiff: 0.5, hon: 0, hoff: 3, con: 0, coff: 3, change: 0 },
   };
   const applySetup = () => {
     const m = (id) => Math.round(+$(id).value * 60);

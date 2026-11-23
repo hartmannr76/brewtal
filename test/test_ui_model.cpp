@@ -179,7 +179,7 @@ TEST(ui_model_status_says_when_a_held_off_output_will_start)
     brew_model_t m;
     brew_model_init(&m, nullptr);
     brew_model_set_temp(&m, 68.6f);
-    /* power-up: the controller wants to cool, the compressor delay holds it off */
+    /* the controller wants to cool, the restart delay holds it off */
     CHECK(brew_model_set_pending(&m, BREW_ACTION_COOLING, 300) & BREW_CH_REFRESH);
     CHECK(brew_model_waiting(&m));
     CHECK(status(m) == "Cooling in 5 min");
@@ -196,7 +196,7 @@ TEST(ui_model_status_says_when_a_held_off_output_will_start)
     brew_model_set_action(&m, BREW_ACTION_IDLE);
     brew_model_set_pending(&m, BREW_ACTION_HEATING, 540);
     CHECK(status(m) == "Heating in 9 min");
-    /* cold crash waiting on the compressor */
+    /* cold crash waiting on cooling's restart delay */
     brew_model_set_mode(&m, BREW_MODE_CRASH, false);
     brew_model_set_pending(&m, BREW_ACTION_COOLING, 200);
     CHECK(status(m) == "Crashing in 4 min");

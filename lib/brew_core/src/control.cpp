@@ -31,30 +31,25 @@ uint32_t OutputGuard::blockedFor(Action a, uint32_t now) const
     if(cur_ != Action::Idle) need(since_ms_, timing(cur_).min_on_ms);
     const int t = static_cast<int>(a);
     const int other = a == Action::Heating ? static_cast<int>(Action::Cooling) : static_cast<int>(Action::Heating);
-    if(started_) need(off_ms_[t], timing(a).min_off_ms);   // off since it stopped, or since power-up
+    if(ever_[t]) need(off_ms_[t], timing(a).min_off_ms);   // restart delay since it last stopped
     if(ever_[other]) need(off_ms_[other], cfg_.changeover_ms);
     return wait;
 }
 
 Action OutputGuard::apply(Action want, uint32_t now)
 {
-    if(!started_) {
-        /* power-up counts as "every output just switched off" for min_off */
-        started_ = true;
-        off_ms_[static_cast<int>(Action::Heating)] = now;
-        off_ms_[static_cast<int>(Action::Cooling)] = now;
-    }
     Action target = want;
     /* heat <-> cool with a changeover gap has to pass through idle first */
     if(cur_ != Action::Idle && want != Action::Idle && want != cur_ && cfg_.changeover_ms > 0)
         target = Action::Idle;
 
     if(target != cur_) {
-        bool ok = true;
         /* keep a running output on for its min_on */
-        if(cur_ != Action::Idle && now - since_ms_ < timing(cur_).min_on_ms) ok = false;
-        if(target != Action::Idle && blockedFor(target, now) > 0) ok = false;
-        if(ok) {
+        const bool can_stop = cur_ == Action::Idle || now - since_ms_ >= timing(cur_).min_on_ms;
+        /* The wanted output can't start yet (restart delay, changeover): still switch off the
+         * one that's no longer wanted, rather than keep heating a beer that wants cooling. */
+        if(can_stop && target != Action::Idle && blockedFor(target, now) > 0) target = Action::Idle;
+        if(can_stop && target != cur_) {
             if(cur_ != Action::Idle) {
                 off_ms_[static_cast<int>(cur_)] = now;
                 ever_[static_cast<int>(cur_)] = true;

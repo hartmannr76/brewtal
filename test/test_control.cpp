@@ -97,33 +97,65 @@ TEST(guard_min_on_min_off_changeover)
     FakeOut h, c;
     OutputGuard::Config cfg;
     cfg.cool.min_on_ms = 1000;
-    cfg.cool.min_off_ms = 5000;   // compressor delay
-    cfg.heat.min_on_ms = 1000;    // heat wrap: no rest needed
+    cfg.cool.min_off_ms = 5000;   // cooling restart delay
+    cfg.heat.min_on_ms = 1000;    // heat: no restart delay here
     cfg.changeover_ms = 2000;
     OutputGuard g(&h, &c, cfg);
-    CHECK(g.apply(Action::Cooling, 0) == Action::Idle);        // power-up counts as "just stopped"
-    CHECK_EQ(g.blockedFor(Action::Cooling, 0), 5000u);
-    CHECK(g.apply(Action::Cooling, 4999) == Action::Idle);
-    CHECK(g.apply(Action::Cooling, 5000) == Action::Cooling);
-    CHECK(g.apply(Action::Idle, 5500) == Action::Cooling);     // cool min_on not reached
-    CHECK(g.apply(Action::Idle, 6000) == Action::Idle);        // cooling stopped at 6000
-    CHECK(g.apply(Action::Cooling, 7000) == Action::Idle);     // cool min_off: rest until 11000
-    CHECK(g.apply(Action::Heating, 7500) == Action::Idle);     // changeover until 8000
-    CHECK(g.apply(Action::Heating, 8000) == Action::Heating);  // heat has no min_off
-    CHECK(g.apply(Action::Cooling, 8500) == Action::Heating);  // heat min_on until 9000
-    CHECK(g.apply(Action::Cooling, 9000) == Action::Idle);     // heat -> cool passes through idle
-    CHECK(g.apply(Action::Cooling, 10000) == Action::Idle);    // changeover since heat stopped (9000)
-    CHECK_EQ(g.blockedFor(Action::Cooling, 10000), 1000u);
-    CHECK(g.apply(Action::Cooling, 11000) == Action::Cooling);
+    CHECK_EQ(g.blockedFor(Action::Cooling, 0), 0u);           // nothing counted from power-up
+    CHECK(g.apply(Action::Cooling, 0) == Action::Cooling);
+    CHECK(g.apply(Action::Idle, 500) == Action::Cooling);      // cool min_on not reached
+    CHECK(g.apply(Action::Idle, 1000) == Action::Idle);        // cooling stopped at 1000
+    CHECK(g.apply(Action::Cooling, 2000) == Action::Idle);     // restart delay until 6000
+    CHECK_EQ(g.blockedFor(Action::Cooling, 2000), 4000u);
+    CHECK(g.apply(Action::Heating, 2500) == Action::Idle);     // changeover until 3000
+    CHECK(g.apply(Action::Heating, 3000) == Action::Heating);  // heat has no min_off
+    CHECK(g.apply(Action::Cooling, 3500) == Action::Heating);  // heat min_on until 4000
+    CHECK(g.apply(Action::Cooling, 4000) == Action::Idle);     // heat -> cool passes through idle
+    CHECK(g.apply(Action::Cooling, 5000) == Action::Idle);     // changeover since heat stopped (4000)
+    CHECK_EQ(g.blockedFor(Action::Cooling, 5000), 1000u);      // ...and cooling's restart delay
+    CHECK(g.apply(Action::Cooling, 6000) == Action::Cooling);
     CHECK(!h.on && c.on);
 }
 
-TEST(guard_heat_starts_at_power_up_without_a_heat_rest)
+TEST(guard_defaults_start_either_relay_at_power_up)
+{
+    FakeOut h, c;
+    OutputGuard g(&h, &c, ChamberDefaults::guard());
+    CHECK(g.apply(Action::Cooling, 0) == Action::Cooling);
+    CHECK(c.on);
+    OutputGuard g2(&h, &c, ChamberDefaults::guard());
+    CHECK(g2.apply(Action::Heating, 0) == Action::Heating);
+    CHECK(h.on);
+}
+
+TEST(guard_defaults_restart_delay_per_relay)
 {
     FakeOut h, c;
     OutputGuard g(&h, &c, ChamberDefaults::guard());
     CHECK(g.apply(Action::Heating, 0) == Action::Heating);
-    CHECK(h.on);
+    CHECK(g.apply(Action::Idle, 10000) == Action::Idle);
+    CHECK(g.apply(Action::Heating, 20000) == Action::Idle);       // heat rests until 190000
+    CHECK_EQ(g.blockedFor(Action::Heating, 20000), 170000u);
+    CHECK(g.apply(Action::Cooling, 30000) == Action::Cooling);   // cooling's own delay: not running yet
+    CHECK(g.apply(Action::Heating, 40000) == Action::Idle);      // no gap: cooling stops, heat still rests
+    CHECK(!h.on && !c.on);
+    CHECK(g.apply(Action::Heating, 190000) == Action::Heating);
+    CHECK(h.on && !c.on);
+}
+
+TEST(guard_stops_heating_when_cooling_is_wanted_but_still_resting)
+{
+    /* No changeover gap: heat -> cool is direct when cooling may start, but while cooling's
+     * restart delay runs the heater must still switch off. */
+    FakeOut h, c;
+    OutputGuard g(&h, &c, ChamberDefaults::guard());
+    CHECK(g.apply(Action::Cooling, 0) == Action::Cooling);
+    CHECK(g.apply(Action::Heating, 10000) == Action::Heating);   // cooling stopped at 10000
+    CHECK(g.apply(Action::Cooling, 30000) == Action::Idle);      // cooling rests until 190000
+    CHECK(!h.on && !c.on);
+    CHECK_EQ(g.blockedFor(Action::Cooling, 30000), 160000u);
+    CHECK(g.apply(Action::Cooling, 190000) == Action::Cooling);
+    CHECK(!h.on && c.on);
 }
 
 TEST(hysteresis_law_separate_differentials)
@@ -187,17 +219,23 @@ TEST(controller_publishes_what_it_wants_while_the_guard_holds_it_off)
     DeadbandLaw law(0.3f * 5.0f / 9.0f);
     FakeOut h, c;
     OutputGuard::Config g;
-    g.cool.min_off_ms = 300000;   // 5 min compressor delay, counted from power-up
+    g.cool.min_off_ms = 300000;   // 5 min cooling restart delay
     OutputGuard guard(&h, &c, g);
     Controller ctl(port, s, law, guard, nullptr, Controller::Config{});
     ctl.begin(0);
     ctl.tick(0);
+    CHECK(port.last.action == Action::Cooling && c.on);   // nothing held off at power-up
+    s.set(f_to_c(66.0f));
+    ctl.tick(1500);   // evaluates every 1.5 s
+    CHECK(port.last.action == Action::Idle);              // cooling stopped at 1500
+    s.set(f_to_c(68.6f));
+    ctl.tick(3000);
     CHECK(port.last.action == Action::Idle);      // held off...
     CHECK(port.last.wanted == Action::Cooling);   // ...but it wants to cool
-    CHECK_EQ(port.last.wait_s, static_cast<uint16_t>(300));
-    ctl.tick(60500);
-    CHECK_EQ(port.last.wait_s, static_cast<uint16_t>(240));   // rounded up: 239.5 s
-    ctl.tick(300000);
+    CHECK_EQ(port.last.wait_s, static_cast<uint16_t>(299));   // 298.5 s, rounded up
+    ctl.tick(61500);
+    CHECK_EQ(port.last.wait_s, static_cast<uint16_t>(240));
+    ctl.tick(301500);
     CHECK(port.last.action == Action::Cooling && c.on);
     CHECK(port.last.wanted == Action::Cooling);
     CHECK_EQ(port.last.wait_s, static_cast<uint16_t>(0));

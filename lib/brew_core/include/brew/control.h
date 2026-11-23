@@ -73,9 +73,9 @@ private:
  * Turns the wanted Action into relay states, enforcing:
  *   - never heat and cool at once (interlock)
  *   - per output, min_on_ms:  once on, stay on at least this long
- *   - per output, min_off_ms: once off, stay off at least this long. Also counted from
- *     power-up (the first apply()), so a power blip can't restart a compressor at once:
- *     the Inkbird "compressor delay".
+ *   - per output, min_off_ms: the restart delay. Once that relay has switched off it stays
+ *     off at least this long. Nothing is counted from power-up: an output that hasn't run
+ *     yet may start at once.
  *   - changeover_ms: idle time required between heating and cooling
  * All default to 0 (original behaviour). Returns what the outputs are actually doing.
  */
@@ -105,28 +105,30 @@ private:
     hal::DigitalOut * cool_;
     Config cfg_;
     Action cur_ = Action::Idle;
-    bool started_ = false;
     uint32_t since_ms_ = 0;           // when cur_ started
-    uint32_t off_ms_[3] = {0, 0, 0};  // when each Action last stopped (index = Action); power-up
-    bool ever_[3] = {false, false, false};   // Action has run since power-up (for changeover)
+    uint32_t off_ms_[3] = {0, 0, 0};  // when each Action last stopped (index = Action)
+    bool ever_[3] = {false, false, false};   // Action has run since power-up (min_off, changeover)
 };
 
 /**
- * A sensible starting point for a fermentation chamber (fridge or freezer + heat wrap), in the
- * spirit of an Inkbird ITC-308: 0.5 F differentials, a 5 minute compressor delay, and a
- * 10 minute idle gap before switching between heating and cooling. Boards use these unless
- * they have a reason not to; the web harness can compare them with the original deadband.
+ * A sensible starting point for a fermentation chamber (fridge or freezer + heat wrap):
+ * 0.5 F differentials (heat on at target - 0.5, runs to the target; cooling likewise) and a
+ * 3 minute restart delay per relay: once heating or cooling switches off, that relay can't
+ * switch back on for 3 minutes. Nothing else: no minimum on time, no delay after power-up and
+ * no gap between heating and cooling. Boards use these unless they have a reason not to; the
+ * web harness can compare them with the original deadband.
  */
 struct ChamberDefaults {
     static constexpr float    kHeatDiffF = 0.5f;
     static constexpr float    kCoolDiffF = 0.5f;
-    static constexpr uint32_t kCoolMinOffMs = 5u * 60u * 1000u;
-    static constexpr uint32_t kChangeoverMs = 10u * 60u * 1000u;
+    static constexpr uint32_t kRestartDelayMs = 3u * 60u * 1000u;   // per relay (min_off_ms)
+    static constexpr uint32_t kChangeoverMs = 0;
 
     static OutputGuard::Config guard()
     {
         OutputGuard::Config g;
-        g.cool.min_off_ms = kCoolMinOffMs;
+        g.heat.min_off_ms = kRestartDelayMs;
+        g.cool.min_off_ms = kRestartDelayMs;
         g.changeover_ms = kChangeoverMs;
         return g;
     }

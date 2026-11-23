@@ -167,9 +167,9 @@
           </select></div>
         <div class="field"><label for="loss">Heat loss <u>W/°C</u></label><input type="number" id="loss" step="0.1" min="0" value="1.8"></div>
         <div class="field"><label for="heatw">Heater <u>W</u></label><input type="number" id="heatw" step="5" min="0" value="50"></div>
-        <div class="field"><label for="heatlag">Heater lag <u>min</u></label><input type="number" id="heatlag" step="0.5" min="0" value="4"></div>
+        <div class="field"><label for="heatlag">Heater lag <u>min</u></label><input type="number" id="heatlag" step="0.5" min="0" value="0"></div>
         <div class="field"><label for="coolw">Cooling into beer <u>W</u></label><input type="number" id="coolw" step="10" min="0" value="150"></div>
-        <div class="field"><label for="coollag">Cooling lag <u>min</u></label><input type="number" id="coollag" step="0.5" min="0" value="1"></div>
+        <div class="field"><label for="coollag">Cooling lag <u>min</u></label><input type="number" id="coollag" step="0.5" min="0" value="0"></div>
         <div class="field"><label for="yeast">Yeast heat <u>W</u></label><input type="number" id="yeast" step="1" value="0"></div>
       </div>
       <p class="readout" id="plant-explain"></p>
@@ -211,12 +211,12 @@
         <div class="field"><label for="hdiff">Heat differential <u>°F</u></label><input type="number" id="hdiff" step="0.1" min="0" value="0.5"></div>
         <div class="field"><label for="cdiff">Cool differential <u>°F</u></label><input type="number" id="cdiff" step="0.1" min="0" value="0.5"></div>
         <div class="field"><label for="hon">Heat min on <u>min</u></label><input type="number" id="hon" step="0.5" min="0" value="0"></div>
-        <div class="field"><label for="hoff">Heat min off <u>min</u></label><input type="number" id="hoff" step="0.5" min="0" value="0"></div>
+        <div class="field"><label for="hoff">Heat restart delay <u>min</u></label><input type="number" id="hoff" step="0.5" min="0" value="3"></div>
         <div class="field"><label for="con">Cool min on <u>min</u></label><input type="number" id="con" step="0.5" min="0" value="0"></div>
-        <div class="field"><label for="coff">Compressor delay <u>min</u></label><input type="number" id="coff" step="0.5" min="0" value="5"></div>
-        <div class="field"><label for="change">Heat ↔ cool gap <u>min</u></label><input type="number" id="change" step="0.5" min="0" value="10"></div>
+        <div class="field"><label for="coff">Cool restart delay <u>min</u></label><input type="number" id="coff" step="0.5" min="0" value="3"></div>
+        <div class="field"><label for="change">Heat ↔ cool gap <u>min</u></label><input type="number" id="change" step="0.5" min="0" value="0"></div>
       </div>
-      <p class="note">Differential: heating starts at target − heat differential and runs until it reaches the target; cooling likewise. The compressor delay also counts from power-up, so a reboot waits it out.</p>
+      <p class="note">Differential: heating starts at target − heat differential and runs until it reaches the target; cooling likewise. Restart delay: once a relay switches off it can't switch back on for that long. Nothing waits at power-up.</p>
       <div class="actions">
         <button id="apply" class="btn primary">Apply &amp; reboot</button>
         <button id="reboot" class="btn">Reboot</button>

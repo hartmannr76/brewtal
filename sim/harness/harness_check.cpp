@@ -90,13 +90,11 @@ int main()
     check(field("state", "valid") == 1, "controller has a valid reading");
     check(std::abs(f(field("state", "temp_c")) - 68.4) < 0.2, "beer starts at 68.4 F");
     check(std::abs(f(field("state", "sp")) - 66.0) < 0.01, "ferment target defaults to 66 F");
-    check(field("state", "action") == 0 && field("cool", "on") == 0,
-          "68.4 F vs 66 F wants cooling, but the compressor delay holds it off after power-up");
-    check(field("cool", "wait_ms") > 290000, "compressor delay (~5 min) is reported");
-    check(field("pending", "wanted") == 1 && field("pending", "wait_s") > 290,
-          "State says the controller wants to cool, and for how long it is held off");
-    check(std::string(bd_status()).find("\"ui_status\":\"Cooling in 5 min\"") != std::string::npos,
-          "the dial says \"Cooling in 5 min\", not \"Holding at 66\"");
+    check(field("state", "action") == 1 && field("cool", "on") == 1,
+          "68.4 F vs 66 F: cooling starts right away, nothing is held off at power-up");
+    check(field("pending", "wait_s") == 0, "nothing pending");
+    check(std::string(bd_status()).find("\"ui_status\":\"Cooling to 66") != std::string::npos,
+          "the dial says \"Cooling to 66\"");
     {
         const uint8_t * px = bd_rgba();
         long lit = 0;
@@ -205,8 +203,8 @@ int main()
     bd_click();
     run_ms(1000);
     check(std::abs(f(field("state", "sp")) - 64.0) < 0.01, "target 64 F");
-    auto soak = [](int law, float diff, int cool_off, int gap, double * lo, double * hi) {
-        bd_setup(law, diff, diff, 0, 0, 0, cool_off, gap, 2);
+    auto soak = [](int law, float diff, int restart, int gap, double * lo, double * hi) {
+        bd_setup(law, diff, diff, 0, restart, 0, restart, gap, 2);
         bd_set_beer_c(17.78f);   // start at the target
         bd_set_speed(3600);
         run_ms(3000);           // settle 3 h
@@ -225,7 +223,7 @@ int main()
     };
     double olo, ohi, rlo, rhi;
     const double orig = soak(0, 0.3f, 0, 0, &olo, &ohi);
-    const double rec = soak(1, 0.5f, 300, 600, &rlo, &rhi);
+    const double rec = soak(1, 0.5f, 180, 0, &rlo, &rhi);   // ChamberDefaults
     std::printf("      original:         %3.0f relay switches in 9 h, beer %.2f..%.2f F\n", orig, olo, ohi);
     std::printf("      chamber defaults: %3.0f relay switches in 9 h, beer %.2f..%.2f F\n", rec, rlo, rhi);
     check(orig > 0 && rec > 0, "both had to cool against the yeast heat");
