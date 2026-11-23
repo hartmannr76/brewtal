@@ -135,6 +135,84 @@ void brew_graph_mask(uint8_t * argb, int w, int h, int y0, float fade_x0, float 
     }
 }
 
+static inline void put_max(uint8_t * px, uint8_t cr, uint8_t cg, uint8_t cb, float a)
+{
+    const uint8_t v = (uint8_t)(a * 255.0f + 0.5f);
+    if(v <= px[3]) return;
+    px[0] = cb;
+    px[1] = cg;
+    px[2] = cr;
+    px[3] = v;
+}
+
+void brew_graph_stroke(uint8_t * argb, int w, int h, int y0, const brew_pt_t * poly, int np,
+                       uint32_t rgb, float width, float alpha)
+{
+    if(np < 2 || alpha <= 0.0f) return;
+    const uint8_t cr = (uint8_t)((rgb >> 16) & 0xFF);
+    const uint8_t cg = (uint8_t)((rgb >> 8) & 0xFF);
+    const uint8_t cb = (uint8_t)(rgb & 0xFF);
+    const float hw = width * 0.5f;
+    for(int i = 0; i < np - 1; i++) {
+        const float ax = poly[i].x, ay = poly[i].y - (float)y0;
+        const float bx = poly[i + 1].x, by = poly[i + 1].y - (float)y0;
+        const float dx = bx - ax, dy = by - ay;
+        const float len2 = dx * dx + dy * dy;
+        int xa = (int)floorf((ax < bx ? ax : bx) - hw - 1.0f), xb = (int)ceilf((ax > bx ? ax : bx) + hw + 1.0f);
+        int ya = (int)floorf((ay < by ? ay : by) - hw - 1.0f), yb = (int)ceilf((ay > by ? ay : by) + hw + 1.0f);
+        if(xa < 0) xa = 0;
+        if(ya < 0) ya = 0;
+        if(xb > w - 1) xb = w - 1;
+        if(yb > h - 1) yb = h - 1;
+        for(int y = ya; y <= yb; y++) {
+            uint8_t * row = argb + (size_t)y * (size_t)w * 4;
+            const float py = (float)y + 0.5f - ay;
+            for(int x = xa; x <= xb; x++) {
+                const float px = (float)x + 0.5f - ax;
+                float t = len2 > 1e-6f ? (px * dx + py * dy) / len2 : 0.0f;
+                t = clampf(t, 0.0f, 1.0f);
+                const float ex = px - t * dx, ey = py - t * dy;
+                const float d = sqrtf(ex * ex + ey * ey);
+                const float cov = clampf(hw + 0.5f - d, 0.0f, 1.0f);
+                if(cov > 0.0f) put_max(row + (size_t)x * 4, cr, cg, cb, cov * alpha);
+            }
+        }
+    }
+}
+
+static inline void put_over(uint8_t * px, uint8_t cr, uint8_t cg, uint8_t cb, float a)
+{
+    const float ea = (float)px[3] / 255.0f;
+    const float oa = a + ea * (1.0f - a);
+    if(oa <= 0.0f) return;
+    const float k = ea * (1.0f - a);
+    px[0] = (uint8_t)(((float)cb * a + (float)px[0] * k) / oa + 0.5f);
+    px[1] = (uint8_t)(((float)cg * a + (float)px[1] * k) / oa + 0.5f);
+    px[2] = (uint8_t)(((float)cr * a + (float)px[2] * k) / oa + 0.5f);
+    px[3] = (uint8_t)(oa * 255.0f + 0.5f);
+}
+
+void brew_graph_dash_h(uint8_t * argb, int w, int h, int y0, float x0, float x1, float y,
+                       uint32_t rgb, float alpha, int dash, int gap)
+{
+    const uint8_t cr = (uint8_t)((rgb >> 16) & 0xFF);
+    const uint8_t cg = (uint8_t)((rgb >> 8) & 0xFF);
+    const uint8_t cb = (uint8_t)(rgb & 0xFF);
+    const float fy = y - (float)y0 - 0.5f;          /* row centre the line sits on */
+    const int r0 = (int)floorf(fy);
+    const float f = fy - (float)r0;                 /* split between row r0 and r0 + 1 */
+    const int period = dash + gap > 0 ? dash + gap : 1;
+    int xs = (int)floorf(x0), xe = (int)ceilf(x1);
+    if(xs < 0) xs = 0;
+    if(xe > w - 1) xe = w - 1;
+    for(int x = xs; x <= xe; x++) {
+        if((x - xs) % period >= dash) continue;
+        if(r0 >= 0 && r0 < h) put_over(argb + ((size_t)r0 * (size_t)w + (size_t)x) * 4, cr, cg, cb, alpha * (1.0f - f));
+        if(r0 + 1 >= 0 && r0 + 1 < h && f > 0.0f)
+            put_over(argb + ((size_t)(r0 + 1) * (size_t)w + (size_t)x) * 4, cr, cg, cb, alpha * f);
+    }
+}
+
 void brew_graph_fill(uint8_t * argb, int w, int h, int y0,
                      const brew_pt_t * poly, int np,
                      uint32_t rgb, float a_top, float a_bot)

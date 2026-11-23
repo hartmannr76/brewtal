@@ -11,6 +11,7 @@
 #include <time.h>
 
 #define N BREW_UI_DISP_SIZE
+#define BREW_HIST_MAX_BENCH 18000
 
 static uint32_t s_ms;
 static uint64_t s_px;
@@ -63,6 +64,16 @@ static void a_turn(void) { brew_ui_encoder(1); }
 static void a_turn5(void) { for(int i = 0; i < 5; i++) { brew_ui_encoder(1); s_ms += 80; lv_timer_handler(); } }
 static void a_press(void) { brew_ui_press(); }
 static void a_state(void) { brew_ui_set_action(BREW_ACTION_IDLE); }
+/* 2 s of the boards' steady state: a State and a history sample every 200 ms */
+static void a_sampling(void)
+{
+    for(int i = 0; i < 10; i++) {
+        g_temp += (i % 4 == 0) ? 0.1f : 0.0f;   /* the probe moves every ~4th sample */
+        brew_ui_set_temp(g_temp);
+        brew_ui_push_history(g_temp);
+        run(200);
+    }
+}
 
 int main(void)
 {
@@ -93,5 +104,14 @@ int main(void)
     measure("menu: scroll 1",              a_turn, 500);
     measure("menu: back to home (Ferment)",a_press, 800);
     measure("state change (cool->hold)",   a_state, 1200);
+
+    /* a full 1 h window at 200 ms */
+    static float full[BREW_HIST_MAX_BENCH];
+    for(int i = 0; i < BREW_HIST_MAX_BENCH; i++) full[i] = 66 + 0.6f * sinf(i * 0.002f);
+    brew_ui_set_history(full, BREW_HIST_MAX_BENCH, 200);
+    measure("sampling 2 s @200 ms (hairline)", a_sampling, 0);
+    brew_ui_set_graph_style(BREW_GRAPH_MIST);
+    measure("sampling 2 s @200 ms (mist)",     a_sampling, 0);
+    brew_ui_set_graph_style(BREW_GRAPH_HAIRLINE);
     return 0;
 }

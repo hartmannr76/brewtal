@@ -59,6 +59,22 @@ void brew_graph_fill(uint8_t * argb, int w, int h, int y0,
 void brew_graph_mask(uint8_t * argb, int w, int h, int y0, float fade_x0, float fade_x1,
                      float clip_cx, float clip_cy, float clip_r);
 
+/**
+ * Stroke `poly` (screen y, buffer rows [y0, y0+h), x from 0) with an anti-aliased round-capped
+ * line of `width` px in colour `rgb` at `alpha` (0..1), straight into the ARGB8888 buffer.
+ * Every pixel keeps the larger alpha, so overlapping segments and passes don't add up: meant
+ * for a buffer drawn in one colour (the graph's fill, glow and line).
+ */
+void brew_graph_stroke(uint8_t * argb, int w, int h, int y0, const brew_pt_t * poly, int np,
+                       uint32_t rgb, float width, float alpha);
+
+/**
+ * A 1 px horizontal dashed line at screen y (anti-aliased across two rows) from x0 to x1,
+ * composited over what's in the buffer: `dash` px on, `gap` px off.
+ */
+void brew_graph_dash_h(uint8_t * argb, int w, int h, int y0, float x0, float x1, float y,
+                       uint32_t rgb, float alpha, int dash, int gap);
+
 #ifdef __cplusplus
 }
 #endif

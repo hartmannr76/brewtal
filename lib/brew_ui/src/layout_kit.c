@@ -309,6 +309,8 @@ void kit_graph_create(kit_graph_t * g, lv_obj_t * parent)
     LV_ASSERT_MALLOC(g->buf);
     memset(g->buf, 0, (size_t)g->cw * g->ch * 4);
     g->canvas = kit_canvas(parent, g->buf, g->cw, g->ch, LV_COLOR_FORMAT_ARGB8888);
+    g->rows0 = 0;
+    g->rows1 = g->ch - 1;
     lv_obj_set_pos(g->canvas, g->cx, g->cy);
 
     g->halo = kit_plain(parent);
@@ -366,7 +368,10 @@ void kit_graph_render(kit_graph_t * g, const brew_model_t * m)
     if(n < 1) {
         memset(g->buf, 0, (size_t)g->cw * g->ch * 4);
         lv_obj_invalidate(g->canvas);
+        g->rows0 = 0;
+        g->rows1 = g->ch - 1;
         g->npts = 0;
+        g->ndrawn = 0;
         g->nsrc = 0;
         g->npoly = 0;
         kit_graph_place_marker(g, m);
@@ -439,56 +444,70 @@ void kit_graph_render(kit_graph_t * g, const brew_model_t * m)
 
     const uint32_t lc = kit_line[brew_model_vstate(m)];
     const bool mist = m->graph_style == BREW_GRAPH_MIST;
+    const float sy = g->yt + (g->yb - g->yt) * (1.0f - (tg - mn) / (mx - mn));   /* target, screen y */
+
+    /* A new sample in a long window moves the drawn points by a fraction of a pixel: if nothing
+     * moved by a visible amount, leave the canvas alone (no redraw, no flush). */
+    bool same = g->ndrawn == g->npts && g->drawn_lc == lc && g->drawn_style == (int)m->graph_style &&
+                fabsf(g->drawn_sy - sy) < 0.25f;
+    for(int i = 0; same && i < g->npts; i++)
+        same = fabsf(g->drawn[i].x - g->pts[i].x) < 0.25f && fabsf(g->drawn[i].y - g->pts[i].y) < 0.25f;
+    if(same) {
+        kit_graph_place_marker(g, m);
+        return;
+    }
+    memcpy(g->drawn, g->pts, sizeof(brew_pt_t) * (size_t)g->npts);
+    g->ndrawn = g->npts;
+    g->drawn_lc = lc;
+    g->drawn_style = (int)m->graph_style;
+    g->drawn_sy = sy;
     /* the fill works in parent rows; shift x into the canvas (a no-op for full-width canvases) */
     if(g->cx != 0)
         for(int i = 0; i < g->npoly; i++) g->poly[i].x -= (float)g->cx;
-    if(mist) brew_graph_fill(g->buf, g->cw, g->ch, g->cy, g->poly, g->npoly, lc, 0.38f, 0.0f);
-    else memset(g->buf, 0, (size_t)g->cw * g->ch * 4);
 
-    lv_layer_t layer;
-    lv_draw_line_dsc_t d;
-    lv_canvas_init_layer(g->canvas, &layer);
-    /* the curve; Mist puts a soft glow under it (two wider, faint passes) */
-    const int passes = mist ? 3 : 1;
-    for(int p = 0; p < passes; p++) {
-        lv_draw_line_dsc_init(&d);
-        d.color = lv_color_hex(lc);
-        const float w = p == passes - 1 ? g->line_w : g->line_w * (p == 0 ? 3.6f : 2.2f);
-        d.opa = p == passes - 1 ? LV_OPA_COVER : (p == 0 ? 18 : 36);
-        d.width = (int32_t)lroundf(w);
-        d.round_start = 1;
-        d.round_end = 1;
-        for(int i = 0; i < g->npoly - 1; i++) {
-            d.p1.x = g->poly[i].x;
-            d.p1.y = g->poly[i].y - (float)g->cy;
-            d.p2.x = g->poly[i + 1].x;
-            d.p2.y = g->poly[i + 1].y - (float)g->cy;
-            lv_draw_line(&layer, &d);
-        }
+    /* Everything is drawn straight into the canvas pixels (no LVGL draw tasks), and only the
+     * rows the curve uses are cleared, drawn and invalidated: this runs every 200 ms. */
+    const float glow_w = mist ? g->line_w * 3.6f : g->line_w;
+    float ylo = sy, yhi = sy;
+    for(int i = 0; i < g->npoly; i++) {
+        if(g->poly[i].y < ylo) ylo = g->poly[i].y;
+        if(g->poly[i].y > yhi) yhi = g->poly[i].y;
     }
-    lv_canvas_finish_layer(g->canvas, &layer);
+    int32_t r0 = (int32_t)floorf(ylo - glow_w * 0.5f - 2.0f) - g->cy;
+    int32_t r1 = mist ? g->ch - 1 : (int32_t)ceilf(yhi + glow_w * 0.5f + 2.0f) - g->cy;   /* the fill runs to the bottom */
+    if(r0 < 0) r0 = 0;
+    if(r1 > g->ch - 1) r1 = g->ch - 1;
+    if(r1 < r0) r1 = r0;
 
-    /* fade in from the left, cut to the round glass */
+    if(mist) brew_graph_fill(g->buf, g->cw, g->ch, g->cy, g->poly, g->npoly, lc, 0.38f, 0.0f);
+    else if(g->rows1 >= g->rows0)
+        memset(g->buf + (size_t)g->rows0 * g->cw * 4, 0, (size_t)(g->rows1 - g->rows0 + 1) * g->cw * 4);
+
+    /* the curve; Mist puts a soft glow under it (two wider, faint passes) */
+    if(mist) {
+        brew_graph_stroke(g->buf, g->cw, g->ch, g->cy, g->poly, g->npoly, lc, g->line_w * 3.6f, 18.0f / 255.0f);
+        brew_graph_stroke(g->buf, g->cw, g->ch, g->cy, g->poly, g->npoly, lc, g->line_w * 2.2f, 36.0f / 255.0f);
+    }
+    brew_graph_stroke(g->buf, g->cw, g->ch, g->cy, g->poly, g->npoly, lc, g->line_w, 1.0f);
+
+    /* fade in from the left, cut to the round glass (only the rows drawn in) */
     const float fx0 = g->x0 - (float)g->cx;
     const float fx1 = fx0 + (g->x1 - g->x0) * (mist ? KIT_GRAPH_FADE_MIST : KIT_GRAPH_FADE_HAIRLINE);
-    brew_graph_mask(g->buf, g->cw, g->ch, g->cy, fx0, fx1, g->clip_cx - (float)g->cx, g->clip_cy, g->clip_r);
+    brew_graph_mask(g->buf + (size_t)r0 * g->cw * 4, g->cw, r1 - r0 + 1, g->cy + r0, fx0, fx1,
+                    g->clip_cx - (float)g->cx, g->clip_cy, g->clip_r);
 
     /* setpoint reference on top, unfaded: dotted, 22% white, across the plot */
-    lv_canvas_init_layer(g->canvas, &layer);
-    const float sy = g->yt + (g->yb - g->yt) * (1.0f - (tg - mn) / (mx - mn)) - (float)g->cy;
-    lv_draw_line_dsc_init(&d);
-    d.color = lv_color_white();
-    d.opa = 56;
-    d.width = 1;
-    d.dash_width = 2;
-    d.dash_gap = 6;
-    d.p1.x = fx0;
-    d.p1.y = sy;
-    d.p2.x = g->x1 - (float)g->cx;
-    d.p2.y = sy;
-    lv_draw_line(&layer, &d);
-    lv_canvas_finish_layer(g->canvas, &layer);
-    lv_obj_invalidate(g->canvas);
+    brew_graph_dash_h(g->buf, g->cw, g->ch, g->cy, fx0, g->x1 - (float)g->cx, sy, 0xFFFFFF, 56.0f / 255.0f, 2, 6);
+
+    /* redraw what changed: the rows drawn last time and this time */
+    lv_area_t a;
+    lv_obj_get_coords(g->canvas, &a);
+    const int32_t top = a.y1;
+    a.y1 = top + (r0 < g->rows0 ? r0 : g->rows0);
+    a.y2 = top + (r1 > g->rows1 ? r1 : g->rows1);
+    lv_obj_invalidate_area(g->canvas, &a);
+    g->rows0 = r0;
+    g->rows1 = r1;
 
     kit_set_bg_color(g->halo, lv_color_hex(lc));
     kit_graph_place_marker(g, m);

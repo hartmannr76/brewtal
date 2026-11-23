@@ -150,6 +150,12 @@ typedef struct {
     brew_pt_t poly[KIT_POLY_MAX];
     int npoly;
     float g_min, g_max;
+    int32_t rows0, rows1;           /* canvas rows the last render drew in (cleared/redrawn next time) */
+    brew_pt_t drawn[KIT_GRAPH_PTS];   /* what the canvas shows now: skip renders that wouldn't change it */
+    int ndrawn;
+    uint32_t drawn_lc;
+    int drawn_style;
+    float drawn_sy;
     bool dirty;
     uint32_t last_ms;
 } kit_graph_t;
