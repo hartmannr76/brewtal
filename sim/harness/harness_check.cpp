@@ -161,7 +161,10 @@ int main()
     bd_turn(-4);            // 69 -> 67 F
     run_ms(200);
     bd_click();             // one press: the display re-sends until the controller confirms
-    run_ms(6000);
+    /* At 10% byte loss a 19-byte command and the State that confirms it both get through only now
+     * and then, so how long it takes depends on the loss pattern. What must hold: it crosses before
+     * the display stops re-sending (RemoteControllerProxy give_up_ms, 15 s). */
+    for(int t = 0; t < 15000 && std::abs(f(field("state", "sp")) - 67.0) >= 0.01; t += 250) run_ms(250);
     drain_log();
     check(std::abs(f(field("state", "sp")) - 67.0) < 0.01, "command crossed the lossy cable");
     check(field("state", "action") == 2, "59 F vs 67 F: heating");

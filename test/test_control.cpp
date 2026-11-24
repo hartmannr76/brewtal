@@ -359,7 +359,10 @@ TEST(controller_runs_a_schedule_with_ramps_overrides_and_restarts)
     ctl.begin(now);
     ctl.tick(now);
     CHECK(port.settings.profile == Profile::Constant);
-    CHECK_EQ(port.settings.nsteps, 2);                       // the default schedule is there to start from
+    CHECK_EQ(port.settings.nsteps, 0);                       // empty until the user builds one
+    port.in.push(Command::setProfile(Profile::Schedule));     // nothing to run: refused
+    ctl.tick(now += 20);
+    CHECK(port.settings.profile == Profile::Constant);
 
     /* 18 C for 2 h (jump), then ramp to 22 C over 2 h and hold it 2 h */
     port.in.push(Command::setStep(0, 18.0f, 0, 2));
@@ -417,6 +420,13 @@ TEST(controller_runs_a_schedule_with_ramps_overrides_and_restarts)
     CHECK(port2.settings.profile == Profile::Constant);
     CHECK_NEAR(port2.last.setpoint_c[0], 21.0, 1e-3);
     CHECK_EQ(store.i["sp0_cc"], 2100);
+
+    /* removing every step of a running schedule goes back to Constant */
+    port2.in.push(Command::setProfile(Profile::Schedule));
+    port2.in.push(Command::setStepCount(0));
+    ctl2.tick(now2 += 20);
+    CHECK_EQ(port2.settings.nsteps, 0);
+    CHECK(port2.settings.profile == Profile::Constant);
 }
 
 TEST(controller_publishes_what_it_wants_while_the_guard_holds_it_off)

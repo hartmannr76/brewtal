@@ -26,10 +26,9 @@ public:
         uint16_t heat_delay_s = ChamberDefaults::kRestartDelayMs / 1000u;
         uint16_t cool_delay_s = ChamberDefaults::kRestartDelayMs / 1000u;
         float    crash_default_c = f_to_c(34.0f);
-        /* The schedule offered until the user edits it: 66 F for 4 days, then up to 70 F over a
-         * day for a 3-day diacetyl rest. */
-        uint8_t      nsteps = 2;
-        ScheduleStep steps[Settings::kMaxSteps] = { { f_to_c(66.0f), 0, 96 }, { f_to_c(70.0f), 24, 72 } };
+        /* The schedule until the user builds one: empty. */
+        uint8_t      nsteps = 0;
+        ScheduleStep steps[Settings::kMaxSteps] = {};
         /* The day count's clock: seconds the controller has been powered, saved every this many
          * seconds so it carries on after a power cut (an outage loses at most this much, plus
          * the time unplugged). Becomes real time once there is WiFi/NTP. */

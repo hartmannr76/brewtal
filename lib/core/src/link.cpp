@@ -189,7 +189,7 @@ void RemoteControllerProxy::overlay(const Command & c, Settings & s)
         return;
     }
     if(c.kind == Command::Kind::SetStepCount) {
-        if(c.value >= 1 && c.value <= Settings::kMaxSteps) s.nsteps = static_cast<uint8_t>(c.value);
+        if(c.value >= 0 && c.value <= Settings::kMaxSteps) s.nsteps = static_cast<uint8_t>(c.value);
         return;
     }
     if(c.kind == Command::Kind::SetStep) {

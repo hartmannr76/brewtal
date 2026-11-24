@@ -371,6 +371,7 @@ void Controller::handle(const Command & c, uint32_t now)
             if(c.value < 0 || c.value >= kProfileCount) return;
             const Profile p = static_cast<Profile>(c.value);
             if(p == set_.profile) break;   /* picking the running profile again changes nothing */
+            if(p == Profile::Schedule && set_.nsteps == 0) return;   /* nothing to run */
             set_.profile = p;
             if(p == Profile::Schedule) startSchedule();
             persist();   /* stopping a schedule keeps the target it had reached */
@@ -396,9 +397,14 @@ void Controller::handle(const Command & c, uint32_t now)
             break;
         }
         case Command::Kind::SetStepCount: {
-            if(c.value < 1 || c.value > Settings::kMaxSteps) return;   /* a schedule has a step */
-            for(int i = set_.nsteps; i < c.value; i++) set_.steps[i] = set_.steps[set_.nsteps - 1];   /* grows by copying the last */
+            /* Removing steps (adding is SetStep, which grows the list). An empty schedule can't run. */
+            if(c.value < 0 || c.value > set_.nsteps) return;
             set_.nsteps = static_cast<uint8_t>(c.value);
+            if(set_.nsteps == 0 && set_.profile == Profile::Schedule) {
+                set_.profile = Profile::Constant;
+                persist();
+                if(store_) store_->setI32(kKeyProfile, static_cast<int32_t>(Profile::Constant));
+            }
             saveSchedule();
             evaluate(now);
             publishSettings(now);

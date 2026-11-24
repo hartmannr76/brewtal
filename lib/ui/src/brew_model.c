@@ -27,9 +27,7 @@ void brew_model_init(brew_model_t * m, const brew_ui_cbs_t * cbs)
     m->heat_delay_s = 180;
     m->cool_delay_s = 180;
     m->crash_default_f = 34.0f;
-    m->sched.nsteps = 2;   /* until the controller says otherwise (its default schedule) */
-    m->sched.steps[0] = (brew_step_t){ 66.0f, 0, 96 };
-    m->sched.steps[1] = (brew_step_t){ 70.0f, 24, 72 };
+    m->sched.nsteps = 0;   /* empty until the user builds one */
 }
 
 void brew_model_free(brew_model_t * m)
@@ -286,7 +284,7 @@ static int build(const brew_model_t * m, brew_list_t l, brew_list_item_t * it)
             }
             if(s->nsteps < BREW_STEPS_MAX) add(it, &n, "Add step", BREW_IC_NONE, ACT_ADD_STEP, 0);
             if(s->profile == BREW_PROFILE_SCHEDULE) add(it, &n, "Stop schedule", BREW_IC_PAUSE, ACT_STOP_SCHEDULE, 0);
-            else add(it, &n, "Use this schedule", BREW_IC_PLAY, ACT_USE_SCHEDULE, 0);
+            else if(s->nsteps > 0) add(it, &n, "Use this schedule", BREW_IC_PLAY, ACT_USE_SCHEDULE, 0);
             break;
         }
         case BREW_LIST_STEP: {
@@ -298,7 +296,7 @@ static int build(const brew_model_t * m, brew_list_t l, brew_list_item_t * it)
             else snprintf(x->value, sizeof(x->value), "jump");
             x = add(it, &n, "Hold", BREW_IC_NONE, ACT_EDIT, BREW_EDIT_STEP_HOLD);
             fmt_dur(x->value, sizeof(x->value), st->hold_h);
-            if(m->sched.nsteps > 1) add(it, &n, "Remove step", BREW_IC_NONE, ACT_REMOVE_STEP, 0);
+            add(it, &n, "Remove step", BREW_IC_NONE, ACT_REMOVE_STEP, 0);
             break;
         }
         case BREW_LIST_BREWFATHER:
@@ -373,7 +371,8 @@ void brew_model_list_note(const brew_model_t * m, char * buf, size_t n)
             for(int i = 0; i < s->nsteps; i++) h += s->steps[i].ramp_h + s->steps[i].hold_h;
             char d[16];
             fmt_dur(d, sizeof(d), h);
-            if(s->profile != BREW_PROFILE_SCHEDULE) snprintf(buf, n, "%d %s \xC2\xB7 %s", s->nsteps, s->nsteps == 1 ? "step" : "steps", d);
+            if(s->nsteps == 0) snprintf(buf, n, "No steps yet");
+            else if(s->profile != BREW_PROFILE_SCHEDULE) snprintf(buf, n, "%d %s \xC2\xB7 %s", s->nsteps, s->nsteps == 1 ? "step" : "steps", d);
             else if(s->step == BREW_STEP_DONE || s->step >= s->nsteps) snprintf(buf, n, "Done: holding the last step");
             else snprintf(buf, n, "Running \xC2\xB7 step %d of %d", s->step + 1, s->nsteps);
             break;
@@ -910,22 +909,25 @@ static uint32_t press_item(brew_model_t * m, const brew_list_item_t * it)
         case ACT_ADD_STEP: {
             brew_schedule_t * s = &m->sched;
             if(s->nsteps >= BREW_STEPS_MAX) return 0;
-            s->steps[s->nsteps] = s->nsteps > 0 ? s->steps[s->nsteps - 1] : (brew_step_t){ 66.0f, 0, 72 };
+            /* the new step starts like the last one; the first, at today's Ferment target for 3 days */
+            const brew_step_t st = s->nsteps > 0 ? s->steps[s->nsteps - 1] : (brew_step_t){ m->sp_f[BREW_MODE_FERMENT], 0, 72 };
+            s->steps[s->nsteps] = st;
             s->nsteps++;
-            if(m->cbs.on_step_count) m->cbs.on_step_count(s->nsteps, m->cbs.user);
             m->step_sel = s->nsteps - 1;
+            if(m->cbs.on_step) m->cbs.on_step(m->step_sel, st.temp_f, st.ramp_h, st.hold_h, m->cbs.user);
             return open_list(m, BREW_LIST_STEP, 0);   /* straight into the new step */
         }
         case ACT_REMOVE_STEP: {
             brew_schedule_t * s = &m->sched;
-            if(s->nsteps <= 1) return 0;
+            if(s->nsteps < 1) return 0;
             for(int i = m->step_sel; i < s->nsteps - 1; i++) {
                 s->steps[i] = s->steps[i + 1];
                 if(m->cbs.on_step) m->cbs.on_step(i, s->steps[i].temp_f, s->steps[i].ramp_h, s->steps[i].hold_h, m->cbs.user);
             }
             s->nsteps--;
+            if(s->nsteps == 0) s->profile = BREW_PROFILE_CONSTANT;   /* nothing left to run (the controller does the same) */
             if(m->cbs.on_step_count) m->cbs.on_step_count(s->nsteps, m->cbs.user);
-            return open_list(m, BREW_LIST_SCHEDULE, m->step_sel < s->nsteps ? m->step_sel : s->nsteps - 1);
+            return open_list(m, BREW_LIST_SCHEDULE, m->step_sel < s->nsteps ? m->step_sel : (s->nsteps > 0 ? s->nsteps - 1 : 0));
         }
         case ACT_RESET_DAY:
             m->day = 1;   /* the controller confirms in its next State */

@@ -606,6 +606,26 @@ TEST(ui_model_schedule_lists_editors_and_home_text)
     CHECK(m.list == BREW_LIST_SCHEDULE);
     char note[64];
     brew_model_list_note(&m, note, sizeof(note));
+    CHECK_EQ(std::string(note), std::string("No steps yet"));   // empty at first: nothing to use yet
+    CHECK(row(m, 0) == "Add step" && row(m, 1) == "Previous");
+    brew_model_press(&m);                        // Add step: at today's Ferment target, 3 days
+    CHECK(m.list == BREW_LIST_STEP && m.step_sel == 0);
+    CHECK_EQ(c.last_step, 0);
+    CHECK_NEAR(c.step.temp_f, 66.0, 0.01);
+    CHECK_EQ(c.step.hold_h, 72);
+    CHECK_EQ(c.counts, 0);                       // adding sends the step itself
+    go(m, "Remove");
+    brew_model_press(&m);                        // and the only step can go again
+    CHECK_EQ(c.last_count, 0);
+    CHECK_EQ(m.sched.nsteps, 0);
+
+    /* the controller's schedule arrives: 66 F for 4 days, then up to 70 F over a day, 3 days */
+    brew_schedule_t two = {};
+    two.nsteps = 2;
+    two.steps[0] = { 66.0f, 0, 96 };
+    two.steps[1] = { 70.0f, 24, 72 };
+    brew_model_set_schedule(&m, &two);
+    brew_model_list_note(&m, note, sizeof(note));
     CHECK_EQ(std::string(note), std::string("2 steps \xC2\xB7 8 d"));
     CHECK_EQ(row(m, 0), std::string("1 \xC2\xB7 66.0\xC2\xB0" "F = 4 d"));
     CHECK_EQ(row(m, 1), std::string("2 \xC2\xB7 70.0\xC2\xB0" "F = ramp 1 d, 3 d"));
@@ -645,7 +665,8 @@ TEST(ui_model_schedule_lists_editors_and_home_text)
     CHECK(m.list == BREW_LIST_SCHEDULE && m.list_idx == 1);
     go(m, "Add step");
     brew_model_press(&m);
-    CHECK_EQ(c.last_count, 3);
+    CHECK_EQ(c.last_step, 2);                    // a copy of the last step
+    CHECK_EQ(m.sched.nsteps, 3);
     CHECK(m.list == BREW_LIST_STEP && m.step_sel == 2);
     go(m, "Previous");
     brew_model_press(&m);
