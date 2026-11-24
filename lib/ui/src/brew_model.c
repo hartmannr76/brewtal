@@ -10,6 +10,8 @@
 #include <string.h>
 #include <time.h>
 
+static uint32_t set_view(brew_model_t * m, brew_view_t v);
+
 void brew_model_init(brew_model_t * m, const brew_ui_cbs_t * cbs)
 {
     memset(m, 0, sizeof(*m));
@@ -33,6 +35,10 @@ void brew_model_free(brew_model_t * m)
 
 brew_vstate_t brew_model_vstate(const brew_model_t * m)
 {
+    if(m->view == BREW_VIEW_WIFI) {   /* the WiFi screens light the glass by how setup is going */
+        const brew_wifi_screen_t s = brew_model_wifi_screen(m);
+        return s == BREW_WIFI_SCREEN_DONE ? BREW_VS_OK : s == BREW_WIFI_SCREEN_FAILED ? BREW_VS_HEAT : BREW_VS_COOL;
+    }
     if(m->paused) return BREW_VS_PAUSE;
     if(m->mode == BREW_MODE_CRASH) return BREW_VS_CRASH;
     if(m->action == BREW_ACTION_COOLING) return BREW_VS_COOL;
@@ -181,6 +187,17 @@ void brew_model_menu_label(const brew_model_t * m, int i, char * buf, size_t n)
         case BREW_MENU_PAUSE:   snprintf(buf, n, "%s", m->paused ? "Resume" : "Pause"); break;
         case BREW_MENU_HISTORY: snprintf(buf, n, "History"); break;
         case BREW_MENU_UNITS:   snprintf(buf, n, "Units \xC2\xB7 \xC2\xB0%c", m->celsius ? 'C' : 'F'); break;
+        case BREW_MENU_WIFI: {
+            char s[20];
+            snprintf(s, sizeof(s), "%.14s%s", m->wifi_ssid, strlen(m->wifi_ssid) > 14 ? "..." : "");
+            switch(m->wifi_phase) {
+                case BREW_WIFI_NONE:      snprintf(buf, n, "WiFi \xC2\xB7 unavailable"); break;
+                case BREW_WIFI_CONNECTED: snprintf(buf, n, "WiFi \xC2\xB7 %s", s); break;
+                case BREW_WIFI_OFFLINE:   snprintf(buf, n, "WiFi \xC2\xB7 not connected"); break;
+                default:                  snprintf(buf, n, "WiFi \xC2\xB7 set up"); break;
+            }
+            break;
+        }
         case BREW_MENU_RESET_DAY: snprintf(buf, n, "Reset day count"); break;
         default:                if(n) buf[0] = 0; break;
     }
@@ -204,9 +221,16 @@ const char * brew_model_press_hint(const brew_model_t * m)
                 case BREW_MENU_PAUSE:   return m->paused ? "Resume" : "Pause";
                 case BREW_MENU_HISTORY: return "Open";
                 case BREW_MENU_UNITS:   return "Switch";
+                case BREW_MENU_WIFI:    return m->wifi_phase == BREW_WIFI_NONE ? "" : "Set up";
                 case BREW_MENU_RESET_DAY: return "Reset";
             }
             break;
+        case BREW_VIEW_WIFI:
+            switch(brew_model_wifi_screen(m)) {
+                case BREW_WIFI_SCREEN_JOIN: return "Skip";
+                case BREW_WIFI_SCREEN_DONE: return "Done";
+                default:                    return "Cancel";
+            }
     }
     return "";
 }
@@ -225,8 +249,104 @@ bool brew_model_can_step(const brew_model_t * m, int dir)
         }
         case BREW_VIEW_HIST:
             return dir > 0 ? m->hist_idx < brew_model_hist_last(m) : m->hist_idx > 0;
+        case BREW_VIEW_WIFI:
+            return false;
     }
     return false;
+}
+
+/* ------------------------------------------------------------------ WiFi */
+
+static bool setup_phase(brew_wifi_phase_t p)
+{
+    return p == BREW_WIFI_SETUP || p == BREW_WIFI_PHONE || p == BREW_WIFI_CONNECTING;
+}
+
+bool brew_model_wifi_setup_open(const brew_model_t * m) { return setup_phase(m->wifi_phase); }
+
+brew_wifi_screen_t brew_model_wifi_screen(const brew_model_t * m)
+{
+    switch(m->wifi_phase) {
+        case BREW_WIFI_CONNECTING: return BREW_WIFI_SCREEN_TRYING;
+        case BREW_WIFI_CONNECTED:  return BREW_WIFI_SCREEN_DONE;
+        case BREW_WIFI_PHONE:      return m->wifi_error ? BREW_WIFI_SCREEN_FAILED : BREW_WIFI_SCREEN_PHONE;
+        default:                   return m->wifi_error ? BREW_WIFI_SCREEN_FAILED : BREW_WIFI_SCREEN_JOIN;
+    }
+}
+
+void brew_model_wifi_text(const brew_model_t * m, brew_wifi_text_t * t)
+{
+    memset(t, 0, sizeof(*t));
+    switch(brew_model_wifi_screen(m)) {
+        case BREW_WIFI_SCREEN_JOIN:
+            snprintf(t->pill, sizeof(t->pill), "WIFI SETUP");
+            snprintf(t->title, sizeof(t->title), "Scan to join");
+            snprintf(t->line1, sizeof(t->line1), "%s \xC2\xB7 %s", m->wifi_ap_ssid, m->wifi_ap_password);
+            snprintf(t->foot, sizeof(t->foot), "PRESS TO SKIP");
+            /* the standard WiFi QR format phones understand (our names need no escaping) */
+            snprintf(t->qr, sizeof(t->qr), "WIFI:T:WPA;S:%s;P:%s;;", m->wifi_ap_ssid, m->wifi_ap_password);
+            break;
+        case BREW_WIFI_SCREEN_PHONE:
+            snprintf(t->pill, sizeof(t->pill), "WIFI SETUP");
+            snprintf(t->title, sizeof(t->title), "Finish on your phone");
+            snprintf(t->line1, sizeof(t->line1), "Page didn't open? Go to");
+            snprintf(t->line2, sizeof(t->line2), "192.168.4.1");
+            snprintf(t->foot, sizeof(t->foot), "PRESS TO CANCEL");
+            break;
+        case BREW_WIFI_SCREEN_TRYING:
+            snprintf(t->pill, sizeof(t->pill), "CONNECTING");
+            snprintf(t->title, sizeof(t->title), "%s", m->wifi_ssid);
+            snprintf(t->line1, sizeof(t->line1), "Joining your WiFi...");
+            snprintf(t->foot, sizeof(t->foot), "PRESS TO CANCEL");
+            break;
+        case BREW_WIFI_SCREEN_FAILED:
+            snprintf(t->pill, sizeof(t->pill), "COULDN'T CONNECT");
+            snprintf(t->title, sizeof(t->title), "%s",
+                     m->wifi_error == BREW_WIFI_ERR_PASSWORD    ? "Wrong password"
+                     : m->wifi_error == BREW_WIFI_ERR_NOT_FOUND ? "Network not found"
+                                                                : "Couldn't connect");
+            snprintf(t->line1, sizeof(t->line1), "for %s", m->wifi_ssid);
+            snprintf(t->line2, sizeof(t->line2), "Try again on your phone");
+            snprintf(t->foot, sizeof(t->foot), "PRESS TO CANCEL");
+            break;
+        case BREW_WIFI_SCREEN_DONE:
+            snprintf(t->pill, sizeof(t->pill), "CONNECTED");
+            snprintf(t->title, sizeof(t->title), "%s", m->wifi_ssid);
+            snprintf(t->line1, sizeof(t->line1), "Saved for next time.");
+            snprintf(t->foot, sizeof(t->foot), "PRESS TO CONTINUE");
+            break;
+    }
+}
+
+uint32_t brew_model_set_wifi(brew_model_t * m, const brew_wifi_t * w)
+{
+    const brew_wifi_phase_t was = m->wifi_phase;
+    const bool was_open = setup_phase(was);
+    m->wifi_phase = w->phase;
+    m->wifi_error = w->error;
+    snprintf(m->wifi_ssid, sizeof(m->wifi_ssid), "%s", w->ssid ? w->ssid : "");
+    snprintf(m->wifi_ap_ssid, sizeof(m->wifi_ap_ssid), "%s", w->ap_ssid ? w->ap_ssid : "");
+    snprintf(m->wifi_ap_password, sizeof(m->wifi_ap_password), "%s", w->ap_password ? w->ap_password : "");
+    const bool open = setup_phase(w->phase);
+
+    uint32_t ch = BREW_CH_REFRESH;
+    if(open && !was_open && m->view != BREW_VIEW_WIFI) {
+        /* setup started (first start, or the menu): show it; a half-made adjustment is dropped */
+        const bool dropped = m->setting;
+        m->setting = false;
+        ch |= set_view(m, BREW_VIEW_WIFI) | (dropped ? BREW_CH_DISARM_COMMIT : 0u);
+    }
+    else if(m->view == BREW_VIEW_WIFI && !open) {
+        if(w->phase == BREW_WIFI_CONNECTED && was == BREW_WIFI_CONNECTING) ch |= BREW_CH_ARM_WIFI_DONE;   /* show "Connected" */
+        else if(w->phase != BREW_WIFI_CONNECTED || was != BREW_WIFI_CONNECTED) ch |= set_view(m, BREW_VIEW_HOME);   /* setup closed */
+    }
+    return ch;
+}
+
+uint32_t brew_model_wifi_done(brew_model_t * m)
+{
+    if(m->view != BREW_VIEW_WIFI || m->wifi_phase != BREW_WIFI_CONNECTED) return 0;
+    return set_view(m, BREW_VIEW_HOME);
 }
 
 /* ------------------------------------------------------------------ controller -> model */
@@ -376,6 +496,8 @@ uint32_t brew_model_encoder(brew_model_t * m, int d)
             m->hist_idx = i;
             return BREW_CH_REFRESH | BREW_CH_ANIMATE;
         }
+        case BREW_VIEW_WIFI:
+            return 0;   /* turning does nothing here; a press skips or closes */
     }
     return 0;
 }
@@ -386,6 +508,10 @@ uint32_t brew_model_press(brew_model_t * m)
         case BREW_VIEW_HOME:
             return m->setting ? brew_model_commit(m) : set_view(m, BREW_VIEW_MENU);
         case BREW_VIEW_HIST:
+            return set_view(m, BREW_VIEW_HOME);
+        case BREW_VIEW_WIFI:
+            /* skip / cancel setup, or dismiss "Connected"; either way back to the dial */
+            if(m->wifi_phase != BREW_WIFI_CONNECTED && m->cbs.on_wifi_cancel) m->cbs.on_wifi_cancel(m->cbs.user);
             return set_view(m, BREW_VIEW_HOME);
         case BREW_VIEW_MENU:
             switch(m->menu_idx) {
@@ -405,6 +531,11 @@ uint32_t brew_model_press(brew_model_t * m)
                     m->celsius = !m->celsius;
                     if(m->cbs.on_units) m->cbs.on_units(m->celsius, m->cbs.user);
                     return BREW_CH_REFRESH;
+                case BREW_MENU_WIFI:
+                    if(m->wifi_phase == BREW_WIFI_NONE) return 0;
+                    /* WifiSetup opens setup; its next status brings up the WiFi view */
+                    if(m->cbs.on_wifi_setup) m->cbs.on_wifi_setup(m->cbs.user);
+                    return set_view(m, BREW_VIEW_HOME);
                 case BREW_MENU_RESET_DAY:
                     m->day = 1;   /* the controller confirms in its next State */
                     if(m->cbs.on_reset_day) m->cbs.on_reset_day(m->cbs.user);

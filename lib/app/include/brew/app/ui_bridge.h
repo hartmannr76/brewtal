@@ -3,11 +3,14 @@
  *   - State / History from the port -> brew_ui_set_* (only for values that changed)
  *   - brew_ui callbacks -> Commands on the port
  *   - InputEvents (Rotate/Press) -> brew_ui_encoder / brew_ui_press
+ *   - the display's WiFi (net::WifiSetup, if attached) -> brew_ui_set_wifi, and the WiFi
+ *     screen's choices back to it
  * Converts between core's Celsius and brew_ui's Fahrenheit API. Runs in the LVGL task only.
  */
 #pragma once
 
 #include "brew/input.h"
+#include "brew/network/wifi_setup.h"
 #include "brew/ports.h"
 
 #include "lvgl.h"
@@ -30,11 +33,17 @@ public:
     /** Rotate/Press go to the UI. Touch events are ignored here (they go to the LVGL indev). */
     void handle(const InputEvent & e);
 
+    /** The display's WiFi. Without one the UI's WiFi menu item says "unavailable". Same task:
+     *  tick the WifiSetup in the loop that calls poll(). */
+    void attachWifi(net::WifiSetup * wifi) { wifi_ = wifi; wifi_pushed_ = false; }
+
     /* brew_ui callback targets (called through extern "C" trampolines; `user` = this) */
     static void onSetpointThunk(int mode, float temp_f, void * user);
     static void onModeThunk(int mode, bool paused, void * user);
     static void onUnitsThunk(bool celsius, void * user);
     static void onResetDayThunk(void * user);
+    static void onWifiSetupThunk(void * user);
+    static void onWifiCancelThunk(void * user);
 
 private:
     struct Shown {
@@ -55,8 +64,14 @@ private:
     void apply(const State & s);
     void applyHistory(const HistoryChunk & h);
 
+    void pushWifi();
+
     UiPort & port_;
     Shown shown_;
+    uint32_t now_ = 0;
+    net::WifiSetup * wifi_ = nullptr;
+    net::SetupStatus wifi_shown_;
+    bool wifi_pushed_ = false;
 };
 
 }  // namespace brew::app

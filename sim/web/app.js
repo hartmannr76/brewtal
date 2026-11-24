@@ -433,26 +433,19 @@ createBrewDial().then((M) => {
   }
   $('wifi-phone').onchange = (e) => api.wifiPhone(e.target.checked ? 1 : 0);
   $('wifi-router').onchange = (e) => api.wifiRouter(e.target.checked ? 1 : 0);
-  $('wifi-setup').onclick = () => api.wifiSetup();
-  $('wifi-skip').onclick = () => api.wifiSkip();
   $('wifi-forget').onclick = () => api.wifiForget();
+  if (qs.get('wifi') === 'new') api.wifiForget();       // start as a device never set up
   if (qs.get('wifi_phone') === '1') api.wifiPhone(1);   // for screenshots
 
   const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-  const WIFI_ERR = { wrong_password: 'Wrong password for', not_found: 'Couldn\u2019t find', failed: 'Couldn\u2019t connect to' };
+  const WIFI_PHASE = { off: 'Off: nothing saved', hotspot: 'Setup network up', phone_joined: 'Phone on the setup network',
+    connecting: 'Connecting', connected: 'Connected', offline: 'Not connected: retrying' };
   function renderWifi(w) {
-    let dial;
-    if (w.phase === 'connecting') dial = `CONNECTING\n${w.ssid}`;
-    else if (w.phase === 'hotspot' || w.phase === 'phone_joined') {
-      dial = w.error ? `COULDN\u2019T CONNECT\n${WIFI_ERR[w.error]} ${w.ssid}. Try again on the phone.`
-        : w.phase === 'hotspot' ? `WIFI SETUP\nScan to join ${w.ap_ssid}  ·  password ${w.ap_password}`
-        : 'WIFI SETUP\nFinish on your phone  ·  page didn\u2019t open? 192.168.4.1';
-      dial += `\nCloses by itself in ${mmss(w.setup_left_s)}`;
-    }
-    else if (w.phase === 'connected') dial = `CONNECTED\n${w.ssid}${w.ap ? '  ·  setup network closes in a moment' : ''}`;
-    else if (w.phase === 'offline') dial = `Not connected: retrying ${w.ssid} in the background`;
-    else dial = 'No WiFi saved (setup skipped). Open it from the menu.';
-    setText($('wifi-dial'), dial);
+    let t = WIFI_PHASE[w.phase] || w.phase;
+    if (w.phase === 'connected' || w.phase === 'offline' || w.phase === 'connecting') t += `  ·  ${w.ssid}`;
+    if (w.ap) t += `\nSetup network ${w.ap_ssid}  ·  password ${w.ap_password}  ·  closes in ${mmss(w.setup_left_s)}`;
+    if (w.error) t += `\nLast try: ${w.error.replace('_', ' ')}`;
+    setText($('wifi-state'), t);
     const ph = $('wifi-phone');
     if (ph.checked !== w.phone) ph.checked = w.phone;
     ph.disabled = !w.ap;

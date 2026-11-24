@@ -28,14 +28,39 @@ extern "C" {
 #define BREW_T_MIN     30.0f    /* adjustable target range, F */
 #define BREW_T_MAX     80.0f
 #define BREW_COMMIT_MS 2800     /* an adjusted target commits itself after this long */
+#define BREW_WIFI_DONE_MS 4000  /* "Connected" shows this long, then the dial comes back */
 
 /** Visual state: picks colours. Same rules everywhere (the web harness mirrors them). */
-typedef enum { BREW_VS_COOL, BREW_VS_IDLE, BREW_VS_HEAT, BREW_VS_CRASH, BREW_VS_PAUSE, BREW_VS_N } brew_vstate_t;
+typedef enum {
+    BREW_VS_COOL, BREW_VS_IDLE, BREW_VS_HEAT, BREW_VS_CRASH, BREW_VS_PAUSE,
+    BREW_VS_OK,   /* green: "Connected" on the WiFi screen */
+    BREW_VS_N
+} brew_vstate_t;
 
-typedef enum { BREW_VIEW_HOME, BREW_VIEW_MENU, BREW_VIEW_HIST } brew_view_t;
+/** BREW_VIEW_WIFI: WiFi setup (QR code, connecting, ...). Opens by itself when setup starts. */
+typedef enum { BREW_VIEW_HOME, BREW_VIEW_MENU, BREW_VIEW_HIST, BREW_VIEW_WIFI } brew_view_t;
+
+/** What the WiFi view shows (brew_model_wifi_screen). */
+typedef enum {
+    BREW_WIFI_SCREEN_JOIN,      /* QR code + setup network name and password */
+    BREW_WIFI_SCREEN_PHONE,     /* finish on your phone */
+    BREW_WIFI_SCREEN_TRYING,    /* connecting */
+    BREW_WIFI_SCREEN_FAILED,    /* wrong password / not found */
+    BREW_WIFI_SCREEN_DONE,      /* connected */
+} brew_wifi_screen_t;
+
+typedef struct {
+    char pill[24];    /* "WIFI SETUP", "CONNECTING", "COULDN'T CONNECT", "CONNECTED" */
+    char title[48];   /* "Scan to join", "Finish on your phone", "Hartmann-5G", "Wrong password" */
+    char line1[64];   /* "BrewDial-4F2A · malt-7391", "Page didn't open? Go to", "for Hartmann-5G" */
+    char line2[48];   /* "192.168.4.1", "Try again on your phone" */
+    char foot[24];    /* "PRESS TO SKIP", "PRESS TO CANCEL", "PRESS TO CONTINUE" */
+    char qr[96];      /* WIFI: join string for the QR code ("" = no QR) */
+} brew_wifi_text_t;
 
 typedef enum {
     BREW_MENU_FERMENT, BREW_MENU_CRASH, BREW_MENU_PAUSE, BREW_MENU_HISTORY, BREW_MENU_UNITS,
+    BREW_MENU_WIFI,
     BREW_MENU_RESET_DAY,   /* last: the one item that can't be undone is the hardest to land on */
     BREW_MENU_N
 } brew_menu_item_t;
@@ -51,6 +76,7 @@ enum {
     BREW_CH_MENU_MOVE     = 1u << 6,  /* the menu selection moved (m->menu_idx) */
     BREW_CH_ARM_COMMIT    = 1u << 7,  /* (re)start the BREW_COMMIT_MS countdown, then call brew_model_commit() */
     BREW_CH_DISARM_COMMIT = 1u << 8,  /* stop the countdown: nothing is being adjusted */
+    BREW_CH_ARM_WIFI_DONE = 1u << 9,  /* start the BREW_WIFI_DONE_MS countdown, then call brew_model_wifi_done() */
 };
 
 typedef struct {
@@ -72,6 +98,13 @@ typedef struct {
     char batch[32];
     int day;
     brew_graph_style_t graph_style;   /* how layouts draw the history graph */
+
+    /* the display's WiFi */
+    brew_wifi_phase_t wifi_phase;
+    brew_wifi_error_t wifi_error;
+    char wifi_ssid[33];
+    char wifi_ap_ssid[33];
+    char wifi_ap_password[24];
 
     /* interaction */
     brew_view_t view;
@@ -99,6 +132,9 @@ uint32_t brew_model_set_batch(brew_model_t * m, const char * name, int day);
 uint32_t brew_model_set_graph_style(brew_model_t * m, brew_graph_style_t style);
 uint32_t brew_model_set_history(brew_model_t * m, const float * temps_f, int n, int ms_per_sample);
 uint32_t brew_model_push_history(brew_model_t * m, float temp_f);
+/** The WiFi status. Setup starting opens the WiFi view; setup ending closes it; a connection
+ *  made from it shows "Connected" for BREW_WIFI_DONE_MS. */
+uint32_t brew_model_set_wifi(brew_model_t * m, const brew_wifi_t * w);
 
 /* ---- input -> model ---- */
 /** Positive = clockwise / up / warmer. One call per detent or button press, or a sum. */
@@ -107,6 +143,8 @@ uint32_t brew_model_encoder(brew_model_t * m, int steps);
 uint32_t brew_model_press(brew_model_t * m);
 /** Commit the target being adjusted (the auto-commit countdown expired). No-op otherwise. */
 uint32_t brew_model_commit(brew_model_t * m);
+/** "Connected" has shown long enough: back to the dial. No-op otherwise. */
+uint32_t brew_model_wifi_done(brew_model_t * m);
 
 /* ---- derived (read-only) ---- */
 brew_vstate_t brew_model_vstate(const brew_model_t * m);
@@ -141,6 +179,11 @@ void brew_model_hist_time(const brew_model_t * m, int i, char * buf, size_t n);
 int brew_model_hist_step(const brew_model_t * m);
 /** How far back the history window reaches: "last 2 hours", "last hour", "last 45 min". */
 void brew_model_hist_window_text(const brew_model_t * m, char * buf, size_t n);
+
+/* WiFi view */
+bool brew_model_wifi_setup_open(const brew_model_t * m);
+brew_wifi_screen_t brew_model_wifi_screen(const brew_model_t * m);
+void brew_model_wifi_text(const brew_model_t * m, brew_wifi_text_t * t);
 
 /* Menu */
 /** Label for item i ("Pause" / "Resume", "Units · °F", ...). */

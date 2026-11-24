@@ -21,6 +21,32 @@ typedef enum {
     BREW_ACTION_HEATING,
 } brew_action_t;
 
+/** The display's WiFi, as the UI shows it (fed from lib/network's WifiSetup by UiBridge). */
+typedef enum {
+    BREW_WIFI_NONE = 0,     /* no WiFi on this display (the menu item says so and does nothing) */
+    BREW_WIFI_OFF,          /* nothing saved, setup not running */
+    BREW_WIFI_SETUP,        /* setup network up, waiting for a phone */
+    BREW_WIFI_PHONE,        /* a phone is on the setup network */
+    BREW_WIFI_CONNECTING,   /* trying the network picked on the phone */
+    BREW_WIFI_CONNECTED,
+    BREW_WIFI_OFFLINE,      /* saved network out of reach: retrying in the background */
+} brew_wifi_phase_t;
+
+typedef enum {
+    BREW_WIFI_ERR_NONE = 0,
+    BREW_WIFI_ERR_PASSWORD,
+    BREW_WIFI_ERR_NOT_FOUND,
+    BREW_WIFI_ERR_FAILED,
+} brew_wifi_error_t;
+
+typedef struct {
+    brew_wifi_phase_t phase;
+    brew_wifi_error_t error;     /* why the last attempt from the phone failed */
+    const char * ssid;           /* the network joined, being tried, or saved */
+    const char * ap_ssid;        /* the setup network ("BrewDial-4F2A")... */
+    const char * ap_password;    /* ...and its password ("malt-7391") */
+} brew_wifi_t;
+
 /** How the history graph behind the reading is drawn. Presentation only: same data either way. */
 typedef enum {
     BREW_GRAPH_HAIRLINE = 0,   /* a thin line fading in from the left, no fill (default) */
@@ -37,6 +63,10 @@ typedef struct {
     void (*on_units)(bool celsius, void * user);
     /** User picked "Reset day count": Day 1 starts now. */
     void (*on_reset_day)(void * user);
+    /** User picked WiFi in the menu: open WiFi setup. */
+    void (*on_wifi_setup)(void * user);
+    /** User pressed while WiFi setup showed: close it, change nothing. */
+    void (*on_wifi_cancel)(void * user);
     void * user;
 } brew_ui_cbs_t;
 

@@ -12,6 +12,7 @@ static struct {
     lv_obj_t * screen;
     const brew_layout_t * layout;
     lv_timer_t * commit_t;
+    lv_timer_t * wifi_t;     /* "Connected" closes itself */
 } S;
 
 static void apply(uint32_t ch)
@@ -21,6 +22,10 @@ static void apply(uint32_t ch)
         lv_timer_resume(S.commit_t);
     }
     if(ch & BREW_CH_DISARM_COMMIT) lv_timer_pause(S.commit_t);
+    if(ch & BREW_CH_ARM_WIFI_DONE) {
+        lv_timer_reset(S.wifi_t);
+        lv_timer_resume(S.wifi_t);
+    }
     if(ch && S.layout) S.layout->update(&S.m, ch);
 }
 
@@ -28,6 +33,12 @@ static void commit_timer_cb(lv_timer_t * t)
 {
     LV_UNUSED(t);
     apply(brew_model_commit(&S.m));
+}
+
+static void wifi_timer_cb(lv_timer_t * t)
+{
+    lv_timer_pause(t);   /* one-shot */
+    apply(brew_model_wifi_done(&S.m));
 }
 
 void brew_ui_create_with_layout(lv_obj_t * screen, const brew_ui_cbs_t * cbs, const brew_layout_t * layout)
@@ -38,6 +49,8 @@ void brew_ui_create_with_layout(lv_obj_t * screen, const brew_ui_cbs_t * cbs, co
     S.layout = layout ? layout : &brew_layout_round;
     S.commit_t = lv_timer_create(commit_timer_cb, BREW_COMMIT_MS, NULL);
     lv_timer_pause(S.commit_t);
+    S.wifi_t = lv_timer_create(wifi_timer_cb, BREW_WIFI_DONE_MS, NULL);
+    lv_timer_pause(S.wifi_t);
     S.layout->create(screen, &S.m);
 }
 
@@ -72,6 +85,7 @@ void brew_ui_set_history(const float * t, int n, int ms_per_sample)
     apply(brew_model_set_history(&S.m, t, n, ms_per_sample));
 }
 void brew_ui_push_history(float f) { apply(brew_model_push_history(&S.m, f)); }
+void brew_ui_set_wifi(const brew_wifi_t * w) { if(w) apply(brew_model_set_wifi(&S.m, w)); }
 
 /* ---- input -> UI ---- */
 void brew_ui_encoder(int detents) { apply(brew_model_encoder(&S.m, detents)); }

@@ -28,6 +28,8 @@ static void cb_setpoint(brew_mode_t m, float f, void * u) { UiBridge::onSetpoint
 static void cb_mode(brew_mode_t m, bool p, void * u) { UiBridge::onModeThunk(static_cast<int>(m), p, u); }
 static void cb_units(bool c, void * u) { UiBridge::onUnitsThunk(c, u); }
 static void cb_reset_day(void * u) { UiBridge::onResetDayThunk(u); }
+static void cb_wifi_setup(void * u) { UiBridge::onWifiSetupThunk(u); }
+static void cb_wifi_cancel(void * u) { UiBridge::onWifiCancelThunk(u); }
 }
 
 void UiBridge::create(lv_obj_t * screen, const brew_layout * layout)
@@ -37,6 +39,8 @@ void UiBridge::create(lv_obj_t * screen, const brew_layout * layout)
     cbs.on_mode = cb_mode;
     cbs.on_units = cb_units;
     cbs.on_reset_day = cb_reset_day;
+    cbs.on_wifi_setup = cb_wifi_setup;
+    cbs.on_wifi_cancel = cb_wifi_cancel;
     cbs.user = this;
     brew_ui_create_with_layout(screen, &cbs, layout);
     port_.send(Command::requestSync());
@@ -77,13 +81,58 @@ void UiBridge::onResetDayThunk(void * user)
 
 /* ---- controller -> UI ---- */
 
+void UiBridge::onWifiSetupThunk(void * user)
+{
+    auto * self = static_cast<UiBridge *>(user);
+    if(self->wifi_) self->wifi_->startSetup(self->now_);   // its new status opens the WiFi screen
+}
+
+void UiBridge::onWifiCancelThunk(void * user)
+{
+    auto * self = static_cast<UiBridge *>(user);
+    if(self->wifi_) self->wifi_->cancelSetup(self->now_);
+}
+
 void UiBridge::poll(uint32_t now_ms)
 {
+    now_ = now_ms;
     port_.service(now_ms);
     HistoryChunk h;
     while(port_.pollHistory(h)) applyHistory(h);
     State s;
     if(port_.pollState(s)) apply(s);
+    pushWifi();
+}
+
+void UiBridge::pushWifi()
+{
+    if(!wifi_) return;
+    const net::SetupStatus & w = wifi_->status();
+    net::SetupStatus & v = wifi_shown_;
+    if(wifi_pushed_ && w.phase == v.phase && w.error == v.error && std::strcmp(w.ssid, v.ssid) == 0 &&
+       std::strcmp(w.ap_ssid, v.ap_ssid) == 0 && std::strcmp(w.ap_password, v.ap_password) == 0)
+        return;   // the countdown and phone count aren't shown: no redraw for them
+    v = w;
+    wifi_pushed_ = true;
+    brew_wifi_t u = {};
+    switch(w.phase) {
+        case net::SetupPhase::Off:         u.phase = BREW_WIFI_OFF; break;
+        case net::SetupPhase::Hotspot:     u.phase = BREW_WIFI_SETUP; break;
+        case net::SetupPhase::PhoneJoined: u.phase = BREW_WIFI_PHONE; break;
+        case net::SetupPhase::Connecting:  u.phase = BREW_WIFI_CONNECTING; break;
+        case net::SetupPhase::Connected:   u.phase = BREW_WIFI_CONNECTED; break;
+        case net::SetupPhase::Offline:     u.phase = BREW_WIFI_OFFLINE; break;
+    }
+    switch(w.error) {
+        case net::SetupError::None:          u.error = BREW_WIFI_ERR_NONE; break;
+        case net::SetupError::WrongPassword: u.error = BREW_WIFI_ERR_PASSWORD; break;
+        case net::SetupError::NotFound:      u.error = BREW_WIFI_ERR_NOT_FOUND; break;
+        case net::SetupError::Failed:        u.error = BREW_WIFI_ERR_FAILED; break;
+    }
+    u.ssid = w.ssid;
+    u.ap_ssid = w.ap_ssid;
+    u.ap_password = w.ap_password;
+    brew_ui_set_wifi(&u);
 }
 
 void UiBridge::apply(const State & s)

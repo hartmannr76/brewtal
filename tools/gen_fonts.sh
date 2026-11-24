@@ -26,8 +26,8 @@ PY
 C=node_modules/.bin/lv_font_conv
 T=node_modules/@tabler/icons-webfont/dist/fonts/tabler-icons.ttf
 TXT="0x20-0x7E,0xB0,0xB7"
-ICO="0xefa1,0xec0b,0xed45,0xed46,0xea5c,0xeb38,0xfad2"   # beer snowflake pause play chart-line
-                                                         # temperature calendar-repeat
+ICO="0xefa1,0xec0b,0xed45,0xed46,0xea5c,0xeb38,0xfad2,0xeb52,0xea8a,0xea5e"
+# beer snowflake pause play chart-line temperature calendar-repeat wifi device-mobile check
 DIG="0x2D-0x2E,0x30-0x39"
 UNIT="0xB0,0x43,0x46"                              # deg C F
 CAPS="0x20-0x5A,0xB7"                              # space .. Z, middle dot

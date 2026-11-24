@@ -25,3 +25,6 @@ LV_FONT_DECLARE(brew_font_menu_bold); /* Inter 560 + icons - selected menu item 
 #define BREW_ICON_CHART     "\xEE\xA9\x9C" /* U+EA5C */
 #define BREW_ICON_TEMP      "\xEE\xAC\xB8" /* U+EB38 */
 #define BREW_ICON_CALENDAR  "\xEF\xAB\x92" /* U+FAD2 calendar-repeat */
+#define BREW_ICON_WIFI      "\xEE\xAD\x92" /* U+EB52 wifi */
+#define BREW_ICON_PHONE     "\xEE\xAA\x8A" /* U+EA8A device-mobile */
+#define BREW_ICON_CHECK     "\xEE\xA9\x9E" /* U+EA5E check */

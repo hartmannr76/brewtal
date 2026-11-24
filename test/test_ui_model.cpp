@@ -9,7 +9,7 @@
 namespace {
 
 struct Calls {
-    int setpoints = 0, modes = 0, units = 0, day_resets = 0;
+    int setpoints = 0, modes = 0, units = 0, day_resets = 0, wifi_setups = 0, wifi_cancels = 0;
     brew_mode_t mode = BREW_MODE_FERMENT;
     float temp_f = 0;
     bool paused = false, celsius = false;
@@ -37,6 +37,8 @@ brew_ui_cbs_t cbs_for(Calls & c)
         k.celsius = c;
     };
     cbs.on_reset_day = [](void * u) { static_cast<Calls *>(u)->day_resets++; };
+    cbs.on_wifi_setup = [](void * u) { static_cast<Calls *>(u)->wifi_setups++; };
+    cbs.on_wifi_cancel = [](void * u) { static_cast<Calls *>(u)->wifi_cancels++; };
     return cbs;
 }
 
@@ -352,10 +354,12 @@ TEST(ui_model_key_hints_say_what_the_keys_do)
     brew_model_encoder(&m, 1);
     CHECK(hint() == "Switch");
     brew_model_encoder(&m, 1);
+    CHECK(hint() == "");                         // WiFi, on a display without any
+    brew_model_encoder(&m, 1);
     CHECK(hint() == "Reset");                    // Reset day count, the last item
     CHECK(!brew_model_can_step(&m, 1));
 
-    brew_model_encoder(&m, -2);
+    brew_model_encoder(&m, -3);
     brew_model_press(&m);                        // History
     CHECK(m.view == BREW_VIEW_HIST);
     CHECK(hint() == "Back");
@@ -433,4 +437,125 @@ TEST(ui_model_pill_and_detail_texts)
     CHECK(detail() == "Turn to adjust \xC2\xB7 press to set");
     brew_model_set_units(&m, true);
     CHECK(std::string(brew_model_unit(&m)) == "\xC2\xB0" "C");
+}
+
+static brew_wifi_t wifi(brew_wifi_phase_t p, brew_wifi_error_t e = BREW_WIFI_ERR_NONE, const char * ssid = "Hartmann-5G")
+{
+    brew_wifi_t w = {};
+    w.phase = p;
+    w.error = e;
+    w.ssid = ssid;
+    w.ap_ssid = "BrewDial-4F2A";
+    w.ap_password = "malt-7391";
+    return w;
+}
+
+TEST(ui_model_wifi_setup_opens_its_view_and_a_press_skips_it)
+{
+    Calls c;
+    brew_model_t m;
+    brew_model_init(&m, nullptr);
+    m.cbs = cbs_for(c);
+    brew_model_encoder(&m, 2);                   // mid-adjustment when setup starts
+    brew_wifi_t w = wifi(BREW_WIFI_SETUP, BREW_WIFI_ERR_NONE, "");
+    uint32_t ch = brew_model_set_wifi(&m, &w);
+    CHECK(m.view == BREW_VIEW_WIFI);
+    CHECK(!m.setting);
+    CHECK(ch & BREW_CH_DISARM_COMMIT);
+    CHECK(brew_model_wifi_screen(&m) == BREW_WIFI_SCREEN_JOIN);
+    brew_wifi_text_t t;
+    brew_model_wifi_text(&m, &t);
+    CHECK(std::string(t.qr) == "WIFI:T:WPA;S:BrewDial-4F2A;P:malt-7391;;");
+    CHECK(std::string(t.line1) == "BrewDial-4F2A \xC2\xB7 malt-7391");
+    CHECK(std::string(brew_model_press_hint(&m)) == "Skip");
+    CHECK_EQ(brew_model_encoder(&m, 3), 0u);     // turning does nothing here
+    CHECK(brew_model_vstate(&m) == BREW_VS_COOL);
+
+    brew_model_press(&m);
+    CHECK(m.view == BREW_VIEW_HOME);
+    CHECK_EQ(c.wifi_cancels, 1);
+    w = wifi(BREW_WIFI_OFF, BREW_WIFI_ERR_NONE, "");
+    brew_model_set_wifi(&m, &w);                 // WifiSetup confirms: setup closed
+    CHECK(m.view == BREW_VIEW_HOME);
+}
+
+TEST(ui_model_wifi_follows_the_phone_to_connected_then_returns)
+{
+    Calls c;
+    brew_model_t m;
+    brew_model_init(&m, nullptr);
+    m.cbs = cbs_for(c);
+    brew_wifi_t w = wifi(BREW_WIFI_SETUP);
+    brew_model_set_wifi(&m, &w);
+    w = wifi(BREW_WIFI_PHONE);
+    brew_model_set_wifi(&m, &w);
+    CHECK(brew_model_wifi_screen(&m) == BREW_WIFI_SCREEN_PHONE);
+    CHECK(std::string(brew_model_press_hint(&m)) == "Cancel");
+    w = wifi(BREW_WIFI_CONNECTING);
+    brew_model_set_wifi(&m, &w);
+    CHECK(brew_model_wifi_screen(&m) == BREW_WIFI_SCREEN_TRYING);
+
+    w = wifi(BREW_WIFI_PHONE, BREW_WIFI_ERR_PASSWORD);   // refused: back to the form, still open
+    brew_model_set_wifi(&m, &w);
+    CHECK(m.view == BREW_VIEW_WIFI);
+    CHECK(brew_model_wifi_screen(&m) == BREW_WIFI_SCREEN_FAILED);
+    CHECK(brew_model_vstate(&m) == BREW_VS_HEAT);
+    brew_wifi_text_t t;
+    brew_model_wifi_text(&m, &t);
+    CHECK(std::string(t.title) == "Wrong password");
+    CHECK(std::string(t.line1) == "for Hartmann-5G");
+
+    w = wifi(BREW_WIFI_CONNECTING);
+    brew_model_set_wifi(&m, &w);
+    w = wifi(BREW_WIFI_CONNECTED);
+    const uint32_t ch = brew_model_set_wifi(&m, &w);
+    CHECK(ch & BREW_CH_ARM_WIFI_DONE);           // "Connected" shows, then closes by itself
+    CHECK(m.view == BREW_VIEW_WIFI);
+    CHECK(brew_model_wifi_screen(&m) == BREW_WIFI_SCREEN_DONE);
+    CHECK(brew_model_vstate(&m) == BREW_VS_OK);
+    CHECK(std::string(brew_model_press_hint(&m)) == "Done");
+    brew_model_set_wifi(&m, &w);                 // the same status again changes nothing
+    CHECK(m.view == BREW_VIEW_WIFI);
+    brew_model_wifi_done(&m);
+    CHECK(m.view == BREW_VIEW_HOME);
+    CHECK_EQ(c.wifi_cancels, 0);
+    CHECK_EQ(brew_model_wifi_done(&m), 0u);      // a late timer is harmless
+}
+
+TEST(ui_model_wifi_menu_item)
+{
+    Calls c;
+    brew_model_t m;
+    brew_model_init(&m, nullptr);
+    m.cbs = cbs_for(c);
+    char label[48];
+    brew_model_menu_label(&m, BREW_MENU_WIFI, label, sizeof(label));
+    CHECK(std::string(label) == "WiFi \xC2\xB7 unavailable");
+    brew_model_press(&m);
+    brew_model_encoder(&m, BREW_MENU_WIFI);
+    CHECK_EQ(brew_model_press(&m), 0u);          // no WiFi: nothing happens
+    CHECK_EQ(c.wifi_setups, 0);
+
+    brew_wifi_t w = wifi(BREW_WIFI_CONNECTED, BREW_WIFI_ERR_NONE, "A-very-long-network-name");
+    brew_model_set_wifi(&m, &w);
+    brew_model_menu_label(&m, BREW_MENU_WIFI, label, sizeof(label));
+    CHECK(std::string(label) == "WiFi \xC2\xB7 A-very-long-ne...");
+    CHECK(std::string(brew_model_press_hint(&m)) == "Set up");
+    brew_model_press(&m);
+    CHECK_EQ(c.wifi_setups, 1);
+    CHECK(m.view == BREW_VIEW_HOME);             // until WifiSetup reports setup open:
+    w = wifi(BREW_WIFI_SETUP, BREW_WIFI_ERR_NONE, "A-very-long-network-name");
+    brew_model_set_wifi(&m, &w);
+    CHECK(m.view == BREW_VIEW_WIFI);
+
+    /* setup closed from the phone ("Set up later") while still connected: back to the dial */
+    w = wifi(BREW_WIFI_CONNECTED, BREW_WIFI_ERR_NONE, "A-very-long-network-name");
+    const uint32_t ch = brew_model_set_wifi(&m, &w);
+    CHECK(m.view == BREW_VIEW_HOME);
+    CHECK(!(ch & BREW_CH_ARM_WIFI_DONE));
+    w = wifi(BREW_WIFI_OFFLINE);
+    brew_model_set_wifi(&m, &w);
+    brew_model_menu_label(&m, BREW_MENU_WIFI, label, sizeof(label));
+    CHECK(std::string(label) == "WiFi \xC2\xB7 not connected");
+    CHECK(m.view == BREW_VIEW_HOME);             // dropping offline never takes over the dial
 }

@@ -15,7 +15,7 @@
  *                  to go"), hidden while adjusting
  *   now, target    on the ring: a small dot at the reading, a hollow white ring at the target
  *   tgt_lbl        the target's number just inside the ring
- *   v_home / v_menu / v_hist   content views, cross-faded
+ *   v_home / v_menu / v_hist / wifi   content views, cross-faded
  *
  * Geometry is authored in the mockup's units and scaled:
  *   DS(x)  SVG viewBox units (240 = full diameter)
@@ -62,6 +62,7 @@ static struct {
     lv_obj_t * v_home;
     lv_obj_t * v_menu;
     lv_obj_t * v_hist;
+    kit_wifi_t wifi;
     lv_obj_t * pill;
     lv_obj_t * st_dot;
     lv_obj_t * st_lbl;
@@ -155,6 +156,9 @@ static void update_visibility(void)
     /* hide fully transparent views so they cost nothing and can't be invalidated */
     kit_set_hidden(U.v_menu, M->view != BREW_VIEW_MENU && lv_obj_get_style_opa(U.v_menu, 0) == 0 && !lv_anim_get(U.v_menu, kit_opa_exec));
     kit_set_hidden(U.v_hist, M->view != BREW_VIEW_HIST && lv_obj_get_style_opa(U.v_hist, 0) == 0 && !lv_anim_get(U.v_hist, kit_opa_exec));
+    const bool wifi = M->view == BREW_VIEW_WIFI;
+    kit_fade_to(U.wifi.root, wifi ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
+    kit_set_hidden(U.wifi.root, !wifi && lv_obj_get_style_opa(U.wifi.root, 0) == 0 && !lv_anim_get(U.wifi.root, kit_opa_exec));
 
     kit_fade_to(U.arc, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
     kit_fade_to(U.arc_glow, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
@@ -164,7 +168,7 @@ static void update_visibility(void)
     kit_fade_to(U.now, home && !M->setting && M->temp_known ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
     kit_fade_to(U.ticks, home && M->setting ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
 
-    const lv_opa_t g = M->view == BREW_VIEW_MENU ? 64 : (M->setting ? 102 : LV_OPA_COVER);
+    const lv_opa_t g = wifi ? LV_OPA_TRANSP : M->view == BREW_VIEW_MENU ? 64 : (M->setting ? 102 : LV_OPA_COVER);
     kit_fade_to(U.g.canvas, g, BREW_FADE_MS);
     kit_fade_to(U.g.halo, g, BREW_FADE_MS);
     kit_fade_to(U.g.dot, g, BREW_FADE_MS);
@@ -173,7 +177,7 @@ static void update_visibility(void)
 static void update_menu_items(void)
 {
     static const char * icons[BREW_MENU_N] = { BREW_ICON_BEER, BREW_ICON_SNOWFLAKE, BREW_ICON_PAUSE, BREW_ICON_CHART, BREW_ICON_TEMP,
-                                                 BREW_ICON_CALENDAR };
+                                                 BREW_ICON_WIFI, BREW_ICON_CALENDAR };
     char text[32];
     for(int i = 0; i < BREW_MENU_N; i++) {
         const char * ico = icons[i];
@@ -273,6 +277,7 @@ static void refresh(bool animate)
     }
 
     if(M->view == BREW_VIEW_MENU) update_menu_items();
+    if(M->view == BREW_VIEW_WIFI) kit_wifi_update(&U.wifi, M);
     update_ring();
     update_visibility();
     kit_graph_place_marker(&U.g, M);
@@ -506,6 +511,9 @@ static void round_create(lv_obj_t * screen, const brew_model_t * m)
     lv_obj_set_style_text_font(U.hhint, &brew_font_small, 0);
     lv_obj_set_style_text_color(U.hhint, lv_color_white(), 0);
     lv_obj_set_style_text_opa(U.hhint, 140, 0);
+
+    /* ---- WiFi setup view ---- */
+    kit_wifi_create(&U.wifi, U.root, 0, 0, DISP, DISP, (int32_t)lroundf(DS(80)));
 
     U.graph_t = lv_timer_create(graph_timer_cb, 50, NULL);    /* checks; renders per KIT_GRAPH_REDRAW_MS */
 

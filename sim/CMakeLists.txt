@@ -132,7 +132,7 @@ add_library(brew_app STATIC
     ${ROOT}/lib/app/src/ui_bridge.cpp
     ${ROOT}/lib/app/src/lvgl_port.cpp)
 target_include_directories(brew_app PUBLIC ${ROOT}/lib/app/include)
-target_link_libraries(brew_app PUBLIC brew_core brew_ui)
+target_link_libraries(brew_app PUBLIC brew_core brew_ui brew_network)
 target_compile_options(brew_app PRIVATE ${BREW_WARN})
 
 # ---- test harness: firmware display + controller on simulated hardware (sim/harness) ----

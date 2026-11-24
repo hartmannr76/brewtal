@@ -65,6 +65,8 @@ brew_graph_style_t brew_ui_graph_style(void);
 void brew_ui_set_history(const float * temps_f, int n, int ms_per_sample);
 /** Append one sample, dropping the oldest when the window is full. */
 void brew_ui_push_history(float temp_f);
+/** The display's WiFi status (strings are copied). Starting setup brings up its screens. */
+void brew_ui_set_wifi(const brew_wifi_t * wifi);
 
 /* ---- input -> UI ---- */
 /** Positive = clockwise. Call once per detent, or with the accumulated delta. */

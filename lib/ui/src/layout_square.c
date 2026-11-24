@@ -69,6 +69,7 @@ static struct {
 
     /* history */
     lv_obj_t * v_hist;
+    kit_wifi_t wifi;
     lv_obj_t * htime;
     kit_numview_t hval;
     lv_obj_t * hhint;
@@ -135,7 +136,7 @@ static void update_rail(void)
 static void update_menu_items(void)
 {
     static const char * icons[BREW_MENU_N] = { BREW_ICON_BEER, BREW_ICON_SNOWFLAKE, BREW_ICON_PAUSE, BREW_ICON_CHART, BREW_ICON_TEMP,
-                                                 BREW_ICON_CALENDAR };
+                                                 BREW_ICON_WIFI, BREW_ICON_CALENDAR };
     char text[32];
     for(int i = 0; i < BREW_MENU_N; i++) {
         kit_set_text(U.item_ico[i], i == BREW_MENU_PAUSE && M->paused ? BREW_ICON_PLAY : icons[i]);
@@ -201,10 +202,13 @@ static void update_visibility(void)
     kit_fade_to(U.v_hist, M->view == BREW_VIEW_HIST ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
     kit_set_hidden(U.v_menu, M->view != BREW_VIEW_MENU && lv_obj_get_style_opa(U.v_menu, 0) == 0 && !lv_anim_get(U.v_menu, kit_opa_exec));
     kit_set_hidden(U.v_hist, M->view != BREW_VIEW_HIST && lv_obj_get_style_opa(U.v_hist, 0) == 0 && !lv_anim_get(U.v_hist, kit_opa_exec));
+    const bool wifi = M->view == BREW_VIEW_WIFI;
+    kit_fade_to(U.wifi.root, wifi ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
+    kit_set_hidden(U.wifi.root, !wifi && lv_obj_get_style_opa(U.wifi.root, 0) == 0 && !lv_anim_get(U.wifi.root, kit_opa_exec));
     kit_fade_to(U.ticks, home && M->setting ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
     kit_fade_to(U.cursor, M->view == BREW_VIEW_HIST ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
 
-    const lv_opa_t g = M->view == BREW_VIEW_MENU ? 64 : (M->setting ? 102 : LV_OPA_COVER);
+    const lv_opa_t g = wifi ? LV_OPA_TRANSP : M->view == BREW_VIEW_MENU ? 64 : (M->setting ? 102 : LV_OPA_COVER);
     kit_fade_to(U.g.canvas, g, BREW_FADE_MS);
     kit_fade_to(U.g.halo, g, BREW_FADE_MS);
     kit_fade_to(U.g.dot, g, BREW_FADE_MS);
@@ -272,6 +276,7 @@ static void refresh(bool animate)
     }
 
     if(M->view == BREW_VIEW_MENU) update_menu_items();
+    if(M->view == BREW_VIEW_WIFI) kit_wifi_update(&U.wifi, M);
     update_gauge();
     update_rail();
     update_visibility();
@@ -458,6 +463,9 @@ static void square_create(lv_obj_t * screen, const brew_model_t * m)
     lv_obj_set_pos(U.hval.box, PAD - SQ(4), SQ(72));
     U.hhint = label(U.v_hist, &brew_font_small, 140);
     lv_obj_set_pos(U.hhint, PAD, SQ(190));
+
+    /* ---- WiFi setup view, left of the key rail ---- */
+    kit_wifi_create(&U.wifi, U.root, 0, 0, RAIL_X - SQ(40), DISP, SQ(150));
 
     /* ---- key rail, beside the physical keys ---- */
     U.rail = full_view(U.root);

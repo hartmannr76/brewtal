@@ -127,9 +127,14 @@ void Harness::start(uint32_t ui_now)
 
     /* The display board's WiFi: setup opens by itself when nothing is saved. Its settings share
      * the one NVS with the controller, as on a single-board CrowPanel. */
+    /* The bench starts as a device that was set up before (so the dial comes up as usual);
+     * "Forget WiFi", a factory reset or index.html?wifi=new shows a first start. */
+    settings_.setStr("wifi_ssid", "Hartmann-5G");
+    settings_.setStr("wifi_pass", "hops2026");
     wifi_setup_ = std::make_unique<net::WifiSetup>(wifi_, &settings_, net::WifiSetup::Config{});
     portal_ = std::make_unique<net::SetupPortal>(*wifi_setup_);
     wifi_setup_->begin(ui_now);
+    bridge_->attachWifi(wifi_setup_.get());
     watchWifi();
 
     started_ = true;

@@ -4,6 +4,7 @@
 #include "layout_kit.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -16,9 +17,10 @@ static const brew_glass_t s_glass[BREW_VS_N] = {
     GLASS(0xff8f3a, 0xc4561a),   /* heat  */
     GLASS(0x8c5ff2, 0x4b2e98),   /* crash */
     GLASS(0x5f6871, 0x383f46),   /* pause */
+    GLASS(0x2f8f5e, 0x1d5038),   /* ok (WiFi connected) */
 };
-const uint32_t kit_line[BREW_VS_N] = { 0x7cd4ff, 0x7cd4ff, 0xffcf8a, 0xd8bcff, 0xc3cad1 };
-const uint32_t kit_base[BREW_VS_N] = { 0x3070b0, 0x3070b0, 0xff8f3a, 0x8c5ff2, 0x5f6871 };
+const uint32_t kit_line[BREW_VS_N] = { 0x7cd4ff, 0x7cd4ff, 0xffcf8a, 0xd8bcff, 0xc3cad1, 0x8fe3b0 };
+const uint32_t kit_base[BREW_VS_N] = { 0x3070b0, 0x3070b0, 0xff8f3a, 0x8c5ff2, 0x5f6871, 0x2f8f5e };
 
 /* ------------------------------------------------------------------ setters */
 
@@ -213,7 +215,8 @@ void kit_nv_set(kit_numview_t * nv, const char * str, bool animate)
 
 /* ------------------------------------------------------------------ background */
 
-static uint16_t * s_bg_cache[4];   /* one pre-rendered background per distinct gradient */
+#define KIT_NGRAD 5
+static uint16_t * s_bg_cache[KIT_NGRAD];   /* one pre-rendered background per distinct gradient */
 
 static int grad_id(brew_vstate_t vs)
 {
@@ -221,10 +224,11 @@ static int grad_id(brew_vstate_t vs)
         case BREW_VS_HEAT:  return 1;
         case BREW_VS_CRASH: return 2;
         case BREW_VS_PAUSE: return 3;
+        case BREW_VS_OK:    return 4;
         default:            return 0;   /* cooling and holding share the blue gradient */
     }
 }
-static const brew_vstate_t s_gid_vs[4] = { BREW_VS_COOL, BREW_VS_HEAT, BREW_VS_CRASH, BREW_VS_PAUSE };
+static const brew_vstate_t s_gid_vs[KIT_NGRAD] = { BREW_VS_COOL, BREW_VS_HEAT, BREW_VS_CRASH, BREW_VS_PAUSE, BREW_VS_OK };
 
 static uint16_t * bg_get(int gid)
 {
@@ -250,7 +254,7 @@ void kit_bg_create(kit_bg_t * b, lv_obj_t * parent)
 {
     b->front = 0;
     b->gid = -1;
-    for(int g = 0; g < 4; g++) bg_get(g);   /* pre-render now so state changes never stall */
+    for(int g = 0; g < KIT_NGRAD; g++) bg_get(g);   /* pre-render now so state changes never stall */
     for(int i = 0; i < 2; i++) {
         b->bg[i] = kit_canvas(parent, bg_get(0), KIT_DISP, KIT_DISP, LV_COLOR_FORMAT_RGB565);
         lv_obj_set_pos(b->bg[i], 0, 0);
@@ -505,4 +509,123 @@ void kit_graph_render(kit_graph_t * g, const brew_model_t * m)
 
     kit_set_bg_color(g->halo, lv_color_hex(lc));
     kit_graph_place_marker(g, m);
+}
+
+/* ------------------------------------------------------------------ WiFi view */
+
+#define KS(x) ((int32_t)lroundf((float)(x) * (float)KIT_DISP / 480.0f))
+
+static lv_obj_t * wifi_label(lv_obj_t * parent, const lv_font_t * f, uint32_t col)
+{
+    lv_obj_t * l = lv_label_create(parent);
+    lv_obj_set_style_text_font(l, f, 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(col), 0);
+    lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(l, "");
+    return l;
+}
+
+void kit_wifi_create(kit_wifi_t * w, lv_obj_t * parent, int32_t x, int32_t y, int32_t wd, int32_t h, int32_t qr_px)
+{
+    memset(w, 0, sizeof(*w));
+    w->root = kit_plain(parent);
+    lv_obj_set_pos(w->root, x, y);
+    lv_obj_set_size(w->root, wd, h);
+    lv_obj_set_flex_flow(w->root, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(w->root, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(w->root, KS(10), 0);
+    lv_obj_set_style_opa(w->root, LV_OPA_TRANSP, 0);
+
+    /* pill: "● WIFI SETUP" */
+    w->pill = kit_plain(w->root);
+    lv_obj_set_size(w->pill, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(w->pill, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(w->pill, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_radius(w->pill, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(w->pill, 36, 0);
+    lv_obj_set_style_border_width(w->pill, 1, 0);
+    lv_obj_set_style_border_opa(w->pill, 90, 0);
+    lv_obj_set_style_pad_left(w->pill, KS(16), 0);
+    lv_obj_set_style_pad_right(w->pill, KS(18), 0);
+    lv_obj_set_style_pad_ver(w->pill, KS(9), 0);
+    lv_obj_set_style_pad_column(w->pill, KS(8), 0);
+    lv_obj_set_style_margin_bottom(w->pill, KS(4), 0);
+    w->pill_dot = kit_plain(w->pill);
+    lv_obj_set_size(w->pill_dot, KS(8), KS(8));
+    lv_obj_set_style_radius(w->pill_dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(w->pill_dot, LV_OPA_COVER, 0);
+    w->pill_lbl = lv_label_create(w->pill);
+    lv_obj_set_style_text_font(w->pill_lbl, &brew_font_caps, 0);
+    lv_obj_set_style_text_letter_space(w->pill_lbl, KS(3), 0);
+
+    /* QR code on a light card (phones read dark-on-light codes most reliably) */
+    w->qr_box = kit_plain(w->root);
+    lv_obj_set_size(w->qr_box, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_color(w->qr_box, lv_color_hex(0xeef2f5), 0);
+    lv_obj_set_style_bg_opa(w->qr_box, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(w->qr_box, KS(14), 0);
+    lv_obj_set_style_pad_all(w->qr_box, KS(10), 0);
+#if LV_USE_QRCODE
+    w->qr = lv_qrcode_create(w->qr_box);
+    lv_qrcode_set_size(w->qr, qr_px);
+    lv_qrcode_set_dark_color(w->qr, lv_color_hex(0x0b0e11));
+    lv_qrcode_set_light_color(w->qr, lv_color_hex(0xeef2f5));
+#else
+    LV_UNUSED(qr_px);
+#endif
+
+    w->icon = wifi_label(w->root, &brew_font_menu, 0xeef2f5);
+    w->spin = lv_spinner_create(w->root);
+    lv_obj_set_size(w->spin, KS(54), KS(54));
+    lv_obj_set_style_arc_width(w->spin, KS(3), LV_PART_MAIN);
+    lv_obj_set_style_arc_color(w->spin, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_arc_opa(w->spin, 30, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(w->spin, KS(3), LV_PART_INDICATOR);
+    lv_obj_remove_flag(w->spin, LV_OBJ_FLAG_CLICKABLE);
+
+    w->title = wifi_label(w->root, &brew_font_status, 0xeef2f5);
+    w->line1 = wifi_label(w->root, &brew_font_small, 0xa9b3bd);
+    w->line2 = wifi_label(w->root, &brew_font_small, 0xeef2f5);
+    lv_obj_set_width(w->line1, wd - KS(40));
+    lv_label_set_long_mode(w->line1, LV_LABEL_LONG_WRAP);
+    w->foot = wifi_label(w->root, &brew_font_caps, 0x66717c);
+    lv_obj_set_style_text_letter_space(w->foot, KS(3), 0);
+    lv_obj_set_style_margin_top(w->foot, KS(14), 0);
+}
+
+void kit_wifi_update(kit_wifi_t * w, const brew_model_t * m)
+{
+    brew_wifi_text_t t;
+    brew_model_wifi_text(m, &t);
+    const brew_wifi_screen_t s = brew_model_wifi_screen(m);
+    const brew_vstate_t vs = brew_model_vstate(m);
+    const lv_color_t hi = lv_color_hex(kit_line[vs]);
+
+    kit_set_text(w->pill_lbl, t.pill);
+    kit_set_text_color(w->pill_lbl, hi);
+    kit_set_bg_color(w->pill_dot, hi);
+    kit_set_bg_color(w->pill, lv_color_hex(kit_base[vs]));
+    if(!kit_col_eq(lv_obj_get_style_border_color(w->pill, 0), hi)) lv_obj_set_style_border_color(w->pill, hi, 0);
+
+    kit_set_hidden(w->qr_box, t.qr[0] == '\0');
+#if LV_USE_QRCODE
+    if(t.qr[0] && strcmp(t.qr, w->qr_text) != 0) {   /* re-encode only when the network changes */
+        snprintf(w->qr_text, sizeof(w->qr_text), "%s", t.qr);
+        lv_qrcode_update(w->qr, w->qr_text, (uint32_t)strlen(w->qr_text));
+    }
+#endif
+    const char * icon = s == BREW_WIFI_SCREEN_PHONE ? BREW_ICON_PHONE : s == BREW_WIFI_SCREEN_DONE ? BREW_ICON_CHECK : "";
+    kit_set_text(w->icon, icon);
+    kit_set_text_color(w->icon, s == BREW_WIFI_SCREEN_DONE ? hi : lv_color_hex(0xeef2f5));
+    kit_set_hidden(w->icon, icon[0] == '\0');
+    kit_set_hidden(w->spin, s != BREW_WIFI_SCREEN_TRYING);
+    if(s == BREW_WIFI_SCREEN_TRYING) lv_obj_set_style_arc_color(w->spin, hi, LV_PART_INDICATOR);
+
+    kit_set_text(w->title, t.title);
+    kit_set_text_color(w->title, s == BREW_WIFI_SCREEN_FAILED ? hi : lv_color_hex(0xeef2f5));
+    kit_set_text(w->line1, t.line1);
+    kit_set_hidden(w->line1, t.line1[0] == '\0');
+    kit_set_text(w->line2, t.line2);
+    kit_set_hidden(w->line2, t.line2[0] == '\0');
+    kit_set_text(w->foot, t.foot);
 }

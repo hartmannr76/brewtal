@@ -110,6 +110,29 @@ typedef struct {
 void kit_bg_create(kit_bg_t * b, lv_obj_t * parent);
 void kit_bg_show(kit_bg_t * b, brew_vstate_t vs, bool animate);
 
+/* ---- the WiFi setup view: pill, QR code / icon / spinner, title, two lines, a footer ---------
+ * Texts and which screen come from the model (brew_model_wifi_screen / _wifi_text); this only
+ * draws them, in a centred column the layout places and fades like its other views. */
+typedef struct {
+    lv_obj_t * root;
+    lv_obj_t * pill;
+    lv_obj_t * pill_dot;
+    lv_obj_t * pill_lbl;
+    lv_obj_t * qr_box;
+    lv_obj_t * qr;
+    lv_obj_t * icon;
+    lv_obj_t * spin;
+    lv_obj_t * title;
+    lv_obj_t * line1;
+    lv_obj_t * line2;
+    lv_obj_t * foot;
+    char qr_text[96];
+} kit_wifi_t;
+
+/** A w x h column at (x, y) in parent; `qr_px` = side of the QR code. Starts transparent. */
+void kit_wifi_create(kit_wifi_t * w, lv_obj_t * parent, int32_t x, int32_t y, int32_t wd, int32_t h, int32_t qr_px);
+void kit_wifi_update(kit_wifi_t * w, const brew_model_t * m);
+
 /* ---- history graph ------------------------------------------------------------------------
  * Drawn in the model's graph_style: BREW_GRAPH_HAIRLINE (a thin line, no fill) or
  * BREW_GRAPH_MIST (the line with a soft glow over a fill fading into the background).

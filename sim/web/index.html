@@ -249,14 +249,13 @@
       <header class="card-h"><h2>WiFi setup</h2><span class="card-sub">the display's WiFi, on a fake radio and neighbourhood</span></header>
       <div class="wifi">
         <div class="wifi-side">
-          <div class="field"><label>On the dial</label><p class="readout" id="wifi-dial">–</p></div>
+          <p class="readout" id="wifi-state">–</p>
           <label class="switch-row"><input type="checkbox" class="switch" id="wifi-phone"> Phone on the setup network <span class="wifi-why">(like scanning the dial's code)</span></label>
           <label class="switch-row"><input type="checkbox" class="switch" id="wifi-router" checked> Home router on</label>
           <p class="note">Any password connects except <code>wrong</code>, or one shorter than 8 characters.</p>
+          <p class="note">The dial runs setup itself: WiFi in its menu opens it, a press skips it.</p>
           <div class="actions">
-            <button id="wifi-setup" class="btn">Open setup (menu)</button>
-            <button id="wifi-skip" class="btn">Skip (dial press)</button>
-            <button id="wifi-forget" class="btn danger">Forget WiFi</button>
+            <button id="wifi-forget" class="btn danger">Forget WiFi (first start)</button>
           </div>
         </div>
         <div class="wifi-phone">
