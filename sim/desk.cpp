@@ -70,6 +70,7 @@ public:
     }
     bool pollState(State & s) override { return in_.pollState(s); }
     bool pollHistory(HistoryChunk & h) override { return in_.pollHistory(h); }
+    bool pollSettings(Settings & s) override { return in_.pollSettings(s); }
 
 private:
     UiPort & in_;

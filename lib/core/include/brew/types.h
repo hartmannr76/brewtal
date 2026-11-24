@@ -38,6 +38,23 @@ struct State {
     uint16_t wait_s = 0;                   // how long until `wanted` may start (0 = not waiting)
 };
 
+/**
+ * Settings the user changes from the display (Settings › Heat / Cool), published by the
+ * controller on change, on a sync request and every few seconds. Kept out of State, which goes
+ * out five times a second: these rarely change, and a short State survives a noisy link better.
+ */
+struct Settings {
+    float    heat_diff_c = 0.0f;           // heating starts this far below the setpoint
+    float    cool_diff_c = 0.0f;           // cooling starts this far above it
+    uint16_t heat_delay_s = 0;             // restart delays
+    uint16_t cool_delay_s = 0;
+    float    crash_default_c = 0.0f;       // where Cold crash starts
+};
+
+/** What Command::Kind::SetTuning changes. Temperatures and differences in centi-C, delays in s. */
+enum class Tuning : uint8_t { HeatDiff = 0, CoolDiff = 1, HeatDelay = 2, CoolDelay = 3, CrashDefault = 4 };
+constexpr int kTuningCount = 5;
+
 /** User intent, sent by the UI. Idempotent: applying one twice is harmless. */
 struct Command {
     enum class Kind : uint8_t {
@@ -47,6 +64,7 @@ struct Command {
         RequestSync = 4,   // controller re-sends State + full history
         StartDayCount = 5, // day count starts over at Day 1 now ("day 1 begins now": repeating it
                            // moments later changes nothing visible)
+        SetTuning = 6,     // tuning, value: set one Settings value
     };
 
     Kind  kind = Kind::RequestSync;
@@ -54,12 +72,15 @@ struct Command {
     float setpoint_c = 0.0f;
     bool  paused = false;
     bool  celsius = false;
+    Tuning tuning = Tuning::HeatDiff;
+    int32_t value = 0;
 
     static Command setSetpoint(Mode m, float c) { Command x; x.kind = Kind::SetSetpoint; x.mode = m; x.setpoint_c = c; return x; }
     static Command setMode(Mode m, bool p)      { Command x; x.kind = Kind::SetMode; x.mode = m; x.paused = p; return x; }
     static Command setUnits(bool c)             { Command x; x.kind = Kind::SetUnits; x.celsius = c; return x; }
     static Command requestSync()                { return Command{}; }
     static Command startDayCount()              { Command x; x.kind = Kind::StartDayCount; return x; }
+    static Command setTuning(Tuning t, int32_t v) { Command x; x.kind = Kind::SetTuning; x.tuning = t; x.value = v; return x; }
 };
 
 /**

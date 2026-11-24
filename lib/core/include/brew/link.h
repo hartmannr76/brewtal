@@ -51,8 +51,8 @@ private:
 /**
  * Display side: talks to a controller on another board.
  *
- * Commands can be lost on the wire. Each Set* command stays pending until a State shows it
- * applied, and is re-sent every retry_ms meanwhile (they are idempotent, so duplicates are
+ * Commands can be lost on the wire. Each Set* command stays pending until a State (or, for
+ * SetTuning, Settings) shows it applied, and is re-sent every retry_ms meanwhile (they are idempotent, so duplicates are
  * harmless). While pending, its value is overlaid on received States, so the UI keeps showing
  * what the user chose instead of snapping back to the controller's old value. After give_up_ms
  * the command is dropped and the controller's value shows through.
@@ -66,6 +66,7 @@ public:
     void send(const Command & cmd) override;
     bool pollState(State & out) override;
     bool pollHistory(HistoryChunk & out) override;
+    bool pollSettings(Settings & out) override;
     /** Pumps the link, re-sends unconfirmed commands, and asks for a full sync at start and
      *  whenever State stops arriving. */
     void service(uint32_t now_ms) override;
@@ -75,7 +76,7 @@ public:
 
 private:
     /* One slot per independent setting: latest command wins within a slot. */
-    enum Slot { kSpFerment, kSpCrash, kMode, kUnits, kSlots };
+    enum Slot { kSpFerment, kSpCrash, kMode, kUnits, kTune0, kSlots = kTune0 + kTuningCount };
     struct Pending {
         bool active = false;
         Command cmd;
@@ -87,6 +88,8 @@ private:
     static int slotOf(const Command & c);
     static bool confirmed(const Command & c, const State & s);
     static void overlay(const Command & c, State & s);
+    static bool confirmed(const Command & c, const Settings & s);
+    static void overlay(const Command & c, Settings & s);
 
     hal::Link & link_;
     uint32_t resync_ms_, retry_ms_, give_up_ms_;
@@ -95,6 +98,8 @@ private:
     bool requested_ = false;
     State state_;
     bool fresh_ = false;
+    Settings settings_;
+    bool settings_fresh_ = false;
     Pending pending_[kSlots];
     SpscRing<HistoryChunk, 32> hist_;   // chunks received but not yet polled
 };
@@ -107,6 +112,7 @@ public:
     bool pollCommand(Command & out) override;
     void publish(const State & s) override;
     bool publish(const HistoryChunk & h) override;
+    void publish(const Settings & s) override;
 
 private:
     void pump();

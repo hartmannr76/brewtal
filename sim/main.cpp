@@ -44,6 +44,7 @@ public:
     }
     bool pollState(State & s) override { return in_.pollState(s); }
     bool pollHistory(HistoryChunk & h) override { return in_.pollHistory(h); }
+    bool pollSettings(Settings & s) override { return in_.pollSettings(s); }
 
 private:
     UiPort & in_;
@@ -160,17 +161,27 @@ int main(int argc, char ** argv)
     run(500);
     snap("06_menu_cold_crash_selected");
 
-    /* history */
-    turn(2);
+    /* settings: heat differential */
+    turn(2);                      /* Cold crash -> Settings */
     run(400);
     press();
     run(600);
-    snap("07_history_now");
-    turn(-14);
-    run(600);
-    snap("08_history_scrubbed");
+    snap("07_settings");
+    turn(2);                      /* Heat */
+    run(400);
     press();
     run(600);
+    snap("08_settings_heat");
+    press();                      /* edit the differential */
+    run(600);
+    turn(3);
+    run(400);
+    snap("08b_edit_heat_differential");
+    press();                      /* save: back to the Heat list */
+    run(600);
+    turn(2); run(300); press(); run(500);   /* Previous -> Settings */
+    turn(3); run(300); press(); run(500);   /* Previous -> menu */
+    turn(1); run(300); press(); run(600);   /* Previous -> home */
 
     /* heating */
     setHistory(66.1f, 68.0f, -2.2f);
@@ -197,11 +208,14 @@ int main(int argc, char ** argv)
     turn(2); run(500);
     press(); run(1000);           /* resume */
     press(); run(500);
-    turn(4); run(500);
-    press(); run(300);            /* toggle units */
-    snap("12a_menu_units_celsius");
-    turn(-4); run(500);
-    press(); run(1200);           /* back to ferment */
+    turn(3); run(500);
+    press(); run(500);            /* Settings */
+    press(); run(300);            /* Units: toggles in place */
+    snap("12a_settings_units_celsius");
+    turn(5); run(400);
+    press(); run(500);            /* Previous -> menu */
+    turn(-3); run(500);
+    press(); run(1200);           /* Ferment */
     snap("12_ferment_celsius");
 
     const State & s = ctl.state();

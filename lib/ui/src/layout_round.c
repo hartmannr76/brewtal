@@ -15,7 +15,7 @@
  *                  to go"), hidden while adjusting
  *   now, target    on the ring: a small dot at the reading, a hollow white ring at the target
  *   tgt_lbl        the target's number just inside the ring
- *   v_home / v_menu / v_hist / wifi   content views, cross-faded
+ *   v_home / v_menu (lists) / edit / wifi   content views, cross-faded
  *
  * Geometry is authored in the mockup's units and scaled:
  *   DS(x)  SVG viewBox units (240 = full diameter)
@@ -61,22 +61,17 @@ static struct {
 
     lv_obj_t * v_home;
     lv_obj_t * v_menu;
-    lv_obj_t * v_hist;
     kit_wifi_t wifi;
+    kit_edit_t edit;
+    lv_obj_t * list_title;
+    lv_obj_t * list_note;
     lv_obj_t * pill;
     lv_obj_t * st_dot;
     lv_obj_t * st_lbl;
     lv_obj_t * sub_lbl;
     kit_numview_t big;
-    kit_numview_t hval;
-    lv_obj_t * htime;
-    lv_obj_t * hhint;        /* "Turn to scrub · last 2 hours" */
-
-    lv_obj_t * item[BREW_MENU_N];
-    lv_obj_t * item_ico[BREW_MENU_N];
-    lv_obj_t * item_txt[BREW_MENU_N];
-    lv_obj_t * item_dot[BREW_MENU_N];
-    int32_t wheel_pos; /* menu index * 256, animated */
+    kit_rows_t rows;
+    int32_t wheel_pos; /* selected row * 256, animated */
 
     lv_timer_t * graph_t;
 } U;
@@ -112,6 +107,15 @@ static void ring_place(lv_obj_t * o, float frac, float r)
 
 static void update_ring(void)
 {
+    if(M->view == BREW_VIEW_EDIT) {   /* the value being edited, as an arc from the scale's start */
+        brew_edit_text_t t;
+        brew_model_edit_text(M, &t);
+        const float f = t.frac < 0.002f ? 0.002f : (t.frac > 1.0f ? 1.0f : t.frac);
+        const lv_value_precise_t e0 = (lv_value_precise_t)A0, e1 = (lv_value_precise_t)norm_deg(A0 + SWEEP * f);
+        lv_arc_set_angles(U.arc, e0, e1);
+        lv_arc_set_angles(U.arc_glow, e0, e1);
+        return;
+    }
     const float target = M->setting ? M->draft_f : M->sp_f[M->mode];
     const float bt = frac_t(target);
     const float bn = M->temp_known ? frac_t(M->temp_f) : bt;
@@ -151,24 +155,25 @@ static void update_visibility(void)
     /* Fades re-render everything under the faded object every frame, so they're kept
      * short (BREW_FADE_MS). The ring/ticks cover nearly the whole screen. */
     kit_fade_to(U.v_home, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
-    kit_fade_to(U.v_menu, M->view == BREW_VIEW_MENU ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
-    kit_fade_to(U.v_hist, M->view == BREW_VIEW_HIST ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
+    kit_fade_to(U.v_menu, M->view == BREW_VIEW_LIST ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
+    kit_fade_to(U.edit.root, M->view == BREW_VIEW_EDIT ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
     /* hide fully transparent views so they cost nothing and can't be invalidated */
-    kit_set_hidden(U.v_menu, M->view != BREW_VIEW_MENU && lv_obj_get_style_opa(U.v_menu, 0) == 0 && !lv_anim_get(U.v_menu, kit_opa_exec));
-    kit_set_hidden(U.v_hist, M->view != BREW_VIEW_HIST && lv_obj_get_style_opa(U.v_hist, 0) == 0 && !lv_anim_get(U.v_hist, kit_opa_exec));
+    kit_set_hidden(U.v_menu, M->view != BREW_VIEW_LIST && lv_obj_get_style_opa(U.v_menu, 0) == 0 && !lv_anim_get(U.v_menu, kit_opa_exec));
+    kit_set_hidden(U.edit.root, M->view != BREW_VIEW_EDIT && lv_obj_get_style_opa(U.edit.root, 0) == 0 && !lv_anim_get(U.edit.root, kit_opa_exec));
     const bool wifi = M->view == BREW_VIEW_WIFI;
     kit_fade_to(U.wifi.root, wifi ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
     kit_set_hidden(U.wifi.root, !wifi && lv_obj_get_style_opa(U.wifi.root, 0) == 0 && !lv_anim_get(U.wifi.root, kit_opa_exec));
 
-    kit_fade_to(U.arc, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
-    kit_fade_to(U.arc_glow, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
+    const bool ring = home || M->view == BREW_VIEW_EDIT;   /* the editor shows its value on the ring */
+    kit_fade_to(U.arc, ring ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
+    kit_fade_to(U.arc_glow, ring ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
     kit_fade_to(U.ticks5, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
-    kit_fade_to(U.target, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
+    kit_fade_to(U.target, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);   /* not in the editor */
     kit_fade_to(U.tgt_lbl, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
     kit_fade_to(U.now, home && !M->setting && M->temp_known ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
     kit_fade_to(U.ticks, home && M->setting ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
 
-    const lv_opa_t g = wifi ? LV_OPA_TRANSP : M->view == BREW_VIEW_MENU ? 64 : (M->setting ? 102 : LV_OPA_COVER);
+    const lv_opa_t g = wifi || M->view == BREW_VIEW_EDIT ? LV_OPA_TRANSP : M->view == BREW_VIEW_LIST ? 64 : (M->setting ? 102 : LV_OPA_COVER);
     kit_fade_to(U.g.canvas, g, BREW_FADE_MS);
     kit_fade_to(U.g.halo, g, BREW_FADE_MS);
     kit_fade_to(U.g.dot, g, BREW_FADE_MS);
@@ -176,20 +181,14 @@ static void update_visibility(void)
 
 static void update_menu_items(void)
 {
-    static const char * icons[BREW_MENU_N] = { BREW_ICON_BEER, BREW_ICON_SNOWFLAKE, BREW_ICON_PAUSE, BREW_ICON_CHART, BREW_ICON_TEMP,
-                                                 BREW_ICON_WIFI, BREW_ICON_CALENDAR };
-    char text[32];
-    for(int i = 0; i < BREW_MENU_N; i++) {
-        const char * ico = icons[i];
-        if(i == BREW_MENU_PAUSE && M->paused) ico = BREW_ICON_PLAY;
-        kit_set_text(U.item_ico[i], ico);
-        brew_model_menu_label(M, i, text, sizeof(text));
-        kit_set_text(U.item_txt[i], text);
-        const lv_font_t * f = i == M->menu_idx ? &brew_font_menu_bold : &brew_font_menu;
-        kit_set_font(U.item_ico[i], f);
-        kit_set_font(U.item_txt[i], f);
-        kit_set_hidden(U.item_dot[i], !brew_model_menu_active(M, i));
-    }
+    kit_rows_update(&U.rows, M);
+    const char * title = brew_model_list_title(M);
+    kit_set_text(U.list_title, title);
+    kit_set_hidden(U.list_title, title[0] == '\0');
+    char note[64];
+    brew_model_list_note(M, note, sizeof(note));
+    kit_set_text(U.list_note, note);
+    kit_set_hidden(U.list_note, note[0] == '\0');
 }
 
 static void layout_wheel(void)
@@ -198,14 +197,14 @@ static void layout_wheel(void)
      * Depth comes from opacity + weight rather than transform_scale: in LVGL 9.3
      * transformed rows that scroll in from outside their parent render clipped. */
     const float pos = (float)U.wheel_pos / 256.0f;
-    for(int i = 0; i < BREW_MENU_N; i++) {
+    for(int i = 0; i < BREW_LIST_MAX; i++) {
         const float o = (float)i - pos, ao = fabsf(o);
         float op = 1.0f - 0.5f * ao;
         if(op < 0.0f) op = 0.0f;
         op = op * op * (3.0f - 2.0f * op); /* smoothstep: crisper falloff */
-        lv_obj_align(U.item[i], LV_ALIGN_CENTER, 0, (int32_t)lroundf(o * (float)DC(42)));
-        lv_obj_set_style_opa(U.item[i], (lv_opa_t)lroundf(op * 255.0f), 0);
-        kit_set_hidden(U.item[i], op <= 0.01f);
+        lv_obj_align(U.rows.item[i], LV_ALIGN_CENTER, 0, (int32_t)lroundf(o * (float)DC(42)));
+        lv_obj_set_style_opa(U.rows.item[i], (lv_opa_t)lroundf(op * 255.0f), 0);
+        kit_set_hidden(U.rows.item[i], op <= 0.01f || i >= U.rows.count);
     }
 }
 
@@ -263,20 +262,8 @@ static void refresh(bool animate)
     brew_model_fmt_temp(M, t, sizeof(t), M->setting ? M->draft_f : M->temp_f);
     kit_nv_set(&U.big, t, animate);
 
-    if(M->view == BREW_VIEW_HIST && brew_model_hist_last(M) >= 0) {
-        brew_model_fmt_temp(M, t, sizeof(t), brew_model_hist_val(M, M->hist_idx));
-        kit_nv_set(&U.hval, t, animate);
-        kit_nv_set_color(&U.hval, hi);
-        kit_nv_set_unit(&U.hval, brew_model_unit(M));
-        brew_model_hist_time(M, M->hist_idx, s, sizeof(s));
-        kit_set_text(U.htime, s);
-        char w[32];
-        brew_model_hist_window_text(M, w, sizeof(w));
-        snprintf(s, sizeof(s), "Turn to scrub \xC2\xB7 %s", w);
-        kit_set_text(U.hhint, s);
-    }
-
-    if(M->view == BREW_VIEW_MENU) update_menu_items();
+    if(M->view == BREW_VIEW_LIST) update_menu_items();
+    if(M->view == BREW_VIEW_EDIT) kit_edit_update(&U.edit, M);
     if(M->view == BREW_VIEW_WIFI) kit_wifi_update(&U.wifi, M);
     update_ring();
     update_visibility();
@@ -480,44 +467,29 @@ static void round_create(lv_obj_t * screen, const brew_model_t * m)
     U.v_menu = kit_plain(U.root);
     lv_obj_set_size(U.v_menu, DISP, DISP);
     lv_obj_set_style_opa(U.v_menu, LV_OPA_TRANSP, 0);
-    for(int i = 0; i < BREW_MENU_N; i++) {
-        lv_obj_t * it = kit_plain(U.v_menu);
-        lv_obj_set_size(it, LV_SIZE_CONTENT, DC(44));
-        lv_obj_set_flex_flow(it, LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(it, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_pad_column(it, DC(10), 0);
-        U.item_ico[i] = lv_label_create(it);
-        lv_obj_set_style_text_color(U.item_ico[i], lv_color_white(), 0);
-        lv_obj_set_style_text_opa(U.item_ico[i], 230, 0);
-        U.item_txt[i] = lv_label_create(it);
-        lv_obj_set_style_text_color(U.item_txt[i], lv_color_white(), 0);
-        U.item_dot[i] = kit_plain(it);
-        lv_obj_set_size(U.item_dot[i], DC(5), DC(5));
-        lv_obj_set_style_radius(U.item_dot[i], LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_bg_color(U.item_dot[i], lv_color_hex(KIT_COOL_TEXT), 0);
-        lv_obj_set_style_bg_opa(U.item_dot[i], LV_OPA_COVER, 0);
-        U.item[i] = it;
-    }
+    kit_rows_create(&U.rows, U.v_menu, DC(44), DC(10), DC(5), false);
+    U.list_title = lv_label_create(U.v_menu);
+    lv_obj_set_style_text_font(U.list_title, &brew_font_caps, 0);
+    lv_obj_set_style_text_letter_space(U.list_title, (int32_t)lroundf(DS(1.6f)), 0);
+    lv_obj_set_style_text_color(U.list_title, lv_color_hex(0x66717c), 0);
+    lv_obj_align(U.list_title, LV_ALIGN_TOP_MID, 0, DC(46));
+    U.list_note = lv_label_create(U.v_menu);
+    lv_obj_set_style_text_font(U.list_note, &brew_font_small, 0);
+    lv_obj_set_style_text_color(U.list_note, lv_color_hex(0xa9b3bd), 0);
+    lv_obj_set_style_text_align(U.list_note, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(U.list_note, DC(190));
+    lv_label_set_long_mode(U.list_note, LV_LABEL_LONG_WRAP);
+    lv_obj_align(U.list_note, LV_ALIGN_TOP_MID, 0, DC(64));
 
-    /* ---- history view ---- */
-    U.v_hist = make_view(U.root, DC(58), DC(7));
-    lv_obj_set_style_opa(U.v_hist, LV_OPA_TRANSP, 0);
-    U.htime = lv_label_create(U.v_hist);
-    lv_obj_set_style_text_font(U.htime, &brew_font_small, 0);
-    lv_obj_set_style_text_color(U.htime, lv_color_white(), 0);
-    lv_obj_set_style_text_opa(U.htime, 140, 0);
-    kit_nv_create(&U.hval, U.v_hist, &brew_font_num_hist, &brew_font_deg_hist, DC(16), DC(3));
-    U.hhint = lv_label_create(U.v_hist);   /* text set in refresh(): the window comes from the model */
-    lv_obj_set_style_text_font(U.hhint, &brew_font_small, 0);
-    lv_obj_set_style_text_color(U.hhint, lv_color_white(), 0);
-    lv_obj_set_style_text_opa(U.hhint, 140, 0);
+    /* ---- value editor ---- */
+    kit_edit_create(&U.edit, U.root, 0, 0, DISP, DISP);
 
     /* ---- WiFi setup view ---- */
     kit_wifi_create(&U.wifi, U.root, 0, 0, DISP, DISP, (int32_t)lroundf(DS(80)));
 
     U.graph_t = lv_timer_create(graph_timer_cb, 50, NULL);    /* checks; renders per KIT_GRAPH_REDRAW_MS */
 
-    U.wheel_pos = m->menu_idx * 256;   /* a live layout swap can land mid-menu */
+    U.wheel_pos = m->list_idx * 256;   /* a live layout swap can land mid-list */
     update_menu_items();
     layout_wheel();
     refresh(false);
@@ -532,17 +504,17 @@ static void round_update(const brew_model_t * m, uint32_t ch)
     const bool animate = (ch & BREW_CH_ANIMATE) != 0;
 
     if(ch & BREW_CH_VIEW) {             /* entering a view resets its presentation */
-        if(M->view == BREW_VIEW_MENU) {
+        if(M->view == BREW_VIEW_LIST) {   /* a new list (or back to one): rows refill, no scroll-in */
+            update_menu_items();
             lv_anim_delete(&U.wheel_pos, wheel_exec);
-            U.wheel_pos = M->menu_idx * 256;
+            U.wheel_pos = M->list_idx * 256;
             layout_wheel();
         }
-        if(M->view == BREW_VIEW_HIST) U.hval.cur[0] = 0;   /* no slide-in on entry */
     }
     if(ch & (BREW_CH_GRAPH | BREW_CH_GRAPH_LAZY)) U.g.dirty = true;
     if(ch & BREW_CH_MENU_MOVE) {        /* the wheel animates on its own; nothing else moved */
         update_menu_items();
-        wheel_animate_to(M->menu_idx);
+        wheel_animate_to(M->list_idx);
     }
     if(!(ch & BREW_CH_REFRESH)) return;  /* e.g. an appended sample: graph_t draws it */
 

@@ -103,7 +103,8 @@ TEST(codec_command_and_history_golden_v1)
 {
     uint8_t b[codec::kMaxEncoded];
     size_t n = codec::encode(Command::setSetpoint(Mode::Ferment, 18.5f), 1, b, sizeof(b));
-    CHECK_EQ(hex(bytes(b, n)), std::string("010201000100" "3a07" "00"));
+    CHECK_EQ(hex(bytes(b, n)), std::string("010201000100" "3a07" "00"   /* v1 as deployed */
+                                           "00" "00000000"));          /* #5 tuning, #6 value (appended) */
     HistoryChunk h;
     h.reset = true;
     h.ms_per_sample = 30u * 60u * 1000u;
@@ -177,7 +178,7 @@ TEST(codec_round_trips)
     n = codec::encode(Command::startDayCount(), 4, b, sizeof(b));
     CHECK(codec::decode(b, n, m) == codec::DecodeResult::Ok);
     CHECK(m.command.kind == Command::Kind::StartDayCount);
-    b[4] = 6;   // a kind this version doesn't know is refused, not guessed at
+    b[4] = 7;   // a kind this version doesn't know is refused, not guessed at
     CHECK(codec::decode(b, n, m) == codec::DecodeResult::BadPayload);
 }
 
@@ -193,7 +194,7 @@ TEST(codec_rejects_bad_input_and_ignores_trailing_fields)
     b[1] = 99;
     CHECK(codec::decode(b, n, m) == codec::DecodeResult::UnknownType);
     b[1] = 2;
-    CHECK(codec::decode(b, n - 1, m) == codec::DecodeResult::BadPayload);
+    CHECK(codec::decode(b, 8, m) == codec::DecodeResult::BadPayload);   // the original fields cut short
     /* a newer sender appended a field: v1 decoders must still accept the message */
     b[n] = 0xAB;
     CHECK(codec::decode(b, n + 1, m) == codec::DecodeResult::Ok);
@@ -372,5 +373,88 @@ TEST(remote_command_lost_on_the_wire_is_resent_without_snapping_back)
     CHECK_EQ(display.pendingCommands(), 1);
     now += 15000;
     run(1);
+    CHECK_EQ(display.pendingCommands(), 0);
+}
+
+TEST(codec_tuning_round_trips_and_older_messages_still_decode)
+{
+    uint8_t b[codec::kMaxEncoded];
+    codec::Message m;
+    size_t n = codec::encode(Command::setTuning(Tuning::CoolDelay, 300), 5, b, sizeof(b));
+    CHECK(codec::decode(b, n, m) == codec::DecodeResult::Ok);
+    CHECK(m.command.kind == Command::Kind::SetTuning);
+    CHECK(m.command.tuning == Tuning::CoolDelay);
+    CHECK_EQ(m.command.value, 300);
+    n = codec::encode(Command::setTuning(Tuning::CrashDefault, -150), 6, b, sizeof(b));
+    CHECK(codec::decode(b, n, m) == codec::DecodeResult::Ok);
+    CHECK_EQ(m.command.value, -150);
+    CHECK(codec::decode(b, 9, m) == codec::DecodeResult::BadPayload);   // set_tuning without its fields
+    b[9] = 9;   // a setting this version doesn't know
+    CHECK(codec::decode(b, n, m) == codec::DecodeResult::BadPayload);
+
+    /* a command from an older display (no #5/#6) still decodes */
+    n = codec::encode(Command::setUnits(true), 7, b, sizeof(b));
+    CHECK(codec::decode(b, 9, m) == codec::DecodeResult::Ok);
+    CHECK(m.command.celsius);
+
+    Settings st;
+    st.heat_diff_c = 0.28f;
+    st.cool_diff_c = 0.56f;
+    st.heat_delay_s = 120;
+    st.cool_delay_s = 600;
+    st.crash_default_c = -1.5f;
+    n = codec::encode(st, 8, b, sizeof(b));
+    /* ver 01, type 04 (Settings), seq 0800 | 1c00 (28) 3800 (56) 7800 (120) 5802 (600) 6aff (-150) */
+    CHECK_EQ(hex(bytes(b, n)), std::string("01040800" "1c00" "3800" "7800" "5802" "6aff"));
+    CHECK(codec::decode(b, n, m) == codec::DecodeResult::Ok);
+    CHECK(m.type == codec::MsgType::Settings);
+    CHECK_NEAR(m.settings.heat_diff_c, 0.28, 1e-6);
+    CHECK_NEAR(m.settings.cool_diff_c, 0.56, 1e-6);
+    CHECK_EQ(m.settings.heat_delay_s, static_cast<uint16_t>(120));
+    CHECK_EQ(m.settings.cool_delay_s, static_cast<uint16_t>(600));
+    CHECK_NEAR(m.settings.crash_default_c, -1.5, 1e-6);
+    CHECK(codec::decode(b, n - 1, m) == codec::DecodeResult::BadPayload);
+}
+
+TEST(remote_tuning_lost_on_the_wire_is_resent_and_shown_meanwhile)
+{
+    Pipe d2c, c2d;
+    PipeStream ds(&d2c, &c2d), cs(&c2d, &d2c);
+    StreamPacketLink dl(ds), cl(cs);
+    RemoteControllerProxy display(dl, 3000, 500, 15000);
+    RemoteUiProxy uiside(cl);
+    ConstSensor sensor(20.0f);
+    DeadbandLaw law(0.2f);
+    NullOut h, c;
+    OutputGuard guard(&h, &c, {});
+    Controller ctl(uiside, sensor, law, guard, nullptr, Controller::Config{});
+
+    uint32_t now = 1;
+    auto run = [&](int steps) {
+        for(int i = 0; i < steps; i++) {
+            display.service(now);
+            ctl.tick(now);
+            now += 20;
+        }
+    };
+    run(5);
+    Settings st;
+    CHECK(display.pollSettings(st));   // sent at start (and on the sync request)
+    CHECK_EQ(st.cool_delay_s, static_cast<uint16_t>(180));
+    while(display.pollSettings(st)) {}
+
+    display.send(Command::setTuning(Tuning::CoolDelay, 420));
+    for(int i = 0; i < 260; i++) {      // 5.2 s with that direction of the cable dead: every
+        display.service(now);           // retry is lost too, and the controller re-sends its old
+        d2c.q.clear();                  // Settings once in that time
+        ctl.tick(now);
+        now += 20;
+    }
+    CHECK_EQ(display.pendingCommands(), 1);
+    CHECK(display.pollSettings(st));
+    CHECK_EQ(st.cool_delay_s, static_cast<uint16_t>(420));   // the display keeps the new value
+    CHECK_EQ(ctl.settings().cool_delay_s, static_cast<uint16_t>(180));
+    run(30);                            // re-sent after retry_ms, applied, confirmed by Settings
+    CHECK_EQ(ctl.settings().cool_delay_s, static_cast<uint16_t>(420));
     CHECK_EQ(display.pendingCommands(), 0);
 }

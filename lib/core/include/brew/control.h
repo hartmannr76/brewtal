@@ -19,6 +19,8 @@ public:
     virtual ~ControlLaw() = default;
     virtual Action step(float temp_c, float setpoint_c, uint32_t now_ms) = 0;
     virtual void   reset() {}
+    /** Where heating / cooling start, as differences from the setpoint (C). */
+    virtual void   setDiffs(float heat_c, float cool_c) { (void)heat_c; (void)cool_c; }
 };
 
 /**
@@ -36,6 +38,7 @@ public:
         if(t < sp - heat_) return Action::Heating;
         return Action::Idle;
     }
+    void setDiffs(float heat_c, float cool_c) override { heat_ = heat_c; cool_ = cool_c; }
 
 private:
     float heat_, cool_;
@@ -64,6 +67,7 @@ public:
         return cur_;
     }
     void reset() override { cur_ = Action::Idle; }
+    void setDiffs(float heat_c, float cool_c) override { heat_ = heat_c; cool_ = cool_c; }
 
 private:
     float heat_, cool_;
@@ -97,6 +101,12 @@ public:
     Action current() const { return cur_; }
     /** ms until `a` may switch on (0 = now, or `a` is Idle). For status displays. */
     uint32_t blockedFor(Action a, uint32_t now_ms) const;
+    /** Changes the restart delays (min_off) while running; a rest already under way uses the new length. */
+    void setRestartDelays(uint32_t heat_ms, uint32_t cool_ms)
+    {
+        cfg_.heat.min_off_ms = heat_ms;
+        cfg_.cool.min_off_ms = cool_ms;
+    }
 
 private:
     void drive();

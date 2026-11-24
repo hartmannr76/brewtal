@@ -52,7 +52,7 @@ sim/harness sim/web     web test harness: real firmware on fake devices (sim_dev
 - LVGL / brew_ui calls happen only in the UI task. The controller runs in its own task.
 - Policy (debounce, press/turn ordering, interlocks, min on/off times) lives in core and is unit-tested,
   not in drivers.
-- UI behaviour (what a turn/press does, auto-commit, menu, scrub) lives in `brew_model.c`, never in a
+- UI behaviour (what a turn/press does, auto-commit, menu and settings lists, editors) lives in `brew_model.c`, never in a
   layout. A new screen shape is a new `brew_layout_t`; it must not change behaviour.
 
 ## Wire format rules (keep the nanopb migration a one-file change)

@@ -1,6 +1,6 @@
 /**
  * Connects brew_ui (the C view) to a UiPort:
- *   - State / History from the port -> brew_ui_set_* (only for values that changed)
+ *   - State / History / Settings from the port -> brew_ui_set_* (only for values that changed)
  *   - brew_ui callbacks -> Commands on the port
  *   - InputEvents (Rotate/Press) -> brew_ui_encoder / brew_ui_press
  *   - the display's WiFi (net::WifiSetup, if attached) -> brew_ui_set_wifi, and the WiFi
@@ -44,6 +44,8 @@ public:
     static void onResetDayThunk(void * user);
     static void onWifiSetupThunk(void * user);
     static void onWifiCancelThunk(void * user);
+    static void onWifiForgetThunk(void * user);
+    static void onTuningThunk(int what, float value, void * user);
 
 private:
     struct Shown {
@@ -57,11 +59,15 @@ private:
         Action action = Action::Idle;
         Action wanted = Action::Idle;
         uint16_t wait_s = 0;
+        bool  tuned = false;
+        float heat_diff_c = 0.0f, cool_diff_c = 0.0f, crash_c = 0.0f;
+        uint16_t heat_delay_s = 0, cool_delay_s = 0;
         char  batch[State::kBatchLen] = { 0 };
         uint16_t day = 0;
     };
 
     void apply(const State & s);
+    void apply(const Settings & s);
     void applyHistory(const HistoryChunk & h);
 
     void pushWifi();

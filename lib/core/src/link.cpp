@@ -122,6 +122,7 @@ int RemoteControllerProxy::slotOf(const Command & c)
         case Command::Kind::SetSetpoint: return c.mode == Mode::Crash ? kSpCrash : kSpFerment;
         case Command::Kind::SetMode:     return kMode;
         case Command::Kind::SetUnits:    return kUnits;
+        case Command::Kind::SetTuning:   return kTune0 + static_cast<int>(c.tuning);
         default:                         return -1;   // RequestSync: answered by State itself
     }
 }
@@ -146,6 +147,33 @@ void RemoteControllerProxy::overlay(const Command & c, State & s)
         case Command::Kind::SetMode:     s.mode = c.mode; s.paused = c.paused; break;
         case Command::Kind::SetUnits:    s.celsius = c.celsius; break;
         default: break;
+    }
+}
+
+/* SetTuning: confirmed / shown by Settings (values in centi-C or s, as on the wire) */
+bool RemoteControllerProxy::confirmed(const Command & c, const Settings & s)
+{
+    if(c.kind != Command::Kind::SetTuning) return false;
+    auto cc = [](float v) { return static_cast<int32_t>(v * 100.0f + (v < 0 ? -0.5f : 0.5f)); };
+    switch(c.tuning) {
+        case Tuning::HeatDiff:     return cc(s.heat_diff_c) == c.value;
+        case Tuning::CoolDiff:     return cc(s.cool_diff_c) == c.value;
+        case Tuning::HeatDelay:    return s.heat_delay_s == c.value;
+        case Tuning::CoolDelay:    return s.cool_delay_s == c.value;
+        case Tuning::CrashDefault: return cc(s.crash_default_c) == c.value;
+    }
+    return true;
+}
+
+void RemoteControllerProxy::overlay(const Command & c, Settings & s)
+{
+    if(c.kind != Command::Kind::SetTuning) return;
+    switch(c.tuning) {
+        case Tuning::HeatDiff:     s.heat_diff_c = static_cast<float>(c.value) / 100.0f; break;
+        case Tuning::CoolDiff:     s.cool_diff_c = static_cast<float>(c.value) / 100.0f; break;
+        case Tuning::HeatDelay:    s.heat_delay_s = static_cast<uint16_t>(c.value); break;
+        case Tuning::CoolDelay:    s.cool_delay_s = static_cast<uint16_t>(c.value); break;
+        case Tuning::CrashDefault: s.crash_default_c = static_cast<float>(c.value) / 100.0f; break;
     }
 }
 
@@ -187,7 +215,13 @@ void RemoteControllerProxy::pump()
             fresh_ = true;
             last_rx_ = now_;
             for(Pending & p : pending_)
-                if(p.active && confirmed(p.cmd, state_)) p.active = false;
+                if(p.active && p.cmd.kind != Command::Kind::SetTuning && confirmed(p.cmd, state_)) p.active = false;
+        }
+        else if(m.type == codec::MsgType::Settings) {
+            settings_ = m.settings;
+            settings_fresh_ = true;
+            for(Pending & p : pending_)
+                if(p.active && p.cmd.kind == Command::Kind::SetTuning && confirmed(p.cmd, settings_)) p.active = false;
         }
         else if(m.type == codec::MsgType::History) {
             hist_.push(m.history);
@@ -201,6 +235,17 @@ bool RemoteControllerProxy::pollState(State & out)
     if(!fresh_) return false;
     fresh_ = false;
     out = state_;
+    for(const Pending & p : pending_)
+        if(p.active) overlay(p.cmd, out);
+    return true;
+}
+
+bool RemoteControllerProxy::pollSettings(Settings & out)
+{
+    pump();
+    if(!settings_fresh_) return false;
+    settings_fresh_ = false;
+    out = settings_;
     for(const Pending & p : pending_)
         if(p.active) overlay(p.cmd, out);
     return true;
@@ -221,6 +266,7 @@ void RemoteControllerProxy::service(uint32_t now)
         if(now - p.first_ms >= give_up_ms_) {
             p.active = false;   // controller refused it or is gone: show its real value
             fresh_ = true;
+            settings_fresh_ = true;
         }
         else if(now - p.last_ms >= retry_ms_) {
             p.last_ms = now;
@@ -256,6 +302,13 @@ bool RemoteUiProxy::pollCommand(Command & out)
 }
 
 void RemoteUiProxy::publish(const State & s)
+{
+    uint8_t b[codec::kMaxEncoded];
+    const size_t n = codec::encode(s, seq_++, b, sizeof(b));
+    if(n) link_.send(b, n);
+}
+
+void RemoteUiProxy::publish(const Settings & s)
 {
     uint8_t b[codec::kMaxEncoded];
     const size_t n = codec::encode(s, seq_++, b, sizeof(b));

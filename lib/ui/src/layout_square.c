@@ -8,8 +8,8 @@
  *     (chevrons dim at the end of a range; the select label comes from the model),
  *   - the menu is a vertical wheel whose next item is *above*, so the up key moves up.
  *
- * Layer stack (bottom -> top): bg, graph (+ scrub cursor, halo, dot), v_home (status, digits,
- * gauge), v_menu, v_hist, rail.
+ * Layer stack (bottom -> top): bg, graph (+ halo, dot), v_home (status, digits, gauge),
+ * v_menu (lists), edit, wifi, rail.
  *
  * Geometry is authored for a 480 px panel and scaled: SQ(x) px.
  */
@@ -32,7 +32,6 @@
 #define G_Y0     SQ(222)            /* top of the graph canvas (the history view's plot is taller) */
 #define KNOB_D   SQ(16)
 #define PLOT_YT_HOME SQF(352)
-#define PLOT_YT_HIST SQF(250)
 #define ROW_DY   SQ(66)             /* menu row pitch */
 
 static const brew_model_t * M;
@@ -44,7 +43,6 @@ static struct {
     lv_obj_t * root;
     kit_bg_t bg;
     kit_graph_t g;
-    lv_obj_t * cursor;       /* history: vertical hairline through the scrub point */
 
     /* home */
     lv_obj_t * v_home;
@@ -61,18 +59,14 @@ static struct {
     /* menu */
     lv_obj_t * v_menu;
     lv_obj_t * pill;
-    lv_obj_t * item[BREW_MENU_N];
-    lv_obj_t * item_ico[BREW_MENU_N];
-    lv_obj_t * item_txt[BREW_MENU_N];
-    lv_obj_t * item_dot[BREW_MENU_N];
-    int32_t wheel_pos;       /* menu index * 256, animated */
+    kit_rows_t rows;
+    lv_obj_t * list_title;
+    lv_obj_t * list_note;
+    int32_t wheel_pos;       /* selected row * 256, animated */
 
     /* history */
-    lv_obj_t * v_hist;
     kit_wifi_t wifi;
-    lv_obj_t * htime;
-    kit_numview_t hval;
-    lv_obj_t * hhint;
+    kit_edit_t edit;
 
     /* key rail */
     lv_obj_t * rail;
@@ -135,18 +129,14 @@ static void update_rail(void)
 
 static void update_menu_items(void)
 {
-    static const char * icons[BREW_MENU_N] = { BREW_ICON_BEER, BREW_ICON_SNOWFLAKE, BREW_ICON_PAUSE, BREW_ICON_CHART, BREW_ICON_TEMP,
-                                                 BREW_ICON_WIFI, BREW_ICON_CALENDAR };
-    char text[32];
-    for(int i = 0; i < BREW_MENU_N; i++) {
-        kit_set_text(U.item_ico[i], i == BREW_MENU_PAUSE && M->paused ? BREW_ICON_PLAY : icons[i]);
-        brew_model_menu_label(M, i, text, sizeof(text));
-        kit_set_text(U.item_txt[i], text);
-        const lv_font_t * f = i == M->menu_idx ? &brew_font_menu_bold : &brew_font_menu;
-        kit_set_font(U.item_ico[i], f);
-        kit_set_font(U.item_txt[i], f);
-        kit_set_hidden(U.item_dot[i], !brew_model_menu_active(M, i));
-    }
+    kit_rows_update(&U.rows, M);
+    const char * title = brew_model_list_title(M);
+    kit_set_text(U.list_title, title);
+    kit_set_hidden(U.list_title, title[0] == '\0');
+    char note[64];
+    brew_model_list_note(M, note, sizeof(note));
+    kit_set_text(U.list_note, note);
+    kit_set_hidden(U.list_note, note[0] == '\0');
 }
 
 static void layout_wheel(void)
@@ -154,14 +144,14 @@ static void layout_wheel(void)
     /* The selected row sits in the pill at the centre; the next item is above it, so the up
      * key brings the row above into the pill. Neighbours fade with distance. */
     const float pos = (float)U.wheel_pos / 256.0f;
-    for(int i = 0; i < BREW_MENU_N; i++) {
+    for(int i = 0; i < BREW_LIST_MAX; i++) {
         const float o = (float)i - pos, ao = fabsf(o);
         float op = 1.0f - 0.42f * ao;
         if(op < 0.0f) op = 0.0f;
         op = op * op * (3.0f - 2.0f * op);
-        lv_obj_align(U.item[i], LV_ALIGN_LEFT_MID, SQ(52), (int32_t)lroundf(-o * (float)ROW_DY));
-        lv_obj_set_style_opa(U.item[i], (lv_opa_t)lroundf(op * 255.0f), 0);
-        kit_set_hidden(U.item[i], op <= 0.01f);
+        lv_obj_align(U.rows.item[i], LV_ALIGN_LEFT_MID, SQ(52), (int32_t)lroundf(-o * (float)ROW_DY));
+        lv_obj_set_style_opa(U.rows.item[i], (lv_opa_t)lroundf(op * 255.0f), 0);
+        kit_set_hidden(U.rows.item[i], op <= 0.01f || i >= U.rows.count);
     }
 }
 
@@ -185,30 +175,20 @@ static void wheel_animate_to(int idx)
     lv_anim_start(&a);
 }
 
-static void place_cursor(void)
-{
-    const int i = kit_graph_marker_index(&U.g, M);
-    kit_set_hidden(U.cursor, i < 0);
-    if(i < 0) return;
-    lv_obj_set_pos(U.cursor, (int32_t)lroundf(kit_graph_index_x(&U.g, i)), (int32_t)U.g.yt - SQ(18));
-    lv_obj_set_height(U.cursor, (int32_t)(U.g.yb - U.g.yt) + SQ(36));
-}
-
 static void update_visibility(void)
 {
     const bool home = M->view == BREW_VIEW_HOME;
     kit_fade_to(U.v_home, home ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
-    kit_fade_to(U.v_menu, M->view == BREW_VIEW_MENU ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
-    kit_fade_to(U.v_hist, M->view == BREW_VIEW_HIST ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
-    kit_set_hidden(U.v_menu, M->view != BREW_VIEW_MENU && lv_obj_get_style_opa(U.v_menu, 0) == 0 && !lv_anim_get(U.v_menu, kit_opa_exec));
-    kit_set_hidden(U.v_hist, M->view != BREW_VIEW_HIST && lv_obj_get_style_opa(U.v_hist, 0) == 0 && !lv_anim_get(U.v_hist, kit_opa_exec));
+    kit_fade_to(U.v_menu, M->view == BREW_VIEW_LIST ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
+    kit_fade_to(U.edit.root, M->view == BREW_VIEW_EDIT ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
+    kit_set_hidden(U.v_menu, M->view != BREW_VIEW_LIST && lv_obj_get_style_opa(U.v_menu, 0) == 0 && !lv_anim_get(U.v_menu, kit_opa_exec));
+    kit_set_hidden(U.edit.root, M->view != BREW_VIEW_EDIT && lv_obj_get_style_opa(U.edit.root, 0) == 0 && !lv_anim_get(U.edit.root, kit_opa_exec));
     const bool wifi = M->view == BREW_VIEW_WIFI;
     kit_fade_to(U.wifi.root, wifi ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
     kit_set_hidden(U.wifi.root, !wifi && lv_obj_get_style_opa(U.wifi.root, 0) == 0 && !lv_anim_get(U.wifi.root, kit_opa_exec));
     kit_fade_to(U.ticks, home && M->setting ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
-    kit_fade_to(U.cursor, M->view == BREW_VIEW_HIST ? LV_OPA_COVER : LV_OPA_TRANSP, BREW_FADE_MS);
 
-    const lv_opa_t g = wifi ? LV_OPA_TRANSP : M->view == BREW_VIEW_MENU ? 64 : (M->setting ? 102 : LV_OPA_COVER);
+    const lv_opa_t g = wifi || M->view == BREW_VIEW_EDIT ? LV_OPA_TRANSP : M->view == BREW_VIEW_LIST ? 64 : (M->setting ? 102 : LV_OPA_COVER);
     kit_fade_to(U.g.canvas, g, BREW_FADE_MS);
     kit_fade_to(U.g.halo, g, BREW_FADE_MS);
     kit_fade_to(U.g.dot, g, BREW_FADE_MS);
@@ -222,12 +202,6 @@ static void refresh(bool animate)
         if(!U.vs_valid || kit_line[vs] != kit_line[U.vs]) U.g.dirty = true;
         U.vs = vs;
         U.vs_valid = true;
-    }
-    /* the history view gives the graph the middle of the screen too */
-    const float yt = M->view == BREW_VIEW_HIST ? PLOT_YT_HIST : PLOT_YT_HOME;
-    if(U.g.yt != yt) {
-        U.g.yt = yt;
-        U.g.dirty = true;
     }
     if(U.g.dirty) kit_graph_render(&U.g, M);
 
@@ -262,26 +236,13 @@ static void refresh(bool animate)
         kit_nv_set(&U.big, t, animate);
     }
 
-    if(M->view == BREW_VIEW_HIST && brew_model_hist_last(M) >= 0) {
-        brew_model_fmt_temp(M, t, sizeof(t), brew_model_hist_val(M, M->hist_idx));
-        kit_nv_set(&U.hval, t, animate);
-        kit_nv_set_unit(&U.hval, brew_model_unit(M));
-        kit_nv_set_color(&U.hval, vs == BREW_VS_COOL ? cool : white);
-        brew_model_hist_time(M, M->hist_idx, s, sizeof(s));
-        kit_set_text(U.htime, s);
-        char w[32];
-        brew_model_hist_window_text(M, w, sizeof(w));
-        snprintf(s, sizeof(s), "Up / down to scrub \xC2\xB7 %s", w);
-        kit_set_text(U.hhint, s);
-    }
-
-    if(M->view == BREW_VIEW_MENU) update_menu_items();
+    if(M->view == BREW_VIEW_LIST) update_menu_items();
+    if(M->view == BREW_VIEW_EDIT) kit_edit_update(&U.edit, M);
     if(M->view == BREW_VIEW_WIFI) kit_wifi_update(&U.wifi, M);
     update_gauge();
     update_rail();
     update_visibility();
     kit_graph_place_marker(&U.g, M);
-    place_cursor();
 }
 
 /* ------------------------------------------------------------------ construction */
@@ -355,12 +316,7 @@ static void square_create(lv_obj_t * screen, const brew_model_t * m)
     U.g.halo_d = SQ(22);
     U.g.dot_d = SQ(11);
 
-    /* the scrub cursor goes under the curve's marker */
-    U.cursor = kit_plain(U.root);
-    lv_obj_set_size(U.cursor, SQ(1) > 0 ? SQ(1) : 1, 1);
-    lv_obj_set_style_bg_color(U.cursor, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(U.cursor, 90, 0);
-    lv_obj_set_style_opa(U.cursor, LV_OPA_TRANSP, 0);
+
     kit_graph_create(&U.g, U.root);
 
     /* ---- home ---- */
@@ -438,31 +394,16 @@ static void square_create(lv_obj_t * screen, const brew_model_t * m)
     lv_obj_set_style_border_color(U.pill, lv_color_white(), 0);
     lv_obj_set_style_border_opa(U.pill, 36, 0);
     lv_obj_set_style_border_width(U.pill, 1, 0);
-    for(int i = 0; i < BREW_MENU_N; i++) {
-        lv_obj_t * it = kit_plain(U.v_menu);
-        lv_obj_set_size(it, LV_SIZE_CONTENT, ROW_DY);
-        lv_obj_set_flex_flow(it, LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(it, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_pad_column(it, SQ(14), 0);
-        U.item_ico[i] = label(it, &brew_font_menu, 230);
-        U.item_txt[i] = label(it, &brew_font_menu, LV_OPA_COVER);
-        U.item_dot[i] = kit_plain(it);
-        lv_obj_set_size(U.item_dot[i], SQ(7), SQ(7));
-        lv_obj_set_style_radius(U.item_dot[i], LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_bg_color(U.item_dot[i], lv_color_hex(KIT_COOL_TEXT), 0);
-        lv_obj_set_style_bg_opa(U.item_dot[i], LV_OPA_COVER, 0);
-        U.item[i] = it;
-    }
+    kit_rows_create(&U.rows, U.v_menu, ROW_DY, SQ(14), SQ(7), true);
+    U.list_title = label(U.v_menu, &brew_font_caps, LV_OPA_COVER);
+    lv_obj_set_style_text_letter_space(U.list_title, SQ(3), 0);
+    lv_obj_set_style_text_color(U.list_title, lv_color_hex(0x66717c), 0);
+    lv_obj_set_pos(U.list_title, PAD, SQ(40));
+    U.list_note = label(U.v_menu, &brew_font_small, 180);
+    lv_obj_set_pos(U.list_note, PAD, SQ(64));
 
-    /* ---- history ---- */
-    U.v_hist = full_view(U.root);
-    lv_obj_set_style_opa(U.v_hist, LV_OPA_TRANSP, 0);
-    U.htime = label(U.v_hist, &brew_font_status, 200);
-    lv_obj_set_pos(U.htime, PAD, SQ(30));
-    kit_nv_create(&U.hval, U.v_hist, &brew_font_num_hist, &brew_font_deg_hist, SQ(28), SQ(5));
-    lv_obj_set_pos(U.hval.box, PAD - SQ(4), SQ(72));
-    U.hhint = label(U.v_hist, &brew_font_small, 140);
-    lv_obj_set_pos(U.hhint, PAD, SQ(190));
+    /* ---- value editor, left of the key rail ---- */
+    kit_edit_create(&U.edit, U.root, 0, 0, RAIL_X - SQ(40), DISP);
 
     /* ---- WiFi setup view, left of the key rail ---- */
     kit_wifi_create(&U.wifi, U.root, 0, 0, RAIL_X - SQ(40), DISP, SQ(150));
@@ -481,7 +422,7 @@ static void square_create(lv_obj_t * screen, const brew_model_t * m)
 
     U.graph_t = lv_timer_create(graph_timer_cb, 50, NULL);    /* checks; renders per KIT_GRAPH_REDRAW_MS */
 
-    U.wheel_pos = m->menu_idx * 256;
+    U.wheel_pos = m->list_idx * 256;
     update_menu_items();
     layout_wheel();
     refresh(false);
@@ -495,18 +436,18 @@ static void square_update(const brew_model_t * m, uint32_t ch)
     const bool animate = (ch & BREW_CH_ANIMATE) != 0;
 
     if(ch & BREW_CH_VIEW) {
-        if(M->view == BREW_VIEW_MENU) {
+        if(M->view == BREW_VIEW_LIST) {
+            update_menu_items();
             lv_anim_delete(&U.wheel_pos, wheel_exec);
-            U.wheel_pos = M->menu_idx * 256;
+            U.wheel_pos = M->list_idx * 256;
             layout_wheel();
         }
-        if(M->view == BREW_VIEW_HIST) U.hval.cur[0] = 0;   /* no slide-in on entry */
     }
     if(ch & (BREW_CH_GRAPH | BREW_CH_GRAPH_LAZY)) U.g.dirty = true;
     if(ch & BREW_CH_MENU_MOVE) {
         update_menu_items();
         update_rail();
-        wheel_animate_to(M->menu_idx);
+        wheel_animate_to(M->list_idx);
     }
     if(!(ch & BREW_CH_REFRESH)) return;
 

@@ -22,6 +22,11 @@ void brew_model_init(brew_model_t * m, const brew_ui_cbs_t * cbs)
     m->sp_f[1] = 34.0f;
     m->hist_ms_per = 200;
     m->view = BREW_VIEW_HOME;
+    m->heat_diff_f = 0.5f;
+    m->cool_diff_f = 0.5f;
+    m->heat_delay_s = 180;
+    m->cool_delay_s = 180;
+    m->crash_default_f = 34.0f;
 }
 
 void brew_model_free(brew_model_t * m)
@@ -134,97 +139,287 @@ int brew_model_hist_last(const brew_model_t * m) { return m->temp_known ? m->his
 
 float brew_model_hist_val(const brew_model_t * m, int i) { return i < m->hist_n ? m->hist[i] : m->temp_f; }
 
-void brew_model_hist_time(const brew_model_t * m, int idx, char * buf, size_t n)
+/* ------------------------------------------------------------------ lists */
+
+enum {
+    ACT_NONE, ACT_FERMENT, ACT_CRASH, ACT_PAUSE, ACT_OPEN, ACT_BACK, ACT_UNITS, ACT_WIFI_SETUP, ACT_WIFI_FORGET,
+    ACT_EDIT, ACT_CONSTANT, ACT_RESET_DAY,
+};
+
+static void fmt_temp_unit(const brew_model_t * m, char * buf, size_t n, float f)
 {
-    /* sample i covers the interval that ended (hist_n - i) samples ago; hist_n is live */
-    const int back_s = (int)((long)(m->hist_n - idx) * m->hist_ms_per / 1000);
-    const int back_min = back_s / 60;
-    if(idx >= m->hist_n || back_s <= 0) {
-        snprintf(buf, n, "Now");
-        return;
-    }
-    time_t now = time(NULL);
-    if(now > 1700000000) { /* wall clock is set (SNTP) */
-        time_t t = now - (time_t)back_s;
-        struct tm tmv;
-#ifdef _WIN32
-        localtime_s(&tmv, &t);
-#else
-        localtime_r(&t, &tmv);
-#endif
-        int h = tmv.tm_hour % 12;
-        if(h == 0) h = 12;
-        snprintf(buf, n, "%d:%02d %s", h, tmv.tm_min, tmv.tm_hour < 12 ? "AM" : "PM");
-    }
-    else if(back_s < 60) {
-        snprintf(buf, n, "%d s ago", back_s);
-    }
-    else {
-        snprintf(buf, n, "%dh %02dm ago", back_min / 60, back_min % 60);
-    }
+    snprintf(buf, n, "%.1f%s", (double)brew_model_to_disp(m, f), brew_model_unit(m));
 }
 
-int brew_model_hist_step(const brew_model_t * m)
+static void fmt_diff_unit(const brew_model_t * m, char * buf, size_t n, float d_f)
 {
-    const int s = m->hist_ms_per > 0 ? BREW_SCRUB_MS / m->hist_ms_per : 1;
-    return s > 0 ? s : 1;
+    snprintf(buf, n, "%.1f%s", (double)(m->celsius ? d_f * 5.0f / 9.0f : d_f), brew_model_unit(m));
 }
 
-void brew_model_hist_window_text(const brew_model_t * m, char * buf, size_t n)
+static brew_list_item_t * add(brew_list_item_t * it, int * n, const char * label, brew_icon_t icon, uint8_t act, uint8_t arg)
 {
-    const int min = (int)((long long)BREW_HIST_MAX * (m->hist_ms_per > 0 ? m->hist_ms_per : 1) / 60000);
-    if(min < 60) snprintf(buf, n, "last %d min", min);
-    else if(min == 60) snprintf(buf, n, "last hour");
-    else if(min % 60 == 0) snprintf(buf, n, "last %d hours", min / 60);
-    else snprintf(buf, n, "last %dh %02dm", min / 60, min % 60);
+    brew_list_item_t * x = &it[(*n)++];
+    memset(x, 0, sizeof(*x));
+    snprintf(x->label, sizeof(x->label), "%s", label);
+    x->icon = icon;
+    x->act = act;
+    x->arg = arg;
+    x->opens = act == ACT_OPEN || act == ACT_EDIT;
+    x->back = act == ACT_BACK;
+    return x;
 }
 
-void brew_model_menu_label(const brew_model_t * m, int i, char * buf, size_t n)
+/* Every list, built on demand (small, and always current). Previous is always the last row. */
+static int build(const brew_model_t * m, brew_list_t l, brew_list_item_t * it)
 {
-    switch(i) {
-        case BREW_MENU_FERMENT: snprintf(buf, n, "Ferment"); break;
-        case BREW_MENU_CRASH:   snprintf(buf, n, "Cold crash"); break;
-        case BREW_MENU_PAUSE:   snprintf(buf, n, "%s", m->paused ? "Resume" : "Pause"); break;
-        case BREW_MENU_HISTORY: snprintf(buf, n, "History"); break;
-        case BREW_MENU_UNITS:   snprintf(buf, n, "Units \xC2\xB7 \xC2\xB0%c", m->celsius ? 'C' : 'F'); break;
-        case BREW_MENU_WIFI: {
-            char s[20];
-            snprintf(s, sizeof(s), "%.14s%s", m->wifi_ssid, strlen(m->wifi_ssid) > 14 ? "..." : "");
-            switch(m->wifi_phase) {
-                case BREW_WIFI_NONE:      snprintf(buf, n, "WiFi \xC2\xB7 unavailable"); break;
-                case BREW_WIFI_CONNECTED: snprintf(buf, n, "WiFi \xC2\xB7 %s", s); break;
-                case BREW_WIFI_OFFLINE:   snprintf(buf, n, "WiFi \xC2\xB7 not connected"); break;
-                default:                  snprintf(buf, n, "WiFi \xC2\xB7 set up"); break;
+    int n = 0;
+    brew_list_item_t * x;
+    switch(l) {
+        case BREW_LIST_MENU:
+            x = add(it, &n, "Ferment", BREW_IC_BEER, ACT_FERMENT, 0);
+            x->mark = !m->paused && m->mode == BREW_MODE_FERMENT ? BREW_MARK_ACTIVE : BREW_MARK_NONE;
+            x = add(it, &n, "Cold crash", BREW_IC_SNOWFLAKE, ACT_CRASH, 0);
+            x->mark = !m->paused && m->mode == BREW_MODE_CRASH ? BREW_MARK_ACTIVE : BREW_MARK_NONE;
+            add(it, &n, m->paused ? "Resume" : "Pause", m->paused ? BREW_IC_PLAY : BREW_IC_PAUSE, ACT_PAUSE, 0);
+            add(it, &n, "Settings", BREW_IC_SETTINGS, ACT_OPEN, BREW_LIST_SETTINGS);
+            break;
+        case BREW_LIST_SETTINGS:
+            x = add(it, &n, "Units", BREW_IC_TEMP, ACT_UNITS, 0);
+            snprintf(x->value, sizeof(x->value), "%s", brew_model_unit(m));
+            x = add(it, &n, "WiFi", BREW_IC_WIFI, ACT_OPEN, BREW_LIST_WIFI);
+            if(m->wifi_phase == BREW_WIFI_CONNECTED) snprintf(x->value, sizeof(x->value), "%.14s%s", m->wifi_ssid, strlen(m->wifi_ssid) > 14 ? "..." : "");
+            else snprintf(x->value, sizeof(x->value), "%s", m->wifi_phase == BREW_WIFI_NONE ? "none" : m->wifi_phase == BREW_WIFI_OFFLINE ? "offline" : "off");
+            add(it, &n, "Heat", BREW_IC_FLAME, ACT_OPEN, BREW_LIST_HEAT);
+            add(it, &n, "Cool", BREW_IC_SNOWFLAKE, ACT_OPEN, BREW_LIST_COOL);
+            x = add(it, &n, "Profile", BREW_IC_PROFILE, ACT_OPEN, BREW_LIST_PROFILE);
+            snprintf(x->value, sizeof(x->value), "Constant");
+            break;
+        case BREW_LIST_WIFI:
+            if(m->wifi_phase == BREW_WIFI_CONNECTED || m->wifi_phase == BREW_WIFI_OFFLINE) {
+                add(it, &n, "Change network", BREW_IC_WIFI, ACT_WIFI_SETUP, 0);
+                add(it, &n, "Forget network", BREW_IC_NONE, ACT_WIFI_FORGET, 0);
+            }
+            else if(m->wifi_phase == BREW_WIFI_OFF) {
+                add(it, &n, "Set up WiFi", BREW_IC_WIFI, ACT_WIFI_SETUP, 0);
             }
             break;
-        }
-        case BREW_MENU_RESET_DAY: snprintf(buf, n, "Reset day count"); break;
-        default:                if(n) buf[0] = 0; break;
+        case BREW_LIST_HEAT:
+            x = add(it, &n, "Differential", BREW_IC_NONE, ACT_EDIT, BREW_EDIT_HEAT_DIFF);
+            fmt_diff_unit(m, x->value, sizeof(x->value), m->heat_diff_f);
+            x = add(it, &n, "Restart delay", BREW_IC_NONE, ACT_EDIT, BREW_EDIT_HEAT_DELAY);
+            snprintf(x->value, sizeof(x->value), "%d min", (m->heat_delay_s + 30) / 60);
+            break;
+        case BREW_LIST_COOL:
+            x = add(it, &n, "Differential", BREW_IC_NONE, ACT_EDIT, BREW_EDIT_COOL_DIFF);
+            fmt_diff_unit(m, x->value, sizeof(x->value), m->cool_diff_f);
+            x = add(it, &n, "Restart delay", BREW_IC_NONE, ACT_EDIT, BREW_EDIT_COOL_DELAY);
+            snprintf(x->value, sizeof(x->value), "%d min", (m->cool_delay_s + 30) / 60);
+            x = add(it, &n, "Cold crash", BREW_IC_NONE, ACT_EDIT, BREW_EDIT_CRASH);
+            fmt_temp_unit(m, x->value, sizeof(x->value), m->crash_default_f);
+            break;
+        case BREW_LIST_PROFILE:
+            x = add(it, &n, "Constant", BREW_IC_NONE, ACT_CONSTANT, 0);
+            x->mark = BREW_MARK_CHOSEN;
+            add(it, &n, "Brewfather", BREW_IC_NONE, ACT_OPEN, BREW_LIST_BREWFATHER);
+            x = add(it, &n, "Restart day count", BREW_IC_CALENDAR, ACT_RESET_DAY, 0);
+            snprintf(x->value, sizeof(x->value), "Day %d", m->day);
+            break;
+        case BREW_LIST_BREWFATHER:
+        case BREW_LIST_N:
+            break;
+    }
+    add(it, &n, "Previous", BREW_IC_BACK, ACT_BACK, 0);
+    return n;
+}
+
+/* Where Previous goes: the parent list, on the row that opened this one (the menu: home). */
+static void parent(brew_list_t l, brew_list_t * pl, int * pi)
+{
+    switch(l) {
+        case BREW_LIST_SETTINGS:   *pl = BREW_LIST_MENU; *pi = 3; break;
+        case BREW_LIST_WIFI:       *pl = BREW_LIST_SETTINGS; *pi = 1; break;
+        case BREW_LIST_HEAT:       *pl = BREW_LIST_SETTINGS; *pi = 2; break;
+        case BREW_LIST_COOL:       *pl = BREW_LIST_SETTINGS; *pi = 3; break;
+        case BREW_LIST_PROFILE:    *pl = BREW_LIST_SETTINGS; *pi = 4; break;
+        case BREW_LIST_BREWFATHER: *pl = BREW_LIST_PROFILE; *pi = 1; break;
+        default:                   *pl = BREW_LIST_N; *pi = 0; break;   /* home */
     }
 }
 
-bool brew_model_menu_active(const brew_model_t * m, int i)
+int brew_model_list_count(const brew_model_t * m)
 {
-    return !m->paused && ((i == BREW_MENU_FERMENT && m->mode == BREW_MODE_FERMENT) ||
-                          (i == BREW_MENU_CRASH && m->mode == BREW_MODE_CRASH));
+    brew_list_item_t it[BREW_LIST_MAX];
+    return build(m, m->list, it);
+}
+
+void brew_model_list_item(const brew_model_t * m, int i, brew_list_item_t * out)
+{
+    brew_list_item_t it[BREW_LIST_MAX];
+    const int n = build(m, m->list, it);
+    if(i < 0 || i >= n) {
+        memset(out, 0, sizeof(*out));
+        return;
+    }
+    *out = it[i];
+}
+
+const char * brew_model_list_title(const brew_model_t * m)
+{
+    static const char * const t[BREW_LIST_N] = { "", "SETTINGS", "WIFI", "HEAT", "COOL", "PROFILE", "BREWFATHER" };
+    return m->list < BREW_LIST_N ? t[m->list] : "";
+}
+
+void brew_model_list_note(const brew_model_t * m, char * buf, size_t n)
+{
+    if(n) buf[0] = 0;
+    switch(m->list) {
+        case BREW_LIST_WIFI:
+            switch(m->wifi_phase) {
+                case BREW_WIFI_NONE:      snprintf(buf, n, "This display has no WiFi"); break;
+                case BREW_WIFI_OFF:       snprintf(buf, n, "Not set up"); break;
+                case BREW_WIFI_CONNECTED: snprintf(buf, n, "On %s", m->wifi_ssid); break;
+                case BREW_WIFI_OFFLINE:   snprintf(buf, n, "Not connected: retrying %s", m->wifi_ssid); break;
+                default:                  snprintf(buf, n, "Setting up"); break;
+            }
+            break;
+        case BREW_LIST_BREWFATHER: snprintf(buf, n, "Coming soon. Needs WiFi."); break;
+        default: break;
+    }
+}
+
+/* ------------------------------------------------------------------ the value editor */
+
+typedef struct {
+    const char * title;
+    float min_f, max_f, step_f;   /* in F (temperatures, differences) or minutes */
+    float min_c, max_c, step_c;   /* the same in C */
+    brew_list_t list;
+    int row;
+    brew_tuning_t tune;
+} edit_def_t;
+
+static const edit_def_t s_edit[BREW_EDIT_N] = {
+    { "HEAT \xC2\xB7 DIFFERENTIAL",  0.1f, 5.0f, 0.1f,   0.1f, 3.0f, 0.1f,  BREW_LIST_HEAT, 0, BREW_TUNE_HEAT_DIFF },
+    { "HEAT \xC2\xB7 RESTART DELAY", 0.0f, 30.0f, 1.0f,  0.0f, 30.0f, 1.0f, BREW_LIST_HEAT, 1, BREW_TUNE_HEAT_DELAY },
+    { "COOL \xC2\xB7 DIFFERENTIAL",  0.1f, 5.0f, 0.1f,   0.1f, 3.0f, 0.1f,  BREW_LIST_COOL, 0, BREW_TUNE_COOL_DIFF },
+    { "COOL \xC2\xB7 RESTART DELAY", 0.0f, 30.0f, 1.0f,  0.0f, 30.0f, 1.0f, BREW_LIST_COOL, 1, BREW_TUNE_COOL_DELAY },
+    { "COOL \xC2\xB7 COLD CRASH",    28.0f, 50.0f, 0.5f, -2.0f, 10.0f, 0.5f, BREW_LIST_COOL, 2, BREW_TUNE_CRASH },
+};
+
+static bool is_delay(brew_edit_t e) { return e == BREW_EDIT_HEAT_DELAY || e == BREW_EDIT_COOL_DELAY; }
+static bool is_diff(brew_edit_t e) { return e == BREW_EDIT_HEAT_DIFF || e == BREW_EDIT_COOL_DIFF; }
+
+static float snap(float v, float step) { return roundf(v / step) * step; }
+
+/* The current setting, in the units the editor shows. */
+static float edit_start(const brew_model_t * m, brew_edit_t e)
+{
+    switch(e) {
+        case BREW_EDIT_HEAT_DIFF:  return m->celsius ? m->heat_diff_f * 5.0f / 9.0f : m->heat_diff_f;
+        case BREW_EDIT_COOL_DIFF:  return m->celsius ? m->cool_diff_f * 5.0f / 9.0f : m->cool_diff_f;
+        case BREW_EDIT_HEAT_DELAY: return (float)((m->heat_delay_s + 30) / 60);
+        case BREW_EDIT_COOL_DELAY: return (float)((m->cool_delay_s + 30) / 60);
+        case BREW_EDIT_CRASH:      return brew_model_to_disp(m, m->crash_default_f);
+        default:                   return 0.0f;
+    }
+}
+
+static void edit_range(const brew_model_t * m, brew_edit_t e, float * lo, float * hi, float * step)
+{
+    const edit_def_t * d = &s_edit[e];
+    const bool c = m->celsius && !is_delay(e);
+    *lo = c ? d->min_c : d->min_f;
+    *hi = c ? d->max_c : d->max_f;
+    *step = c ? d->step_c : d->step_f;
+}
+
+void brew_model_edit_text(const brew_model_t * m, brew_edit_text_t * t)
+{
+    memset(t, 0, sizeof(*t));
+    const brew_edit_t e = m->edit < BREW_EDIT_N ? m->edit : BREW_EDIT_HEAT_DIFF;
+    float lo, hi, step;
+    edit_range(m, e, &lo, &hi, &step);
+    const float v = m->edit_val;
+    snprintf(t->title, sizeof(t->title), "%s", s_edit[e].title);
+    snprintf(t->foot, sizeof(t->foot), "TURN TO CHANGE \xC2\xB7 PRESS TO SAVE");
+    t->frac = hi > lo ? (v - lo) / (hi - lo) : 0.0f;
+    char d[16];
+    if(is_delay(e)) {
+        snprintf(t->value, sizeof(t->value), "%d", (int)lroundf(v));
+        snprintf(t->unit, sizeof(t->unit), "min");
+        const int mins = (int)lroundf(v);
+        if(mins == 0) snprintf(t->explain, sizeof(t->explain), "%s may switch back on right away", e == BREW_EDIT_HEAT_DELAY ? "Heat" : "Cooling");
+        else if(e == BREW_EDIT_HEAT_DELAY) snprintf(t->explain, sizeof(t->explain), "Once off, heat waits %d min to start again", mins);
+        else snprintf(t->explain, sizeof(t->explain), "A rest for the compressor: %d min after it stops", mins);
+        return;
+    }
+    snprintf(t->value, sizeof(t->value), "%.1f", (double)v);
+    snprintf(t->unit, sizeof(t->unit), "%s", brew_model_unit(m));
+    snprintf(d, sizeof(d), "%.1f%s", (double)v, brew_model_unit(m));
+    if(e == BREW_EDIT_HEAT_DIFF) snprintf(t->explain, sizeof(t->explain), "Heating starts %s below the target", d);
+    else if(e == BREW_EDIT_COOL_DIFF) snprintf(t->explain, sizeof(t->explain), "Cooling starts %s above the target", d);
+    else snprintf(t->explain, sizeof(t->explain), "Where Cold crash starts");
+}
+
+static uint32_t open_list(brew_model_t * m, brew_list_t l, int idx)
+{
+    m->view = BREW_VIEW_LIST;
+    m->list = l;
+    m->list_idx = idx;
+    return BREW_CH_VIEW | BREW_CH_REFRESH;
+}
+
+static uint32_t open_edit(brew_model_t * m, brew_edit_t e)
+{
+    float lo, hi, step;
+    edit_range(m, e, &lo, &hi, &step);
+    float v = snap(edit_start(m, e), step);
+    m->edit = e;
+    m->edit_val = v < lo ? lo : v > hi ? hi : v;
+    m->view = BREW_VIEW_EDIT;
+    return BREW_CH_VIEW | BREW_CH_REFRESH;
+}
+
+static uint32_t save_edit(brew_model_t * m)
+{
+    const brew_edit_t e = m->edit;
+    const float v = m->edit_val;
+    float out = 0.0f;
+    switch(e) {
+        case BREW_EDIT_HEAT_DIFF:  out = m->heat_diff_f = m->celsius ? v * 9.0f / 5.0f : v; break;
+        case BREW_EDIT_COOL_DIFF:  out = m->cool_diff_f = m->celsius ? v * 9.0f / 5.0f : v; break;
+        case BREW_EDIT_HEAT_DELAY: m->heat_delay_s = (int)lroundf(v) * 60; out = (float)m->heat_delay_s; break;
+        case BREW_EDIT_COOL_DELAY: m->cool_delay_s = (int)lroundf(v) * 60; out = (float)m->cool_delay_s; break;
+        case BREW_EDIT_CRASH:      out = m->crash_default_f = m->celsius ? v * 9.0f / 5.0f + 32.0f : v; break;
+        default: return 0;
+    }
+    if(m->cbs.on_tuning) m->cbs.on_tuning(s_edit[e].tune, out, m->cbs.user);
+    return open_list(m, s_edit[e].list, s_edit[e].row);
 }
 
 const char * brew_model_press_hint(const brew_model_t * m)
 {
     switch(m->view) {
         case BREW_VIEW_HOME: return m->setting ? "Set" : "Menu";
-        case BREW_VIEW_HIST: return "Back";
-        case BREW_VIEW_MENU:
-            switch(m->menu_idx) {
-                case BREW_MENU_FERMENT:
-                case BREW_MENU_CRASH:   return brew_model_menu_active(m, m->menu_idx) ? "Close" : "Start";
-                case BREW_MENU_PAUSE:   return m->paused ? "Resume" : "Pause";
-                case BREW_MENU_HISTORY: return "Open";
-                case BREW_MENU_UNITS:   return "Switch";
-                case BREW_MENU_WIFI:    return m->wifi_phase == BREW_WIFI_NONE ? "" : "Set up";
-                case BREW_MENU_RESET_DAY: return "Reset";
+        case BREW_VIEW_EDIT: return "Save";
+        case BREW_VIEW_LIST: {
+            brew_list_item_t it;
+            brew_model_list_item(m, m->list_idx, &it);
+            switch(it.act) {
+                case ACT_FERMENT:
+                case ACT_CRASH:       return it.mark == BREW_MARK_ACTIVE ? "Close" : "Start";
+                case ACT_PAUSE:       return m->paused ? "Resume" : "Pause";
+                case ACT_OPEN:        return "Open";
+                case ACT_BACK:        return "Back";
+                case ACT_UNITS:       return "Switch";
+                case ACT_WIFI_SETUP:  return "Set up";
+                case ACT_WIFI_FORGET: return "Forget";
+                case ACT_EDIT:        return "Edit";
+                case ACT_CONSTANT:    return "Use";
+                case ACT_RESET_DAY:   return "Reset";
+                default:              return "";
             }
-            break;
+        }
         case BREW_VIEW_WIFI:
             switch(brew_model_wifi_screen(m)) {
                 case BREW_WIFI_SCREEN_JOIN: return "Skip";
@@ -243,12 +438,15 @@ bool brew_model_can_step(const brew_model_t * m, int dir)
             const float t = m->setting ? m->draft_f : m->sp_f[m->mode];
             return dir > 0 ? t < BREW_T_MAX : t > BREW_T_MIN;
         }
-        case BREW_VIEW_MENU: {
-            const int i = m->menu_idx + (dir > 0 ? 1 : -1);
-            return i >= 0 && i < BREW_MENU_N;
+        case BREW_VIEW_LIST: {
+            const int i = m->list_idx + (dir > 0 ? 1 : -1);
+            return i >= 0 && i < brew_model_list_count(m);
         }
-        case BREW_VIEW_HIST:
-            return dir > 0 ? m->hist_idx < brew_model_hist_last(m) : m->hist_idx > 0;
+        case BREW_VIEW_EDIT: {
+            float lo, hi, step;
+            edit_range(m, m->edit, &lo, &hi, &step);
+            return dir > 0 ? m->edit_val < hi - step * 0.5f : m->edit_val > lo + step * 0.5f;
+        }
         case BREW_VIEW_WIFI:
             return false;
     }
@@ -421,21 +619,28 @@ uint32_t brew_model_set_history(brew_model_t * m, const float * t, int n, int ms
     if(n > 0) memcpy(m->hist, t, (size_t)n * sizeof(float));
     m->hist_n = n;
     if(ms_per_sample > 0) m->hist_ms_per = ms_per_sample;
-    if(m->view == BREW_VIEW_HIST) m->hist_idx = brew_model_hist_last(m) > 0 ? brew_model_hist_last(m) : 0;
     return BREW_CH_GRAPH | BREW_CH_REFRESH;
+}
+
+uint32_t brew_model_set_tuning(brew_model_t * m, float heat_diff_f, float cool_diff_f, int heat_delay_s, int cool_delay_s,
+                               float crash_default_f)
+{
+    m->heat_diff_f = heat_diff_f;
+    m->cool_diff_f = cool_diff_f;
+    m->heat_delay_s = heat_delay_s;
+    m->cool_delay_s = cool_delay_s;
+    m->crash_default_f = crash_default_f;
+    return BREW_CH_REFRESH;
 }
 
 uint32_t brew_model_push_history(brew_model_t * m, float f)
 {
     if(!m->hist) return 0;
-    const bool was_live = m->hist_idx >= m->hist_n;   /* scrubbing: keep the same moment selected */
     if(m->hist_n == BREW_HIST_MAX) {
         memmove(m->hist, m->hist + 1, (BREW_HIST_MAX - 1) * sizeof(float));
         m->hist_n--;
-        if(!was_live && m->hist_idx > 0) m->hist_idx--;
     }
     m->hist[m->hist_n++] = f;
-    if(was_live) m->hist_idx = brew_model_hist_last(m) > 0 ? brew_model_hist_last(m) : 0;
     return BREW_CH_GRAPH_LAZY;
 }
 
@@ -443,9 +648,8 @@ uint32_t brew_model_push_history(brew_model_t * m, float f)
 
 static uint32_t set_view(brew_model_t * m, brew_view_t v)
 {
+    if(v == BREW_VIEW_LIST) return open_list(m, BREW_LIST_MENU, 0);
     m->view = v;
-    if(v == BREW_VIEW_MENU) m->menu_idx = 0;
-    if(v == BREW_VIEW_HIST) m->hist_idx = brew_model_hist_last(m) > 0 ? brew_model_hist_last(m) : 0;
     return BREW_CH_VIEW | BREW_CH_REFRESH;
 }
 
@@ -480,20 +684,23 @@ uint32_t brew_model_encoder(brew_model_t * m, int d)
             if(m->draft_f > BREW_T_MAX) m->draft_f = BREW_T_MAX;
             return BREW_CH_ARM_COMMIT | BREW_CH_REFRESH | BREW_CH_ANIMATE;
         }
-        case BREW_VIEW_MENU: {
-            int i = m->menu_idx + d;
+        case BREW_VIEW_LIST: {
+            const int n = brew_model_list_count(m);
+            int i = m->list_idx + d;
             if(i < 0) i = 0;
-            if(i > BREW_MENU_N - 1) i = BREW_MENU_N - 1;
-            if(i == m->menu_idx) return 0;
-            m->menu_idx = i;
+            if(i > n - 1) i = n - 1;
+            if(i == m->list_idx) return 0;
+            m->list_idx = i;
             return BREW_CH_MENU_MOVE;
         }
-        case BREW_VIEW_HIST: {
-            int i = m->hist_idx + d * brew_model_hist_step(m);   /* a minute per detent */
-            if(i > brew_model_hist_last(m)) i = brew_model_hist_last(m);
-            if(i < 0) i = 0;
-            if(i == m->hist_idx) return 0;
-            m->hist_idx = i;
+        case BREW_VIEW_EDIT: {
+            float lo, hi, step;
+            edit_range(m, m->edit, &lo, &hi, &step);
+            float v = snap(m->edit_val + (float)d * step, step);
+            if(v < lo) v = lo;
+            if(v > hi) v = hi;
+            if(fabsf(v - m->edit_val) < step * 0.25f) return 0;
+            m->edit_val = v;
             return BREW_CH_REFRESH | BREW_CH_ANIMATE;
         }
         case BREW_VIEW_WIFI:
@@ -502,46 +709,72 @@ uint32_t brew_model_encoder(brew_model_t * m, int d)
     return 0;
 }
 
+static uint32_t press_item(brew_model_t * m, const brew_list_item_t * it)
+{
+    switch(it->act) {
+        case ACT_FERMENT:
+        case ACT_CRASH:
+        {
+            const brew_mode_t was = m->mode;
+            m->mode = it->act == ACT_FERMENT ? BREW_MODE_FERMENT : BREW_MODE_CRASH;
+            m->paused = false;
+            /* Cold crash starts at its setting; picking it again mid-crash keeps the adjusted target */
+            if(m->mode == BREW_MODE_CRASH && was != BREW_MODE_CRASH) m->sp_f[1] = m->crash_default_f;
+            if(m->cbs.on_mode) m->cbs.on_mode(m->mode, m->paused, m->cbs.user);
+            return BREW_CH_GRAPH | set_view(m, BREW_VIEW_HOME);
+        }
+        case ACT_PAUSE:
+            m->paused = !m->paused;
+            if(m->cbs.on_mode) m->cbs.on_mode(m->mode, m->paused, m->cbs.user);
+            return set_view(m, BREW_VIEW_HOME);
+        case ACT_OPEN:
+            return open_list(m, (brew_list_t)it->arg, 0);
+        case ACT_BACK: {
+            brew_list_t pl;
+            int pi;
+            parent(m->list, &pl, &pi);
+            return pl == BREW_LIST_N ? set_view(m, BREW_VIEW_HOME) : open_list(m, pl, pi);
+        }
+        case ACT_UNITS:
+            m->celsius = !m->celsius;
+            if(m->cbs.on_units) m->cbs.on_units(m->celsius, m->cbs.user);
+            return BREW_CH_REFRESH;
+        case ACT_WIFI_SETUP:
+            /* WifiSetup opens setup; its next status brings up the WiFi view */
+            if(m->cbs.on_wifi_setup) m->cbs.on_wifi_setup(m->cbs.user);
+            return set_view(m, BREW_VIEW_HOME);
+        case ACT_WIFI_FORGET:
+            if(m->cbs.on_wifi_forget) m->cbs.on_wifi_forget(m->cbs.user);
+            return set_view(m, BREW_VIEW_HOME);
+        case ACT_EDIT:
+            return open_edit(m, (brew_edit_t)it->arg);
+        case ACT_CONSTANT:
+            return BREW_CH_REFRESH;   /* the only profile so far, and already chosen */
+        case ACT_RESET_DAY:
+            m->day = 1;   /* the controller confirms in its next State */
+            if(m->cbs.on_reset_day) m->cbs.on_reset_day(m->cbs.user);
+            return BREW_CH_REFRESH;
+        default:
+            return 0;
+    }
+}
+
 uint32_t brew_model_press(brew_model_t * m)
 {
     switch(m->view) {
         case BREW_VIEW_HOME:
-            return m->setting ? brew_model_commit(m) : set_view(m, BREW_VIEW_MENU);
-        case BREW_VIEW_HIST:
-            return set_view(m, BREW_VIEW_HOME);
+            return m->setting ? brew_model_commit(m) : set_view(m, BREW_VIEW_LIST);
+        case BREW_VIEW_LIST: {
+            brew_list_item_t it;
+            brew_model_list_item(m, m->list_idx, &it);
+            return press_item(m, &it);
+        }
+        case BREW_VIEW_EDIT:
+            return save_edit(m);
         case BREW_VIEW_WIFI:
             /* skip / cancel setup, or dismiss "Connected"; either way back to the dial */
             if(m->wifi_phase != BREW_WIFI_CONNECTED && m->cbs.on_wifi_cancel) m->cbs.on_wifi_cancel(m->cbs.user);
             return set_view(m, BREW_VIEW_HOME);
-        case BREW_VIEW_MENU:
-            switch(m->menu_idx) {
-                case BREW_MENU_FERMENT:
-                case BREW_MENU_CRASH:
-                    m->mode = m->menu_idx == BREW_MENU_FERMENT ? BREW_MODE_FERMENT : BREW_MODE_CRASH;
-                    m->paused = false;
-                    if(m->cbs.on_mode) m->cbs.on_mode(m->mode, m->paused, m->cbs.user);
-                    return BREW_CH_GRAPH | set_view(m, BREW_VIEW_HOME);
-                case BREW_MENU_PAUSE:
-                    m->paused = !m->paused;
-                    if(m->cbs.on_mode) m->cbs.on_mode(m->mode, m->paused, m->cbs.user);
-                    return set_view(m, BREW_VIEW_HOME);
-                case BREW_MENU_HISTORY:
-                    return set_view(m, BREW_VIEW_HIST);
-                case BREW_MENU_UNITS:
-                    m->celsius = !m->celsius;
-                    if(m->cbs.on_units) m->cbs.on_units(m->celsius, m->cbs.user);
-                    return BREW_CH_REFRESH;
-                case BREW_MENU_WIFI:
-                    if(m->wifi_phase == BREW_WIFI_NONE) return 0;
-                    /* WifiSetup opens setup; its next status brings up the WiFi view */
-                    if(m->cbs.on_wifi_setup) m->cbs.on_wifi_setup(m->cbs.user);
-                    return set_view(m, BREW_VIEW_HOME);
-                case BREW_MENU_RESET_DAY:
-                    m->day = 1;   /* the controller confirms in its next State */
-                    if(m->cbs.on_reset_day) m->cbs.on_reset_day(m->cbs.user);
-                    return BREW_CH_REFRESH | set_view(m, BREW_VIEW_HOME);
-            }
-            break;
     }
     return 0;
 }

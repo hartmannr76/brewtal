@@ -398,6 +398,12 @@ createBrewDial().then((M) => {
     }
 
     renderWifi(s.wifi);
+    /* Settings › Heat / Cool on the dial change the controller: show them in the setup fields */
+    const T = s.tuning, put = (id, v) => { const el = $(id); if (document.activeElement !== el && +el.value !== v) el.value = v; };
+    put('hdiff', +(T.heat_diff_c * 9 / 5).toFixed(1));
+    put('cdiff', +(T.cool_diff_c * 9 / 5).toFixed(1));
+    put('hoff', +(T.heat_delay_s / 60).toFixed(1));
+    put('coff', +(T.cool_delay_s / 60).toFixed(1));
 
     const L = s.link;
     $('link-stats').textContent = s.split

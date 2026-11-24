@@ -50,6 +50,20 @@ size_t encode(const Command & c, uint16_t seq, uint8_t * buf, size_t max)
     w.u8(static_cast<uint8_t>(c.mode));                             // #2
     w.i16(to_cc(c.setpoint_c));                                     // #3
     w.u8(static_cast<uint8_t>((c.paused ? 1u : 0u) | (c.celsius ? 2u : 0u)));   // #4
+    w.u8(static_cast<uint8_t>(c.tuning));                           // #5
+    w.i32(c.value);                                                 // #6
+    return w.size();
+}
+
+size_t encode(const Settings & s, uint16_t seq, uint8_t * buf, size_t max)
+{
+    Writer w(buf, max);
+    header(w, MsgType::Settings, seq);
+    w.u16(static_cast<uint16_t>(to_cc(s.heat_diff_c)));             // #1
+    w.u16(static_cast<uint16_t>(to_cc(s.cool_diff_c)));             // #2
+    w.u16(s.heat_delay_s);                                          // #3
+    w.u16(s.cool_delay_s);                                          // #4
+    w.i16(to_cc(s.crash_default_c));                                // #5
     return w.size();
 }
 
@@ -115,7 +129,7 @@ DecodeResult decodeCommand(Reader & r, Command & c)
     c = Command{};
     const uint8_t kind = r.u8();
     if(kind < static_cast<uint8_t>(Command::Kind::SetSetpoint) ||
-       kind > static_cast<uint8_t>(Command::Kind::StartDayCount))
+       kind > static_cast<uint8_t>(Command::Kind::SetTuning))
         return DecodeResult::BadPayload;
     c.kind = static_cast<Command::Kind>(kind);
     const uint8_t mode = r.u8();
@@ -125,6 +139,31 @@ DecodeResult decodeCommand(Reader & r, Command & c)
     const uint8_t f = r.u8();
     c.paused = f & 1u;
     c.celsius = f & 2u;
+    if(r.has(5)) {   // #5, #6 (appended)
+        const uint8_t t = r.u8();
+        c.value = r.i32();
+        if(t >= kTuningCount) {
+            if(c.kind == Command::Kind::SetTuning) return DecodeResult::BadPayload;
+        }
+        else {
+            c.tuning = static_cast<Tuning>(t);
+        }
+    }
+    else if(c.kind == Command::Kind::SetTuning) {
+        return DecodeResult::BadPayload;
+    }
+    return DecodeResult::Ok;
+}
+
+DecodeResult decodeSettings(Reader & r, Settings & s)
+{
+    if(!r.has(10)) return DecodeResult::BadPayload;
+    s = Settings{};
+    s.heat_diff_c = from_cc(static_cast<int16_t>(r.u16()));
+    s.cool_diff_c = from_cc(static_cast<int16_t>(r.u16()));
+    s.heat_delay_s = r.u16();
+    s.cool_delay_s = r.u16();
+    s.crash_default_c = from_cc(r.i16());
     return DecodeResult::Ok;
 }
 
@@ -165,6 +204,9 @@ DecodeResult decode(const uint8_t * buf, size_t n, Message & out)
         case static_cast<uint8_t>(MsgType::Command):
             out.type = MsgType::Command;
             return decodeCommand(r, out.command);
+        case static_cast<uint8_t>(MsgType::Settings):
+            out.type = MsgType::Settings;
+            return decodeSettings(r, out.settings);
         case static_cast<uint8_t>(MsgType::History):
             out.type = MsgType::History;
             return decodeHistory(r, out.history);

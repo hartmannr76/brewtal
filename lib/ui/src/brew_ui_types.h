@@ -47,6 +47,16 @@ typedef struct {
     const char * ap_password;    /* ...and its password ("malt-7391") */
 } brew_wifi_t;
 
+/** Controller settings the user can change from Settings › Heat / Cool. */
+typedef enum {
+    BREW_TUNE_HEAT_DIFF = 0,    /* degrees F below the target where heating starts (a difference) */
+    BREW_TUNE_COOL_DIFF,        /* degrees F above the target where cooling starts */
+    BREW_TUNE_HEAT_DELAY,       /* seconds heat rests after switching off */
+    BREW_TUNE_COOL_DELAY,       /* seconds cooling rests after switching off (the compressor) */
+    BREW_TUNE_CRASH,            /* degrees F: where Cold crash starts */
+    BREW_TUNE_N,
+} brew_tuning_t;
+
 /** How the history graph behind the reading is drawn. Presentation only: same data either way. */
 typedef enum {
     BREW_GRAPH_HAIRLINE = 0,   /* a thin line fading in from the left, no fill (default) */
@@ -67,6 +77,10 @@ typedef struct {
     void (*on_wifi_setup)(void * user);
     /** User pressed while WiFi setup showed: close it, change nothing. */
     void (*on_wifi_cancel)(void * user);
+    /** User picked Forget network: drop the saved WiFi (setup opens again). */
+    void (*on_wifi_forget)(void * user);
+    /** User saved a value in Settings › Heat / Cool. Temperatures and differences in F, delays in s. */
+    void (*on_tuning)(brew_tuning_t what, float value, void * user);
     void * user;
 } brew_ui_cbs_t;
 

@@ -53,11 +53,22 @@ public:
             case Command::Kind::RequestSync:
                 h_.log("UI -> controller: request full sync");
                 break;
+            case Command::Kind::StartDayCount:
+                h_.log("UI -> controller: day count starts over");
+                break;
+            case Command::Kind::SetTuning: {
+                static const char * const what[] = { "heat differential", "cool differential", "heat restart delay",
+                                                     "cool restart delay", "cold crash" };
+                const int k = static_cast<int>(c.tuning);
+                h_.log("UI -> controller: %s = %ld", k < 5 ? what[k] : "?", static_cast<long>(c.value));
+                break;
+            }
         }
         port().send(c);
     }
     bool pollState(State & s) override { return port().pollState(s); }
     bool pollHistory(HistoryChunk & h) override { return port().pollHistory(h); }
+    bool pollSettings(Settings & s) override { return port().pollSettings(s); }
     void service(uint32_t now) override { port().service(now); }
 
 private:
@@ -72,6 +83,7 @@ public:
     bool pollCommand(Command & c) override { return port().pollCommand(c); }
     void publish(const State & s) override { port().publish(s); }
     bool publish(const HistoryChunk & h) override { return port().publish(h); }
+    void publish(const Settings & s) override { port().publish(s); }
     void service(uint32_t now) override { port().service(now); }
 
 private:
@@ -163,6 +175,10 @@ void Harness::buildController()
 
     Controller::Config c;
     c.history_period_ms = setup_.history_period_ms;
+    c.heat_diff_c = heat_c;   /* the bench's setup is the controller's default; the dial can change it */
+    c.cool_diff_c = cool_c;
+    c.heat_delay_s = static_cast<uint16_t>(setup_.heat_min_off_s);
+    c.cool_delay_s = static_cast<uint16_t>(setup_.cool_min_off_s);
     ctl_ = std::make_unique<Controller>(*ctl_front_, probe_, *law_, *guard_, &settings_, c);
     boots_++;
     last_action_ = Action::Idle;
@@ -390,6 +406,8 @@ void Harness::rebootController()
     log("Controller rebooted (boot #%u): settings kept, history lost", static_cast<unsigned>(boots_));
 }
 
+void Harness::forgetTuning() { Controller::forgetTuning(settings_); }
+
 void Harness::factoryReset()
 {
     settings_.clear();
@@ -444,6 +462,13 @@ std::string Harness::statusJson() const
                   net::phaseName(w.phase), net::errorName(w.error), w.ssid, wifi_.apOn() ? "true" : "false",
                   w.ap_ssid, w.ap_password, w.clients, static_cast<unsigned>(w.setup_left_ms / 1000u),
                   wifi_.phone ? "true" : "false", wifi_.router_up ? "true" : "false", wifi_.joined().c_str());
+    char tune[200];
+    std::snprintf(tune, sizeof(tune),
+                  "\"tuning\":{\"heat_diff_c\":%.3f,\"cool_diff_c\":%.3f,\"heat_delay_s\":%u,\"cool_delay_s\":%u,"
+                  "\"crash_c\":%.2f}",
+                  num(ctl_->settings().heat_diff_c), num(ctl_->settings().cool_diff_c),
+                  static_cast<unsigned>(ctl_->settings().heat_delay_s), static_cast<unsigned>(ctl_->settings().cool_delay_s),
+                  num(ctl_->settings().crash_default_c));
     char ui_status[48];
     brew_ui_status_text(ui_status, sizeof(ui_status));
     char b[4096];
@@ -463,7 +488,7 @@ std::string Harness::statusJson() const
         "\"setup\":{\"law\":%d,\"heat_diff_f\":%g,\"cool_diff_f\":%g,\"heat_min_on_s\":%u,\"heat_min_off_s\":%u,"
         "\"cool_min_on_s\":%u,\"cool_min_off_s\":%u,\"changeover_s\":%u,\"history_period_ms\":%u},"
         "\"knob\":{\"button\":%s},\"layout\":\"%s\",\"graph_style\":\"%s\","
-        "\"pending\":{\"wanted\":%d,\"wait_s\":%u},\"ui_status\":\"%s\",%s}",
+        "\"pending\":{\"wanted\":%d,\"wait_s\":%u},\"ui_status\":\"%s\",%s,%s}",
         ui_ms_, sim_ms_, static_cast<double>(speed_), split_ ? "true" : "false", static_cast<unsigned>(boots_),
         static_cast<unsigned>(settings_.commits), num(plant_.actual()), r.valid ? "true" : "false", num(r.celsius),
         static_cast<int>(probe_.fault), probe_.physics ? "true" : "false", static_cast<double>(probe_.noise_c),
@@ -492,7 +517,7 @@ std::string Harness::statusJson() const
         static_cast<unsigned>(setup_.changeover_s), static_cast<unsigned>(setup_.history_period_ms),
         button_.down() ? "true" : "false", brew_ui_layout_name(),
         brew_ui_graph_style() == BREW_GRAPH_MIST ? "mist" : "hairline", static_cast<int>(s.wanted),
-        static_cast<unsigned>(s.wait_s), ui_status, wifi);
+        static_cast<unsigned>(s.wait_s), ui_status, wifi, tune);
     return b;
 }
 

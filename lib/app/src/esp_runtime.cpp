@@ -48,6 +48,9 @@ public:
             case Command::Kind::StartDayCount:
                 RT_LOG("I", "day count restarted");
                 break;
+            case Command::Kind::SetTuning:
+                RT_LOG("I", "setting %d = %ld", static_cast<int>(c.tuning), static_cast<long>(c.value));
+                break;
             case Command::Kind::RequestSync:
                 break;
         }
@@ -55,6 +58,7 @@ public:
     }
     bool pollState(State & s) override { return in_.pollState(s); }
     bool pollHistory(HistoryChunk & h) override { return in_.pollHistory(h); }
+    bool pollSettings(Settings & s) override { return in_.pollSettings(s); }
     void service(uint32_t now) override { in_.service(now); }
 
 private:

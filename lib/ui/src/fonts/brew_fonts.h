@@ -22,9 +22,12 @@ LV_FONT_DECLARE(brew_font_menu_bold); /* Inter 560 + icons - selected menu item 
 #define BREW_ICON_SNOWFLAKE "\xEE\xB0\x8B" /* U+EC0B */
 #define BREW_ICON_PAUSE     "\xEE\xB5\x85" /* U+ED45 */
 #define BREW_ICON_PLAY      "\xEE\xB5\x86" /* U+ED46 */
-#define BREW_ICON_CHART     "\xEE\xA9\x9C" /* U+EA5C */
 #define BREW_ICON_TEMP      "\xEE\xAC\xB8" /* U+EB38 */
 #define BREW_ICON_CALENDAR  "\xEF\xAB\x92" /* U+FAD2 calendar-repeat */
 #define BREW_ICON_WIFI      "\xEE\xAD\x92" /* U+EB52 wifi */
 #define BREW_ICON_PHONE     "\xEE\xAA\x8A" /* U+EA8A device-mobile */
 #define BREW_ICON_CHECK     "\xEE\xA9\x9E" /* U+EA5E check */
+#define BREW_ICON_SETTINGS  "\xEE\xAC\xA0" /* U+EB20 settings */
+#define BREW_ICON_BACK      "\xEE\xA9\xA0" /* U+EA60 chevron-left */
+#define BREW_ICON_FLAME     "\xEE\xB0\xAC" /* U+EC2C flame */
+#define BREW_ICON_PROFILE   "\xEE\xBD\x80" /* U+EF40 list-details */

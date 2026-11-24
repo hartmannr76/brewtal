@@ -87,6 +87,7 @@ BD_API void bd_setup(int law, float heat_diff_f, float cool_diff_f, int heat_min
     s.cool_min_off_s = nn(cool_min_off_s);
     s.changeover_s = nn(changeover_s);
     s.history_period_ms = static_cast<uint32_t>(history_ms < 100 ? 100 : history_ms > 3600000 ? 3600000 : history_ms);
+    H->forgetTuning();   // the page's values win over what was set on the dial
     H->rebootController();
 }
 

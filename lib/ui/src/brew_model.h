@@ -1,9 +1,10 @@
 /**
  * brew_model.h - what the BrewDial UI knows and decides, with no drawing in it.
  *
- * The model holds the controller's state (temperature, targets, mode, history), the
- * interaction state (which view, the target being adjusted, the menu and scrub position) and
- * the rules (what a turn or a press does, when an adjusted target is committed). It knows
+ * The model holds the controller's state (temperature, targets, mode, history, settings), the
+ * interaction state (which view, the target being adjusted, which list and row, the value
+ * being edited) and the rules (what a turn or a press does, when an adjusted target is
+ * committed). It knows
  * nothing about LVGL, fonts, geometry or screen shape, so every layout (round dial, square
  * panel with buttons, ...) shares it, and it is unit-tested on the host.
  *
@@ -24,7 +25,6 @@ extern "C" {
 #endif
 
 #define BREW_HIST_MAX  18000    /* history window in samples: 1 h at one every 200 ms */
-#define BREW_SCRUB_MS  60000    /* the history view moves this far back/forward per step */
 #define BREW_T_MIN     30.0f    /* adjustable target range, F */
 #define BREW_T_MAX     80.0f
 #define BREW_COMMIT_MS 2800     /* an adjusted target commits itself after this long */
@@ -37,8 +37,57 @@ typedef enum {
     BREW_VS_N
 } brew_vstate_t;
 
-/** BREW_VIEW_WIFI: WiFi setup (QR code, connecting, ...). Opens by itself when setup starts. */
-typedef enum { BREW_VIEW_HOME, BREW_VIEW_MENU, BREW_VIEW_HIST, BREW_VIEW_WIFI } brew_view_t;
+/**
+ * BREW_VIEW_LIST: one of the lists (menu, settings, ...): turn to move, press to choose.
+ * BREW_VIEW_EDIT: one value from Settings (turn to change, press to save).
+ * BREW_VIEW_WIFI: WiFi setup (QR code, connecting, ...). Opens by itself when setup starts.
+ * A tap on the screen is the same as a press, in every view.
+ */
+typedef enum { BREW_VIEW_HOME, BREW_VIEW_LIST, BREW_VIEW_EDIT, BREW_VIEW_WIFI } brew_view_t;
+
+typedef enum {
+    BREW_LIST_MENU,        /* Ferment, Cold crash, Pause, Settings, Previous */
+    BREW_LIST_SETTINGS,    /* Units, WiFi, Heat, Cool, Profile, Previous */
+    BREW_LIST_WIFI,
+    BREW_LIST_HEAT,
+    BREW_LIST_COOL,
+    BREW_LIST_PROFILE,
+    BREW_LIST_BREWFATHER,  /* a stub for now */
+    BREW_LIST_N
+} brew_list_t;
+
+/** The values Settings › Heat / Cool can edit. */
+typedef enum { BREW_EDIT_HEAT_DIFF, BREW_EDIT_HEAT_DELAY, BREW_EDIT_COOL_DIFF, BREW_EDIT_COOL_DELAY, BREW_EDIT_CRASH, BREW_EDIT_N } brew_edit_t;
+
+/** Which icon a list row shows; layouts map these to glyphs. */
+typedef enum {
+    BREW_IC_NONE, BREW_IC_BEER, BREW_IC_SNOWFLAKE, BREW_IC_PAUSE, BREW_IC_PLAY, BREW_IC_SETTINGS, BREW_IC_BACK,
+    BREW_IC_TEMP, BREW_IC_WIFI, BREW_IC_FLAME, BREW_IC_PROFILE, BREW_IC_CALENDAR,
+} brew_icon_t;
+
+/** A marker beside a row: the mode that's running (dot) or the option that's chosen (check). */
+typedef enum { BREW_MARK_NONE, BREW_MARK_ACTIVE, BREW_MARK_CHOSEN } brew_mark_t;
+
+#define BREW_LIST_MAX 8   /* rows in the longest list */
+
+typedef struct {
+    char label[32];       /* "Restart delay" */
+    char value[24];       /* "3 min" ("" = none) */
+    brew_icon_t icon;
+    brew_mark_t mark;
+    bool opens;           /* leads to another list or an editor (layouts may show a chevron) */
+    bool back;            /* Previous */
+    uint8_t act, arg;     /* what a press does (model-internal) */
+} brew_list_item_t;
+
+typedef struct {
+    char title[40];       /* "HEAT · DIFFERENTIAL" */
+    char value[16];       /* "0.5" */
+    char unit[8];         /* "°F", "min" */
+    char explain[72];     /* "Heating starts 0.5°F below the target" */
+    char foot[40];        /* "TURN TO CHANGE · PRESS TO SAVE" */
+    float frac;           /* where the value sits in its range, 0..1 */
+} brew_edit_text_t;
 
 /** What the WiFi view shows (brew_model_wifi_screen). */
 typedef enum {
@@ -58,12 +107,6 @@ typedef struct {
     char qr[96];      /* WIFI: join string for the QR code ("" = no QR) */
 } brew_wifi_text_t;
 
-typedef enum {
-    BREW_MENU_FERMENT, BREW_MENU_CRASH, BREW_MENU_PAUSE, BREW_MENU_HISTORY, BREW_MENU_UNITS,
-    BREW_MENU_WIFI,
-    BREW_MENU_RESET_DAY,   /* last: the one item that can't be undone is the hardest to land on */
-    BREW_MENU_N
-} brew_menu_item_t;
 
 /* What changed (returned by every mutating call). */
 enum {
@@ -73,7 +116,7 @@ enum {
     BREW_CH_GRAPH         = 1u << 3,  /* graph data or scale changed: redraw the graph with this refresh */
     BREW_CH_GRAPH_LAZY    = 1u << 4,  /* a sample was appended: redraw the graph at the layout's own pace */
     BREW_CH_VIEW          = 1u << 5,  /* switched view (m->view): reset per-view presentation state */
-    BREW_CH_MENU_MOVE     = 1u << 6,  /* the menu selection moved (m->menu_idx) */
+    BREW_CH_MENU_MOVE     = 1u << 6,  /* the selected row of the list moved (m->list_idx) */
     BREW_CH_ARM_COMMIT    = 1u << 7,  /* (re)start the BREW_COMMIT_MS countdown, then call brew_model_commit() */
     BREW_CH_DISARM_COMMIT = 1u << 8,  /* stop the countdown: nothing is being adjusted */
     BREW_CH_ARM_WIFI_DONE = 1u << 9,  /* start the BREW_WIFI_DONE_MS countdown, then call brew_model_wifi_done() */
@@ -106,12 +149,21 @@ typedef struct {
     char wifi_ap_ssid[33];
     char wifi_ap_password[24];
 
+    /* controller settings (Settings › Heat / Cool) */
+    float heat_diff_f;        /* a difference, F */
+    float cool_diff_f;
+    int heat_delay_s;
+    int cool_delay_s;
+    float crash_default_f;    /* where Cold crash starts */
+
     /* interaction */
     brew_view_t view;
     bool setting;             /* adjusting the target (home view) */
     float draft_f;            /* the target being adjusted */
-    int menu_idx;
-    int hist_idx;             /* scrub position: 0..brew_model_hist_last() */
+    brew_list_t list;         /* the list shown (BREW_VIEW_LIST) */
+    int list_idx;             /* its selected row */
+    brew_edit_t edit;         /* the value being edited (BREW_VIEW_EDIT)... */
+    float edit_val;           /* ...in the units on screen */
 } brew_model_t;
 
 /** Allocates the history buffer (72 KB): pair with brew_model_free() before re-initialising. */
@@ -131,6 +183,9 @@ uint32_t brew_model_set_batch(brew_model_t * m, const char * name, int day);
 /** Out-of-range styles fall back to BREW_GRAPH_HAIRLINE. Redraws the graph only if it changed. */
 uint32_t brew_model_set_graph_style(brew_model_t * m, brew_graph_style_t style);
 uint32_t brew_model_set_history(brew_model_t * m, const float * temps_f, int n, int ms_per_sample);
+/** The controller's heat/cool settings (differences and temperatures in F, delays in s). */
+uint32_t brew_model_set_tuning(brew_model_t * m, float heat_diff_f, float cool_diff_f, int heat_delay_s, int cool_delay_s,
+                               float crash_default_f);
 uint32_t brew_model_push_history(brew_model_t * m, float temp_f);
 /** The WiFi status. Setup starting opens the WiFi view; setup ending closes it; a connection
  *  made from it shows "Connected" for BREW_WIFI_DONE_MS. */
@@ -139,7 +194,7 @@ uint32_t brew_model_set_wifi(brew_model_t * m, const brew_wifi_t * w);
 /* ---- input -> model ---- */
 /** Positive = clockwise / up / warmer. One call per detent or button press, or a sum. */
 uint32_t brew_model_encoder(brew_model_t * m, int steps);
-/** The knob press, a screen tap, or the select button. */
+/** The knob press, a screen tap, or the select button: all the same. */
 uint32_t brew_model_press(brew_model_t * m);
 /** Commit the target being adjusted (the auto-commit countdown expired). No-op otherwise. */
 uint32_t brew_model_commit(brew_model_t * m);
@@ -173,27 +228,25 @@ const char * brew_model_unit(const brew_model_t * m);
  * reading when i == hist_n. -1 = nothing to show yet. */
 int brew_model_hist_last(const brew_model_t * m);
 float brew_model_hist_val(const brew_model_t * m, int i);
-/** "Now", "2:41 PM" (wall clock set), "40 s ago" or "1h 05m ago". */
-void brew_model_hist_time(const brew_model_t * m, int i, char * buf, size_t n);
-/** Samples per history-view step (BREW_SCRUB_MS worth, at least 1). */
-int brew_model_hist_step(const brew_model_t * m);
-/** How far back the history window reaches: "last 2 hours", "last hour", "last 45 min". */
-void brew_model_hist_window_text(const brew_model_t * m, char * buf, size_t n);
-
 /* WiFi view */
 bool brew_model_wifi_setup_open(const brew_model_t * m);
 brew_wifi_screen_t brew_model_wifi_screen(const brew_model_t * m);
 void brew_model_wifi_text(const brew_model_t * m, brew_wifi_text_t * t);
 
-/* Menu */
-/** Label for item i ("Pause" / "Resume", "Units · °F", ...). */
-void brew_model_menu_label(const brew_model_t * m, int i, char * buf, size_t n);
-/** Item i is the mode currently running (shows a marker). */
-bool brew_model_menu_active(const brew_model_t * m, int i);
+/* Lists (BREW_VIEW_LIST) */
+int brew_model_list_count(const brew_model_t * m);
+void brew_model_list_item(const brew_model_t * m, int i, brew_list_item_t * out);
+/** Caps title above the list ("SETTINGS"; "" for the menu). */
+const char * brew_model_list_title(const brew_model_t * m);
+/** A line under the title ("On Hartmann-5G"; "" for none). */
+void brew_model_list_note(const brew_model_t * m, char * buf, size_t n);
+
+/* The value editor (BREW_VIEW_EDIT) */
+void brew_model_edit_text(const brew_model_t * m, brew_edit_text_t * t);
 
 /* Key hints (layouts that label their keys, like the square panel) */
 /** What a press does right now, in one short word: "Menu", "Set", "Start", "Pause",
- * "Resume", "Open", "Switch", "Close", "Back". */
+ * "Resume", "Open", "Switch", "Edit", "Save", "Back", ... */
 const char * brew_model_press_hint(const brew_model_t * m);
 /** Would brew_model_encoder(m, dir) change anything? (false at the end of a range) */
 bool brew_model_can_step(const brew_model_t * m, int dir);

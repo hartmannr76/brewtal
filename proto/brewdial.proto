@@ -27,13 +27,25 @@ message State {
   uint32 wait_s = 10;   // seconds until wanted may start, 0 = not waiting
 }
 
+// msg_type 4, controller -> display: what Settings › Heat / Cool show. On change, on a sync
+// request and every few seconds (latest wins).
+message Settings {
+  uint32 heat_diff_cc = 1;       // heating starts this far below the setpoint
+  uint32 cool_diff_cc = 2;       // cooling this far above it
+  uint32 heat_delay_s = 3;       // restart delays
+  uint32 cool_delay_s = 4;
+  sint32 crash_default_cc = 5;   // where Cold crash starts
+}
+
 // msg_type 2, display -> controller. Idempotent.
 message Command {
   uint32 kind = 1;      // 1 set_setpoint, 2 set_mode, 3 set_units, 4 request_sync,
-                        // 5 start_day_count
+                        // 5 start_day_count, 6 set_tuning
   uint32 mode = 2;
   sint32 setpoint_cc = 3;
   uint32 flags = 4;     // bit0 paused, bit1 celsius
+  uint32 tuning = 5;    // set_tuning: 0 heat_diff, 1 cool_diff, 2 heat_delay, 3 cool_delay, 4 crash_default
+  sint32 value = 6;     // set_tuning: centi-degC, or seconds for delays
 }
 
 // msg_type 3, controller -> display. A reset chunk starts a new series.

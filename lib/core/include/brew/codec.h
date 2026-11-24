@@ -23,6 +23,7 @@ enum class MsgType : uint8_t {
     State = 1,
     Command = 2,
     History = 3,
+    Settings = 4,
 };
 
 struct Message {
@@ -31,6 +32,7 @@ struct Message {
     State        state;
     Command      command;
     HistoryChunk history;
+    Settings     settings;
 };
 
 enum class DecodeResult : uint8_t { Ok, TooShort, BadVersion, UnknownType, BadPayload };
@@ -39,6 +41,7 @@ enum class DecodeResult : uint8_t { Ok, TooShort, BadVersion, UnknownType, BadPa
 size_t encode(const State & s, uint16_t seq, uint8_t * buf, size_t max);
 size_t encode(const Command & c, uint16_t seq, uint8_t * buf, size_t max);
 size_t encode(const HistoryChunk & h, uint16_t seq, uint8_t * buf, size_t max);
+size_t encode(const Settings & s, uint16_t seq, uint8_t * buf, size_t max);
 
 /** Decodes one message. Trailing bytes after the known fields are ignored (append-only evolution). */
 DecodeResult decode(const uint8_t * buf, size_t n, Message & out);

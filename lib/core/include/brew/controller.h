@@ -19,6 +19,13 @@ public:
         uint32_t history_period_ms = 200;   // one history sample (the mean reading) every N ms; the
                                             // graph window is History::kCapacity samples (1 h)
         float    setpoint_c[kModeCount] = { f_to_c(66.0f), f_to_c(34.0f) };   // defaults
+        /* Settings the display can change (saved; these are the values until then). They're
+         * applied to the law and the guard at begin(), so boards needn't keep them in step. */
+        float    heat_diff_c = ChamberDefaults::kHeatDiffF * 5.0f / 9.0f;
+        float    cool_diff_c = ChamberDefaults::kCoolDiffF * 5.0f / 9.0f;
+        uint16_t heat_delay_s = ChamberDefaults::kRestartDelayMs / 1000u;
+        uint16_t cool_delay_s = ChamberDefaults::kRestartDelayMs / 1000u;
+        float    crash_default_c = f_to_c(34.0f);
         /* The day count's clock: seconds the controller has been powered, saved every this many
          * seconds so it carries on after a power cut (an outage loses at most this much, plus
          * the time unplugged). Becomes real time once there is WiFi/NTP. */
@@ -46,6 +53,10 @@ public:
     bool syncing() const { return sync_i_ >= 0; }
 
     const State & state() const { return st_; }
+    const Settings & settings() const { return set_; }
+    /** Drops saved Settings › Heat / Cool values, so Config's apply at the next begin(). */
+    static void forgetTuning(hal::SettingsStore & store);
+
     /** The day count's clock (seconds) and when Day 1 began on it. */
     uint32_t clockS() const { return clk_s_; }
     uint32_t dayStartS() const { return day0_s_; }
@@ -58,6 +69,9 @@ private:
     void advanceClock(uint32_t now_ms);
     void saveClock();
     void updateDay();
+    void applyTuning();
+    bool setTuning(Tuning t, int32_t v);
+    void publishSettings(uint32_t now_ms);
 
     ControlPort & port_;
     hal::TempSensor & sensor_;
@@ -67,6 +81,8 @@ private:
     Config cfg_;
 
     State st_;
+    Settings set_;
+    uint32_t last_settings_ = 0;   // when Settings were last published (re-sent every few seconds)
     History hist_;
     uint32_t last_eval_ = 0;
     uint32_t last_hist_ = 0;

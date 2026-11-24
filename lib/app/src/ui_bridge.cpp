@@ -30,6 +30,8 @@ static void cb_units(bool c, void * u) { UiBridge::onUnitsThunk(c, u); }
 static void cb_reset_day(void * u) { UiBridge::onResetDayThunk(u); }
 static void cb_wifi_setup(void * u) { UiBridge::onWifiSetupThunk(u); }
 static void cb_wifi_cancel(void * u) { UiBridge::onWifiCancelThunk(u); }
+static void cb_wifi_forget(void * u) { UiBridge::onWifiForgetThunk(u); }
+static void cb_tuning(brew_tuning_t t, float v, void * u) { UiBridge::onTuningThunk(static_cast<int>(t), v, u); }
 }
 
 void UiBridge::create(lv_obj_t * screen, const brew_layout * layout)
@@ -41,6 +43,8 @@ void UiBridge::create(lv_obj_t * screen, const brew_layout * layout)
     cbs.on_reset_day = cb_reset_day;
     cbs.on_wifi_setup = cb_wifi_setup;
     cbs.on_wifi_cancel = cb_wifi_cancel;
+    cbs.on_wifi_forget = cb_wifi_forget;
+    cbs.on_tuning = cb_tuning;
     cbs.user = this;
     brew_ui_create_with_layout(screen, &cbs, layout);
     port_.send(Command::requestSync());
@@ -93,6 +97,27 @@ void UiBridge::onWifiCancelThunk(void * user)
     if(self->wifi_) self->wifi_->cancelSetup(self->now_);
 }
 
+void UiBridge::onWifiForgetThunk(void * user)
+{
+    auto * self = static_cast<UiBridge *>(user);
+    if(self->wifi_) self->wifi_->forget(self->now_);
+}
+
+void UiBridge::onTuningThunk(int what, float value, void * user)
+{
+    auto * self = static_cast<UiBridge *>(user);
+    /* brew_ui speaks F (temperatures and differences) and seconds; the wire, centi-C and seconds */
+    auto cc = [](float c) { return static_cast<int32_t>(std::lround(c * 100.0f)); };
+    switch(what) {
+        case BREW_TUNE_HEAT_DIFF:  self->port_.send(Command::setTuning(Tuning::HeatDiff, cc(value * 5.0f / 9.0f))); break;
+        case BREW_TUNE_COOL_DIFF:  self->port_.send(Command::setTuning(Tuning::CoolDiff, cc(value * 5.0f / 9.0f))); break;
+        case BREW_TUNE_HEAT_DELAY: self->port_.send(Command::setTuning(Tuning::HeatDelay, static_cast<int32_t>(std::lround(value)))); break;
+        case BREW_TUNE_COOL_DELAY: self->port_.send(Command::setTuning(Tuning::CoolDelay, static_cast<int32_t>(std::lround(value)))); break;
+        case BREW_TUNE_CRASH:      self->port_.send(Command::setTuning(Tuning::CrashDefault, cc(f_to_c(value)))); break;
+        default: break;
+    }
+}
+
 void UiBridge::poll(uint32_t now_ms)
 {
     now_ = now_ms;
@@ -101,6 +126,8 @@ void UiBridge::poll(uint32_t now_ms)
     while(port_.pollHistory(h)) applyHistory(h);
     State s;
     if(port_.pollState(s)) apply(s);
+    Settings st;
+    if(port_.pollSettings(st)) apply(st);
     pushWifi();
 }
 
@@ -133,6 +160,22 @@ void UiBridge::pushWifi()
     u.ap_ssid = w.ap_ssid;
     u.ap_password = w.ap_password;
     brew_ui_set_wifi(&u);
+}
+
+void UiBridge::apply(const Settings & s)
+{
+    Shown & v = shown_;
+    if(v.tuned && s.heat_diff_c == v.heat_diff_c && s.cool_diff_c == v.cool_diff_c && s.heat_delay_s == v.heat_delay_s &&
+       s.cool_delay_s == v.cool_delay_s && s.crash_default_c == v.crash_c)
+        return;   // re-sent unchanged (it is, every few seconds)
+    v.tuned = true;
+    v.heat_diff_c = s.heat_diff_c;
+    v.cool_diff_c = s.cool_diff_c;
+    v.heat_delay_s = s.heat_delay_s;
+    v.cool_delay_s = s.cool_delay_s;
+    v.crash_c = s.crash_default_c;
+    brew_ui_set_tuning(s.heat_diff_c * 9.0f / 5.0f, s.cool_diff_c * 9.0f / 5.0f, s.heat_delay_s, s.cool_delay_s,
+                       c_to_f(s.crash_default_c));
 }
 
 void UiBridge::apply(const State & s)

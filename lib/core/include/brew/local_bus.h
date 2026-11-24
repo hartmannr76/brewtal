@@ -100,11 +100,13 @@ public:
     void send(const Command & cmd) override { commands_.push(cmd); }
     bool pollState(State & out) override { return state_.readIfNew(out, seen_); }
     bool pollHistory(HistoryChunk & out) override { return history_.pop(out); }
+    bool pollSettings(Settings & out) override { return settings_.readIfNew(out, seen_settings_); }
 
     // ControlPort (control task)
     bool pollCommand(Command & out) override { return commands_.pop(out); }
     void publish(const State & s) override { state_.write(s); }
     bool publish(const HistoryChunk & h) override { return history_.push(h); }
+    void publish(const Settings & s) override { settings_.write(s); }
 
     void service(uint32_t) override {}   // nothing to pump (overrides both bases)
 
@@ -113,6 +115,8 @@ private:
     SpscRing<HistoryChunk, 16> history_;   // a full sync (150 chunks) is paced into it by the controller
     Mailbox<State> state_;
     uint32_t seen_ = 0;
+    Mailbox<Settings> settings_;
+    uint32_t seen_settings_ = 0;
 };
 
 }  // namespace brew

@@ -86,6 +86,7 @@ public:
     void setSpeed(float x);
     void rebootController();          // settings survive (like NVS), RAM history doesn't
     void factoryReset();              // wipe settings, then reboot
+    void forgetTuning();              // drop the dial's Heat / Cool settings (the setup applies again)
     ControllerSetup & setup() { return setup_; }
 
     /* ---- link ---- */

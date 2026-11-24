@@ -110,6 +110,37 @@ typedef struct {
 void kit_bg_create(kit_bg_t * b, lv_obj_t * parent);
 void kit_bg_show(kit_bg_t * b, brew_vstate_t vs, bool animate);
 
+/* ---- list rows (menu, settings, ...): icon, label, value, a dot for the running mode and a
+ * check for the chosen option. The layout positions the rows (its own wheel); this fills them
+ * from the model and hides the ones past the end of the list. */
+typedef struct {
+    lv_obj_t * item[BREW_LIST_MAX];
+    lv_obj_t * ico[BREW_LIST_MAX];
+    lv_obj_t * txt[BREW_LIST_MAX];
+    lv_obj_t * val[BREW_LIST_MAX];
+    lv_obj_t * dot[BREW_LIST_MAX];
+    lv_obj_t * mark[BREW_LIST_MAX];
+    int count;
+} kit_rows_t;
+
+const char * kit_icon(brew_icon_t ic);
+/** `left`: rows hug the left (square panel) instead of being centred (round dial). */
+void kit_rows_create(kit_rows_t * r, lv_obj_t * parent, int32_t row_h, int32_t gap, int32_t dot_px, bool left);
+void kit_rows_update(kit_rows_t * r, const brew_model_t * m);
+
+/* ---- the value editor: caps title, the value with its unit, what it means, a footer */
+typedef struct {
+    lv_obj_t * root;
+    lv_obj_t * title;
+    lv_obj_t * value;
+    lv_obj_t * unit;
+    lv_obj_t * explain;
+    lv_obj_t * foot;
+} kit_edit_t;
+
+void kit_edit_create(kit_edit_t * e, lv_obj_t * parent, int32_t x, int32_t y, int32_t w, int32_t h);
+void kit_edit_update(kit_edit_t * e, const brew_model_t * m);
+
 /* ---- the WiFi setup view: pill, QR code / icon / spinner, title, two lines, a footer ---------
  * Texts and which screen come from the model (brew_model_wifi_screen / _wifi_text); this only
  * draws them, in a centred column the layout places and fades like its other views. */

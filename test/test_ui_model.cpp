@@ -9,7 +9,9 @@
 namespace {
 
 struct Calls {
-    int setpoints = 0, modes = 0, units = 0, day_resets = 0, wifi_setups = 0, wifi_cancels = 0;
+    int setpoints = 0, modes = 0, units = 0, day_resets = 0, wifi_setups = 0, wifi_cancels = 0, wifi_forgets = 0, tunings = 0;
+    brew_tuning_t tuning = BREW_TUNE_N;
+    float tuning_value = 0;
     brew_mode_t mode = BREW_MODE_FERMENT;
     float temp_f = 0;
     bool paused = false, celsius = false;
@@ -39,7 +41,35 @@ brew_ui_cbs_t cbs_for(Calls & c)
     cbs.on_reset_day = [](void * u) { static_cast<Calls *>(u)->day_resets++; };
     cbs.on_wifi_setup = [](void * u) { static_cast<Calls *>(u)->wifi_setups++; };
     cbs.on_wifi_cancel = [](void * u) { static_cast<Calls *>(u)->wifi_cancels++; };
+    cbs.on_wifi_forget = [](void * u) { static_cast<Calls *>(u)->wifi_forgets++; };
+    cbs.on_tuning = [](brew_tuning_t t, float v, void * u) {
+        auto & k = *static_cast<Calls *>(u);
+        k.tunings++;
+        k.tuning = t;
+        k.tuning_value = v;
+    };
     return cbs;
+}
+
+std::string row(const brew_model_t & m, int i)
+{
+    brew_list_item_t it;
+    brew_model_list_item(&m, i, &it);
+    return it.value[0] ? std::string(it.label) + " = " + it.value : std::string(it.label);
+}
+
+/* Moves the selection to the row whose label starts with `label`; false if there is none. */
+bool go(brew_model_t & m, const char * label)
+{
+    for(int i = 0; i < brew_model_list_count(&m); i++) {
+        brew_list_item_t it;
+        brew_model_list_item(&m, i, &it);
+        if(std::strncmp(it.label, label, std::strlen(label)) == 0) {
+            brew_model_encoder(&m, i - m.list_idx);
+            return true;
+        }
+    }
+    return false;
 }
 
 std::string status(const brew_model_t & m)
@@ -116,60 +146,49 @@ TEST(ui_model_menu_navigation_and_choices)
     m.cbs = cbs_for(c);
 
     uint32_t ch = brew_model_press(&m);          // home -> menu
-    CHECK(m.view == BREW_VIEW_MENU);
+    CHECK(m.view == BREW_VIEW_LIST && m.list == BREW_LIST_MENU);
     CHECK(ch & BREW_CH_VIEW);
-    CHECK_EQ(m.menu_idx, 0);
+    CHECK_EQ(brew_model_list_count(&m), 5);
+    CHECK(row(m, 0) == "Ferment" && row(m, 1) == "Cold crash" && row(m, 2) == "Pause" &&
+          row(m, 3) == "Settings" && row(m, 4) == "Previous");
     CHECK_EQ(brew_model_encoder(&m, -1), 0u);    // already at the top: nothing moves
     CHECK_EQ(brew_model_encoder(&m, 1), static_cast<uint32_t>(BREW_CH_MENU_MOVE));
-    CHECK_EQ(m.menu_idx, 1);
     brew_model_encoder(&m, 99);
-    CHECK_EQ(m.menu_idx, BREW_MENU_N - 1);
+    CHECK_EQ(m.list_idx, 4);                      // Previous
+    brew_model_press(&m);
+    CHECK(m.view == BREW_VIEW_HOME);
 
-    brew_model_encoder(&m, -(BREW_MENU_N - 1 - BREW_MENU_CRASH));
-    CHECK_EQ(m.menu_idx, static_cast<int>(BREW_MENU_CRASH));
-    ch = brew_model_press(&m);                   // pick Cold crash
+    /* Cold crash starts at its setting */
+    brew_model_set_tuning(&m, 0.5f, 0.5f, 180, 180, 36.0f);
+    brew_model_press(&m);
+    go(m, "Cold crash");
+    ch = brew_model_press(&m);
     CHECK(m.view == BREW_VIEW_HOME);
     CHECK(m.mode == BREW_MODE_CRASH);
+    CHECK_NEAR(m.sp_f[1], 36.0, 0.01);
     CHECK(ch & BREW_CH_GRAPH);
     CHECK_EQ(c.modes, 1);
-    CHECK(c.mode == BREW_MODE_CRASH && !c.paused);
-    CHECK(brew_model_menu_active(&m, BREW_MENU_CRASH));
-    CHECK(!brew_model_menu_active(&m, BREW_MENU_FERMENT));
-    CHECK(status(m) == "Crashing to 34\xC2\xB0");
-
-    brew_model_press(&m);                        // menu again; pause
-    brew_model_encoder(&m, BREW_MENU_PAUSE);
+    CHECK(status(m) == "Crashing to 36\xC2\xB0");
+    brew_model_encoder(&m, -2);                  // adjusted on the dial...
     brew_model_press(&m);
-    CHECK(m.paused);
-    CHECK(c.paused);
+    CHECK_NEAR(m.sp_f[1], 35.0, 0.01);
+    brew_model_press(&m);                        // ...and picking Cold crash again keeps it
+    go(m, "Cold crash");
+    CHECK(std::string(brew_model_press_hint(&m)) == "Close");
+    brew_model_press(&m);
+    CHECK_NEAR(m.sp_f[1], 35.0, 0.01);
+
+    brew_model_press(&m);                        // menu; pause
+    go(m, "Pause");
+    brew_model_press(&m);
+    CHECK(m.paused && c.paused);
     CHECK(status(m) == "Paused");
     CHECK(brew_model_vstate(&m) == BREW_VS_PAUSE);
-    char label[32];
-    brew_model_menu_label(&m, BREW_MENU_PAUSE, label, sizeof(label));
-    CHECK(std::strcmp(label, "Resume") == 0);
-    CHECK(!brew_model_menu_active(&m, BREW_MENU_CRASH));   // paused: no mode marked
-
-    brew_model_press(&m);                        // menu; units
-    brew_model_encoder(&m, BREW_MENU_UNITS);
-    ch = brew_model_press(&m);
-    CHECK(m.celsius && c.celsius);
-    CHECK_EQ(c.units, 1);
-    CHECK(m.view == BREW_VIEW_MENU);             // units toggles in place
-    CHECK(ch & BREW_CH_REFRESH);
-    brew_model_menu_label(&m, BREW_MENU_UNITS, label, sizeof(label));
-    CHECK(std::strcmp(label, "Units \xC2\xB7 \xC2\xB0" "C") == 0);
-
-    /* reset day count: last item; Day 1 shows straight away and the controller is told */
-    brew_model_set_batch(&m, "Manual", 6);
-    brew_model_encoder(&m, 99);
-    CHECK_EQ(m.menu_idx, static_cast<int>(BREW_MENU_RESET_DAY));
-    brew_model_menu_label(&m, BREW_MENU_RESET_DAY, label, sizeof(label));
-    CHECK(std::strcmp(label, "Reset day count") == 0);
-    ch = brew_model_press(&m);
-    CHECK_EQ(c.day_resets, 1);
-    CHECK_EQ(m.day, 1);
-    CHECK(m.view == BREW_VIEW_HOME);
-    CHECK(ch & BREW_CH_REFRESH);
+    brew_model_press(&m);
+    CHECK(row(m, 2) == "Resume");
+    brew_list_item_t it;
+    brew_model_list_item(&m, 1, &it);
+    CHECK(it.mark == BREW_MARK_NONE);            // paused: no mode marked running
 }
 
 TEST(ui_model_status_follows_the_action)
@@ -240,93 +259,6 @@ TEST(ui_model_first_reading_redraws_the_graph_later_ones_may_throttle)
     CHECK_EQ(brew_model_push_history(&m, 68.0f), static_cast<uint32_t>(BREW_CH_GRAPH_LAZY));
 }
 
-TEST(ui_model_history_scrub_and_rolling_window)
-{
-    brew_model_t m;
-    brew_model_init(&m, nullptr);
-    const float h[3] = { 60.0f, 61.0f, 62.0f };
-    brew_model_set_history(&m, h, 3, 60000);     // minute samples: one sample per scrub step
-    brew_model_set_temp(&m, 63.0f);
-    CHECK_EQ(brew_model_hist_last(&m), 3);       // 3 samples + live
-    CHECK_NEAR(brew_model_hist_val(&m, 3), 63.0, 1e-6);
-
-    brew_model_press(&m);                        // menu -> History
-    brew_model_encoder(&m, BREW_MENU_HISTORY);
-    brew_model_press(&m);
-    CHECK(m.view == BREW_VIEW_HIST);
-    CHECK_EQ(m.hist_idx, 3);                     // starts at "now"
-    char t[32];
-    brew_model_hist_time(&m, m.hist_idx, t, sizeof(t));
-    CHECK(std::strcmp(t, "Now") == 0);
-    CHECK_EQ(brew_model_encoder(&m, 5), 0u);     // can't scrub past now
-    brew_model_encoder(&m, -2);
-    CHECK_EQ(m.hist_idx, 1);
-    CHECK_NEAR(brew_model_hist_val(&m, m.hist_idx), 61.0, 1e-6);
-    brew_model_hist_time(&m, m.hist_idx, t, sizeof(t));
-    CHECK(std::strcmp(t, "Now") != 0);
-    brew_model_encoder(&m, -9);
-    CHECK_EQ(m.hist_idx, 0);
-
-    /* fill the window: the scrub position stays on the same sample as old ones drop off */
-    m.hist_idx = 2;                              // the 62 F sample
-    for(int i = 3; i < BREW_HIST_MAX; i++) brew_model_push_history(&m, 70.0f);
-    CHECK_EQ(m.hist_n, BREW_HIST_MAX);
-    CHECK_EQ(m.hist_idx, 2);
-    brew_model_push_history(&m, 71.0f);          // oldest drops off
-    CHECK_EQ(m.hist_n, BREW_HIST_MAX);
-    CHECK_EQ(m.hist_idx, 1);
-    CHECK_NEAR(brew_model_hist_val(&m, m.hist_idx), 62.0, 1e-6);
-
-    brew_model_press(&m);                        // back home
-    CHECK(m.view == BREW_VIEW_HOME);
-}
-
-TEST(ui_model_history_window_text_follows_the_sample_interval)
-{
-    brew_model_t m;
-    brew_model_init(&m, nullptr);
-    char t[32];
-    auto window = [&](int ms_per) {
-        const float one = 60.0f;
-        brew_model_set_history(&m, &one, 1, ms_per);
-        brew_model_hist_window_text(&m, t, sizeof(t));
-        return std::string(t);
-    };
-    CHECK(window(200) == "last hour");     // 18000 samples x 200 ms (the default)
-    CHECK(window(100) == "last 30 min");
-    CHECK(window(400) == "last 2 hours");
-    CHECK(window(300) == "last 1h 30m");
-}
-
-TEST(ui_model_two_second_history_scrubs_a_minute_per_step)
-{
-    brew_model_t m;
-    brew_model_init(&m, nullptr);
-    static float h[300];                          // 10 min at 2 s
-    for(int i = 0; i < 300; i++) h[i] = 60.0f + 0.01f * (float)i;
-    brew_model_set_history(&m, h, 300, 2000);
-    brew_model_set_temp(&m, 64.0f);
-    brew_model_press(&m);                         // menu -> History
-    brew_model_encoder(&m, BREW_MENU_HISTORY);
-    brew_model_press(&m);
-    CHECK_EQ(m.hist_idx, 300);                    // "now"
-    CHECK_EQ(brew_model_hist_step(&m), 30);       // 60 s / 2 s
-    brew_model_encoder(&m, -1);
-    CHECK_EQ(m.hist_idx, 270);
-    char t[32];
-    brew_model_hist_time(&m, m.hist_idx, t, sizeof(t));
-    CHECK(std::strcmp(t, "0h 01m ago") == 0 || std::strchr(t, ':') != nullptr);   // or a wall-clock time
-    brew_model_hist_time(&m, 290, t, sizeof(t));
-    CHECK(std::strcmp(t, "20 s ago") == 0 || std::strchr(t, ':') != nullptr);
-    brew_model_encoder(&m, -20);                  // clamps at the oldest sample
-    CHECK_EQ(m.hist_idx, 0);
-    CHECK(!brew_model_can_step(&m, -1));
-    CHECK(brew_model_can_step(&m, 1));
-    brew_model_encoder(&m, 50);                   // and at "now"
-    CHECK_EQ(m.hist_idx, 300);
-    CHECK(!brew_model_can_step(&m, 1));
-}
-
 TEST(ui_model_key_hints_say_what_the_keys_do)
 {
     brew_model_t m;
@@ -350,33 +282,21 @@ TEST(ui_model_key_hints_say_what_the_keys_do)
     brew_model_encoder(&m, 1);
     CHECK(hint() == "Pause");
     brew_model_encoder(&m, 1);
-    CHECK(hint() == "Open");
+    CHECK(hint() == "Open");                     // Settings
     brew_model_encoder(&m, 1);
-    CHECK(hint() == "Switch");
-    brew_model_encoder(&m, 1);
-    CHECK(hint() == "");                         // WiFi, on a display without any
-    brew_model_encoder(&m, 1);
-    CHECK(hint() == "Reset");                    // Reset day count, the last item
+    CHECK(hint() == "Back");                     // Previous
     CHECK(!brew_model_can_step(&m, 1));
 
-    brew_model_encoder(&m, -3);
-    brew_model_press(&m);                        // History
-    CHECK(m.view == BREW_VIEW_HIST);
-    CHECK(hint() == "Back");
-    CHECK(!brew_model_can_step(&m, 1) && !brew_model_can_step(&m, -1));   // nothing recorded yet
-    const float h[3] = { 66.0f, 66.5f, 67.0f };
-    brew_model_set_history(&m, h, 3, 1000);
-    CHECK(!brew_model_can_step(&m, 1) && brew_model_can_step(&m, -1));   // at "now"
-
-    brew_model_press(&m);                        // back home, then pause from the menu
+    brew_model_encoder(&m, -1);
+    brew_model_press(&m);                        // Settings
+    CHECK(hint() == "Switch");                   // Units
+    go(m, "Heat");
     brew_model_press(&m);
-    brew_model_encoder(&m, BREW_MENU_PAUSE);
-    brew_model_press(&m);
-    CHECK(m.paused);
-    brew_model_press(&m);
-    CHECK(hint() == "Start");                    // paused: no mode is running
-    brew_model_encoder(&m, BREW_MENU_PAUSE);
-    CHECK(hint() == "Resume");
+    CHECK(hint() == "Edit");
+    brew_model_press(&m);                        // the editor
+    CHECK(m.view == BREW_VIEW_EDIT);
+    CHECK(hint() == "Save");
+    CHECK(brew_model_can_step(&m, 1) && brew_model_can_step(&m, -1));
 }
 
 TEST(ui_model_graph_style_defaults_to_hairline_and_redraws_only_on_change)
@@ -389,20 +309,6 @@ TEST(ui_model_graph_style_defaults_to_hairline_and_redraws_only_on_change)
     CHECK(m.graph_style == BREW_GRAPH_MIST);
     brew_model_set_graph_style(&m, static_cast<brew_graph_style_t>(7));   // unknown: hairline
     CHECK(m.graph_style == BREW_GRAPH_HAIRLINE);
-}
-
-TEST(ui_model_200ms_history_scrubs_a_minute_per_step)
-{
-    brew_model_t m;
-    brew_model_init(&m, nullptr);
-    static float h[1200];                         // 4 min at 200 ms (the default interval)
-    for(int i = 0; i < 1200; i++) h[i] = 60.0f;
-    brew_model_set_history(&m, h, 1200, 0);       // 0: keep the default
-    CHECK_EQ(m.hist_ms_per, 200);
-    CHECK_EQ(brew_model_hist_step(&m), 300);      // 60 s / 200 ms
-    char t[32];
-    brew_model_hist_time(&m, 1200 - 50, t, sizeof(t));   // 50 samples back = 10 s
-    CHECK(std::strcmp(t, "10 s ago") == 0 || std::strchr(t, ':') != nullptr);
 }
 
 TEST(ui_model_pill_and_detail_texts)
@@ -522,26 +428,36 @@ TEST(ui_model_wifi_follows_the_phone_to_connected_then_returns)
     CHECK_EQ(brew_model_wifi_done(&m), 0u);      // a late timer is harmless
 }
 
-TEST(ui_model_wifi_menu_item)
+TEST(ui_model_settings_wifi_list)
 {
     Calls c;
     brew_model_t m;
     brew_model_init(&m, nullptr);
     m.cbs = cbs_for(c);
-    char label[48];
-    brew_model_menu_label(&m, BREW_MENU_WIFI, label, sizeof(label));
-    CHECK(std::string(label) == "WiFi \xC2\xB7 unavailable");
     brew_model_press(&m);
-    brew_model_encoder(&m, BREW_MENU_WIFI);
-    CHECK_EQ(brew_model_press(&m), 0u);          // no WiFi: nothing happens
-    CHECK_EQ(c.wifi_setups, 0);
+    go(m, "Settings");
+    brew_model_press(&m);
+    CHECK(m.list == BREW_LIST_SETTINGS);
+    CHECK(row(m, 1) == "WiFi = none");
+    go(m, "WiFi");
+    brew_model_press(&m);
+    CHECK(m.list == BREW_LIST_WIFI);
+    char note[64];
+    brew_model_list_note(&m, note, sizeof(note));
+    CHECK(std::string(note) == "This display has no WiFi");
+    CHECK_EQ(brew_model_list_count(&m), 1);      // just Previous
+    brew_model_press(&m);
+    CHECK(m.list == BREW_LIST_SETTINGS && m.list_idx == 1);   // back on the row that opened it
 
     brew_wifi_t w = wifi(BREW_WIFI_CONNECTED, BREW_WIFI_ERR_NONE, "A-very-long-network-name");
     brew_model_set_wifi(&m, &w);
-    brew_model_menu_label(&m, BREW_MENU_WIFI, label, sizeof(label));
-    CHECK(std::string(label) == "WiFi \xC2\xB7 A-very-long-ne...");
-    CHECK(std::string(brew_model_press_hint(&m)) == "Set up");
+    CHECK(row(m, 1) == "WiFi = A-very-long-ne...");
     brew_model_press(&m);
+    brew_model_list_note(&m, note, sizeof(note));
+    CHECK(std::string(note) == "On A-very-long-network-name");
+    CHECK(row(m, 0) == "Change network" && row(m, 1) == "Forget network" && row(m, 2) == "Previous");
+    CHECK(std::string(brew_model_press_hint(&m)) == "Set up");
+    brew_model_press(&m);                        // Change network
     CHECK_EQ(c.wifi_setups, 1);
     CHECK(m.view == BREW_VIEW_HOME);             // until WifiSetup reports setup open:
     w = wifi(BREW_WIFI_SETUP, BREW_WIFI_ERR_NONE, "A-very-long-network-name");
@@ -553,9 +469,104 @@ TEST(ui_model_wifi_menu_item)
     const uint32_t ch = brew_model_set_wifi(&m, &w);
     CHECK(m.view == BREW_VIEW_HOME);
     CHECK(!(ch & BREW_CH_ARM_WIFI_DONE));
+
+    brew_model_press(&m);                        // Forget network
+    go(m, "Settings");
+    brew_model_press(&m);
+    go(m, "WiFi");
+    brew_model_press(&m);
+    go(m, "Forget");
+    brew_model_press(&m);
+    CHECK_EQ(c.wifi_forgets, 1);
     w = wifi(BREW_WIFI_OFFLINE);
     brew_model_set_wifi(&m, &w);
-    brew_model_menu_label(&m, BREW_MENU_WIFI, label, sizeof(label));
-    CHECK(std::string(label) == "WiFi \xC2\xB7 not connected");
     CHECK(m.view == BREW_VIEW_HOME);             // dropping offline never takes over the dial
 }
+
+TEST(ui_model_heat_and_cool_editors_save_through_the_callback)
+{
+    Calls c;
+    brew_model_t m;
+    brew_model_init(&m, nullptr);
+    m.cbs = cbs_for(c);
+    brew_model_set_tuning(&m, 0.5f, 0.5f, 180, 180, 34.0f);
+    brew_model_press(&m);
+    go(m, "Settings");
+    brew_model_press(&m);
+    go(m, "Heat");
+    brew_model_press(&m);
+    CHECK(row(m, 0) == "Differential = 0.5\xC2\xB0" "F");
+    CHECK(row(m, 1) == "Restart delay = 3 min");
+    brew_model_press(&m);                        // edit the differential
+    brew_edit_text_t t;
+    brew_model_edit_text(&m, &t);
+    CHECK(std::string(t.title) == "HEAT \xC2\xB7 DIFFERENTIAL");
+    CHECK(std::string(t.value) == "0.5");
+    CHECK(std::string(t.explain) == "Heating starts 0.5\xC2\xB0" "F below the target");
+    brew_model_encoder(&m, 3);                   // 0.8 F
+    brew_model_press(&m);
+    CHECK_EQ(c.tunings, 1);
+    CHECK(c.tuning == BREW_TUNE_HEAT_DIFF);
+    CHECK_NEAR(c.tuning_value, 0.8, 0.001);
+    CHECK(m.view == BREW_VIEW_LIST && m.list == BREW_LIST_HEAT && m.list_idx == 0);
+    CHECK(row(m, 0) == "Differential = 0.8\xC2\xB0" "F");
+
+    go(m, "Restart");                            // restart delay, clamped at 0
+    brew_model_press(&m);
+    brew_model_encoder(&m, -10);
+    brew_model_edit_text(&m, &t);
+    CHECK(std::string(t.value) == "0" && std::string(t.unit) == "min");
+    CHECK(std::string(t.explain) == "Heat may switch back on right away");
+    brew_model_press(&m);
+    CHECK(c.tuning == BREW_TUNE_HEAT_DELAY);
+    CHECK_NEAR(c.tuning_value, 0.0, 0.001);
+
+    go(m, "Previous");                           // Cool, in Celsius
+    brew_model_press(&m);
+    CHECK(m.list == BREW_LIST_SETTINGS && m.list_idx == 2);
+    brew_model_set_units(&m, true);
+    go(m, "Cool");
+    brew_model_press(&m);
+    CHECK(row(m, 2) == "Cold crash = 1.1\xC2\xB0" "C");
+    go(m, "Cold crash");
+    brew_model_press(&m);
+    brew_model_encoder(&m, 2);                   // 1.0 -> 2.0 C (snapped to half degrees)
+    brew_model_press(&m);
+    CHECK(c.tuning == BREW_TUNE_CRASH);
+    CHECK_NEAR(c.tuning_value, 35.6, 0.01);      // F
+    CHECK_NEAR(m.crash_default_f, 35.6, 0.01);
+}
+
+TEST(ui_model_profile_list_and_brewfather_stub)
+{
+    Calls c;
+    brew_model_t m;
+    brew_model_init(&m, nullptr);
+    m.cbs = cbs_for(c);
+    brew_model_set_batch(&m, "Manual", 6);
+    brew_model_press(&m);
+    go(m, "Settings");
+    brew_model_press(&m);
+    CHECK(row(m, 4) == "Profile = Constant");
+    go(m, "Profile");
+    brew_model_press(&m);
+    brew_list_item_t it;
+    brew_model_list_item(&m, 0, &it);
+    CHECK(std::string(it.label) == "Constant" && it.mark == BREW_MARK_CHOSEN);
+    CHECK(row(m, 2) == "Restart day count = Day 6");
+    go(m, "Restart");
+    brew_model_press(&m);
+    CHECK_EQ(c.day_resets, 1);
+    CHECK(row(m, 2) == "Restart day count = Day 1");
+    CHECK(m.view == BREW_VIEW_LIST);             // stays on the list
+    go(m, "Brewfather");
+    brew_model_press(&m);
+    CHECK(m.list == BREW_LIST_BREWFATHER);
+    CHECK(std::string(brew_model_list_title(&m)) == "BREWFATHER");
+    char note[64];
+    brew_model_list_note(&m, note, sizeof(note));
+    CHECK(std::string(note) == "Coming soon. Needs WiFi.");
+    brew_model_press(&m);                        // Previous
+    CHECK(m.list == BREW_LIST_PROFILE && m.list_idx == 1);
+}
+

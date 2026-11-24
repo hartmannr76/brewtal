@@ -21,7 +21,7 @@ lib/
   core/                portable logic: Controller, control laws, OutputGuard, KnobInput, codec,
                        COBS/CRC framing, LocalBus, remote proxies, FakePlant (demo fermenter)
   ui/                  the UI (C): brew_model (state + rules, no LVGL) drawn by a layout
-                       (layout_round: ring, digit animation, menu wheel, history scrub)
+                       (layout_round: ring, digit animation, list wheel, value editor)
   fonts/<size>/        Inter + Tabler icons, per panel size (360, 480)
   app/                 UiBridge (brew_ui <-> controller), LVGL port, ESP32 display runtime
   network/             WiFi setup: the setup flow, the setup page your phone opens, its web handler
@@ -77,10 +77,10 @@ The controller decides cooling, heating and idle: a `ControlLaw` proposes and `O
 
 `brew_ui` is split so the same product can have different screens:
 
-- **`brew_model.c`**: everything the UI knows and decides. That's readings, targets, history, which view is open, the target being adjusted, the menu and scrub position, the 2.8 s auto-save, the status sentence, and the time labels. There's no LVGL here; it's unit-tested on its own (`test/test_ui_model.cpp`), and `check_rules.py` keeps it that way.
+- **`brew_model.c`**: everything the UI knows and decides. That's readings, targets, history, which view is open, the target being adjusted, which list and row, the value being edited, the 2.8 s auto-save, the status sentence, and the time labels. There's no LVGL here; it's unit-tested on its own (`test/test_ui_model.cpp`), and `check_rules.py` keeps it that way.
 - **A layout** (`brew_layout.h`) draws the model and nothing else. There are two:
   - `layout_round.c`: the dial, with a target ring around the edge.
-  - `layout_square.c`: a square panel with up, select and down keys on its right edge. It has a horizontal target gauge and a full-width graph that grows in the history view. A key rail beside the keys shows what they do right now. The chevrons dim at the end of a range, and the select label ("Menu", "Set", "Start", "Back", ...) comes from the model. In the menu, the next item sits above the current one, so the up key moves up.
+  - `layout_square.c`: a square panel with up, select and down keys on its right edge. It has a horizontal target gauge and a full-width graph. A key rail beside the keys shows what they do right now. The chevrons dim at the end of a range, and the select label ("Menu", "Set", "Start", "Back", ...) comes from the model. In the menu, the next item sits above the current one, so the up key moves up.
 
   Pick a layout with `brew_ui_create_with_layout()` (or `UiBridge::create(screen, &brew_layout_square)`). `brew_ui_set_layout()` swaps it at run time and keeps the model, so a target being adjusted carries over. Layouts route taps and buttons to `brew_ui_press()` / `brew_ui_encoder()`, so every layout behaves identically. They share their drawing pieces through `layout_kit.c`: the state colours, rolling digits, background cross-fade and history graph.
 - **`brew_ui.c`**: the public API. It forwards each call to the model and the resulting `BREW_CH_*` change flags to the layout, and runs the auto-save timer.
@@ -93,8 +93,14 @@ Behaviour changes go in the model; looks go in a layout.
 |---------|--------------------------------------------------------------------|---------------------------|
 | Home    | Adjusts the target. Ticks appear; it saves after 2.8 s of idle     | Opens the menu            |
 | Adjust  | ±0.5° per detent, in whichever unit is shown                       | Saves now                 |
-| Menu    | Scrolls Ferment / Cold crash / Pause / History / Units             | Selects the item          |
-| History | Scrubs the background graph through the stored samples             | Returns home              |
+| Menu    | Scrolls Ferment / Cold crash / Pause / Settings / Previous         | Selects the item          |
+| Settings | Scrolls Units / WiFi / Heat / Cool / Profile / Previous           | Switches, or opens a list |
+| Heat, Cool | Scrolls their values (differential, restart delay, cold crash)  | Opens the value's editor  |
+| Editor  | Changes the value                                                  | Saves it, back to the list |
+
+A tap on the screen is the same as a press, on every screen. Previous goes back to the list (or
+screen) that opened this one. Cold crash starts at its setting in Settings › Cool, and can still
+be adjusted from the dial.
 
 Panels with keys instead of a ring use `ButtonInput` (`brew/input.h`): up/down step like one detent each (holding repeats: first after 450 ms, then every 120 ms), and select acts as the press, on release.
 
@@ -215,7 +221,7 @@ This prints how many screens' worth of pixels LVGL re-renders for each interacti
 ./sim/build/brew_tests          # or: ctest --test-dir sim/build
 ```
 
-These cover the controller (commands, persistence, fail-safe, history), the UI model (turn/press rules, auto-save, menu, history scrub), the control laws and output guard, knob press/turn ordering and debounce, the codec (including golden v1 bytes), COBS/CRC framing, the display-to-controller link end to end, and the I2C chip drivers against a fake bus. The CMake build also runs `tools/check_rules.py`.
+These cover the controller (commands, persistence, fail-safe, history), the UI model (turn/press rules, auto-save, menu and settings lists, value editors), the control laws and output guard, knob press/turn ordering and debounce, the codec (including golden v1 bytes), COBS/CRC framing, the display-to-controller link end to end, and the I2C chip drivers against a fake bus. The CMake build also runs `tools/check_rules.py`.
 
 ### Headless frames (`brew_sim`)
 

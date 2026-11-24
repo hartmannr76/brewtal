@@ -21,10 +21,20 @@
  *   #10 wait_s          u16   seconds until wanted may start (missing: 0)
  *
  * Command (msg_type 2)
- *   #1 kind             u8    1 set_setpoint, 2 set_mode, 3 set_units, 4 request_sync
+ *   #1 kind             u8    1 set_setpoint, 2 set_mode, 3 set_units, 4 request_sync,
+ *                             5 start_day_count, 6 set_tuning
  *   #2 mode             u8
  *   #3 setpoint_cc      i16
  *   #4 flags            u8    bit0 paused, bit1 celsius
+ *   #5 tuning           u8    set_tuning: 0 heat_diff, 1 cool_diff, 2 heat_delay, 3 cool_delay, 4 crash_default
+ *   #6 value            i32   set_tuning: centi-degC, or seconds for delays
+ *
+ * Settings (msg_type 4)
+ *   #1 heat_diff_cc     u16   heating starts this far below the setpoint
+ *   #2 cool_diff_cc     u16
+ *   #3 heat_delay_s     u16   restart delays
+ *   #4 cool_delay_s     u16
+ *   #5 crash_default_cc i16   where Cold crash starts
  *
  * HistoryChunk (msg_type 3)
  *   #1 flags            u8    bit0 reset, bit1 more chunks follow
@@ -57,6 +67,12 @@ public:
         u8(static_cast<uint8_t>(v >> 8));
     }
     void i16(int16_t v) { u16(static_cast<uint16_t>(v)); }
+    void u32(uint32_t v)
+    {
+        u16(static_cast<uint16_t>(v & 0xFFFFu));
+        u16(static_cast<uint16_t>(v >> 16));
+    }
+    void i32(int32_t v) { u32(static_cast<uint32_t>(v)); }
     void bytes(const uint8_t * p, size_t n)
     {
         for(size_t i = 0; i < n; i++) u8(p[i]);
@@ -87,6 +103,13 @@ public:
         return static_cast<uint16_t>(lo | (hi << 8));
     }
     int16_t i16() { return static_cast<int16_t>(u16()); }
+    uint32_t u32()
+    {
+        const uint32_t lo = u16();
+        const uint32_t hi = u16();
+        return lo | (hi << 16);
+    }
+    int32_t i32() { return static_cast<int32_t>(u32()); }
     size_t pos() const { return pos_; }
 
 private:

@@ -53,6 +53,9 @@ struct CapturePort final : ControlPort {
     size_t room = static_cast<size_t>(-1);   // queue size: publish fails when hist holds this many
     bool pollCommand(Command & c) override { return in.pop(c); }
     void publish(const State & s) override { last = s; states++; }
+    Settings settings;
+    int settings_n = 0;
+    void publish(const Settings & s) override { settings = s; settings_n++; }
     bool publish(const HistoryChunk & h) override
     {
         if(hist.size() >= room) return false;
@@ -277,6 +280,68 @@ TEST(controller_manual_day_count_survives_restarts_and_resets)
     CHECK_EQ(ctl3.clockS() - c0, 5u);
 }
 
+TEST(controller_settings_change_the_law_and_guard_and_are_kept)
+{
+    CapturePort port;
+    FakeSensor s;
+    s.set(f_to_c(66.4f));   // 0.4 F warm: inside the default 0.5 F cool differential
+    HysteresisLaw law(0.1f);
+    FakeOut h, c;
+    OutputGuard guard(&h, &c, {});
+    MemStore store;
+    Controller ctl(port, s, law, guard, &store, Controller::Config{});
+    ctl.begin(0);
+    ctl.tick(0);
+    CHECK(port.settings_n >= 1);                 // published at start
+    CHECK_NEAR(c_to_f(port.settings.crash_default_c), 34.0, 0.01);
+    CHECK_EQ(port.settings.cool_delay_s, static_cast<uint16_t>(180));
+    CHECK(port.last.action == Action::Idle);   // the config's 0.5 F replaced the law's own 0.1 C
+
+    port.in.push(Command::setTuning(Tuning::CoolDiff, 17));   // 0.17 C = 0.3 F
+    ctl.tick(20);
+    CHECK(port.last.action == Action::Cooling);
+    CHECK_NEAR(port.settings.cool_diff_c, 0.17, 1e-4);
+    CHECK_EQ(store.i["cdiff_cc"], 17);
+    port.in.push(Command::setTuning(Tuning::CoolDelay, 600));
+    port.in.push(Command::setTuning(Tuning::CrashDefault, 0));
+    port.in.push(Command::setTuning(Tuning::HeatDiff, 900));   // 9 C: out of range, ignored
+    ctl.tick(40);
+    CHECK_EQ(port.settings.cool_delay_s, static_cast<uint16_t>(600));
+    CHECK_NEAR(port.settings.heat_diff_c, 0.5f * 5.0f / 9.0f, 1e-4);
+
+    /* Cold crash starts at its setting; resuming a paused crash keeps what was adjusted */
+    port.in.push(Command::setMode(Mode::Crash, false));
+    ctl.tick(60);
+    CHECK_NEAR(port.last.setpoint_c[1], 0.0, 1e-4);
+    port.in.push(Command::setSetpoint(Mode::Crash, 1.0f));
+    port.in.push(Command::setMode(Mode::Crash, true));
+    port.in.push(Command::setMode(Mode::Crash, false));
+    ctl.tick(80);
+    CHECK_NEAR(port.last.setpoint_c[1], 1.0, 1e-4);
+
+    /* a restart brings them back */
+    CapturePort port2;
+    Controller ctl2(port2, s, law, guard, &store, Controller::Config{});
+    ctl2.begin(0);
+    ctl2.tick(0);
+    CHECK_NEAR(port2.settings.cool_diff_c, 0.17, 1e-4);
+    CHECK_EQ(port2.settings.cool_delay_s, static_cast<uint16_t>(600));
+    CHECK_NEAR(port2.settings.crash_default_c, 0.0, 1e-4);
+
+    /* re-sent every few seconds, so a display that missed them catches up */
+    const int n0 = port2.settings_n;
+    for(uint32_t t = 20; t <= 5020; t += 20) ctl2.tick(t);
+    CHECK(port2.settings_n > n0);
+
+    /* and forgetting them goes back to the config's */
+    Controller::forgetTuning(store);
+    CapturePort port3;
+    Controller ctl3(port3, s, law, guard, &store, Controller::Config{});
+    ctl3.begin(0);
+    ctl3.tick(0);
+    CHECK_EQ(port3.settings.cool_delay_s, static_cast<uint16_t>(180));
+}
+
 TEST(controller_publishes_what_it_wants_while_the_guard_holds_it_off)
 {
     CapturePort port;
@@ -284,10 +349,10 @@ TEST(controller_publishes_what_it_wants_while_the_guard_holds_it_off)
     s.set(f_to_c(68.6f));
     DeadbandLaw law(0.3f * 5.0f / 9.0f);
     FakeOut h, c;
-    OutputGuard::Config g;
-    g.cool.min_off_ms = 300000;   // 5 min cooling restart delay
-    OutputGuard guard(&h, &c, g);
-    Controller ctl(port, s, law, guard, nullptr, Controller::Config{});
+    OutputGuard guard(&h, &c, {});
+    Controller::Config cfg;
+    cfg.cool_delay_s = 300;   // 5 min cooling restart delay (the controller sets the guard's delays)
+    Controller ctl(port, s, law, guard, nullptr, cfg);
     ctl.begin(0);
     ctl.tick(0);
     CHECK(port.last.action == Action::Cooling && c.on);   // nothing held off at power-up

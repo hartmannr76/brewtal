@@ -345,7 +345,7 @@ void kit_graph_free(kit_graph_t * g)
 int kit_graph_marker_index(const kit_graph_t * g, const brew_model_t * m)
 {
     if(g->npts <= 0) return -1;
-    int i = m->view == BREW_VIEW_HIST ? m->hist_idx : g->nsrc - 1;
+    int i = g->nsrc - 1;   /* the live reading */
     if(i < 0) i = 0;
     if(i >= g->nsrc) i = g->nsrc - 1;
     return i;
@@ -628,4 +628,124 @@ void kit_wifi_update(kit_wifi_t * w, const brew_model_t * m)
     kit_set_text(w->line2, t.line2);
     kit_set_hidden(w->line2, t.line2[0] == '\0');
     kit_set_text(w->foot, t.foot);
+}
+
+/* ------------------------------------------------------------------ list rows */
+
+const char * kit_icon(brew_icon_t ic)
+{
+    switch(ic) {
+        case BREW_IC_BEER:      return BREW_ICON_BEER;
+        case BREW_IC_SNOWFLAKE: return BREW_ICON_SNOWFLAKE;
+        case BREW_IC_PAUSE:     return BREW_ICON_PAUSE;
+        case BREW_IC_PLAY:      return BREW_ICON_PLAY;
+        case BREW_IC_SETTINGS:  return BREW_ICON_SETTINGS;
+        case BREW_IC_BACK:      return BREW_ICON_BACK;
+        case BREW_IC_TEMP:      return BREW_ICON_TEMP;
+        case BREW_IC_WIFI:      return BREW_ICON_WIFI;
+        case BREW_IC_FLAME:     return BREW_ICON_FLAME;
+        case BREW_IC_PROFILE:   return BREW_ICON_PROFILE;
+        case BREW_IC_CALENDAR:  return BREW_ICON_CALENDAR;
+        default:                return "";
+    }
+}
+
+void kit_rows_create(kit_rows_t * r, lv_obj_t * parent, int32_t row_h, int32_t gap, int32_t dot_px, bool left)
+{
+    memset(r, 0, sizeof(*r));
+    for(int i = 0; i < BREW_LIST_MAX; i++) {
+        lv_obj_t * it = kit_plain(parent);
+        lv_obj_set_size(it, LV_SIZE_CONTENT, row_h);
+        lv_obj_set_flex_flow(it, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(it, left ? LV_FLEX_ALIGN_START : LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_column(it, gap, 0);
+        r->ico[i] = lv_label_create(it);
+        lv_obj_set_style_text_color(r->ico[i], lv_color_white(), 0);
+        lv_obj_set_style_text_opa(r->ico[i], 230, 0);
+        r->txt[i] = lv_label_create(it);
+        lv_obj_set_style_text_color(r->txt[i], lv_color_white(), 0);
+        r->val[i] = lv_label_create(it);   /* "3 min", "°F": quieter than the label */
+        lv_obj_set_style_text_font(r->val[i], &brew_font_menu, 0);
+        lv_obj_set_style_text_color(r->val[i], lv_color_hex(0xa9b3bd), 0);
+        r->mark[i] = lv_label_create(it);  /* the chosen option: a check */
+        lv_obj_set_style_text_font(r->mark[i], &brew_font_menu, 0);
+        lv_label_set_text(r->mark[i], BREW_ICON_CHECK);
+        r->dot[i] = kit_plain(it);         /* the running mode: a dot */
+        lv_obj_set_size(r->dot[i], dot_px, dot_px);
+        lv_obj_set_style_radius(r->dot[i], LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_opa(r->dot[i], LV_OPA_COVER, 0);
+        r->item[i] = it;
+    }
+}
+
+void kit_rows_update(kit_rows_t * r, const brew_model_t * m)
+{
+    const lv_color_t hi = lv_color_hex(kit_line[brew_model_vstate(m)]);
+    r->count = brew_model_list_count(m);
+    for(int i = 0; i < BREW_LIST_MAX; i++) {
+        if(i >= r->count) {
+            kit_set_hidden(r->item[i], true);
+            continue;
+        }
+        brew_list_item_t it;
+        brew_model_list_item(m, i, &it);
+        const bool sel = i == m->list_idx;
+        const lv_font_t * f = sel ? &brew_font_menu_bold : &brew_font_menu;
+        const char * ic = kit_icon(it.icon);
+        kit_set_text(r->ico[i], ic);
+        kit_set_hidden(r->ico[i], ic[0] == '\0');
+        kit_set_font(r->ico[i], f);
+        kit_set_text(r->txt[i], it.label);
+        kit_set_font(r->txt[i], f);
+        kit_set_text_opa(r->txt[i], it.back ? 200 : LV_OPA_COVER);
+        kit_set_text(r->val[i], it.value);
+        kit_set_hidden(r->val[i], it.value[0] == '\0');
+        kit_set_text_color(r->val[i], sel ? hi : lv_color_hex(0xa9b3bd));
+        kit_set_hidden(r->mark[i], it.mark != BREW_MARK_CHOSEN);
+        kit_set_text_color(r->mark[i], hi);
+        kit_set_hidden(r->dot[i], it.mark != BREW_MARK_ACTIVE);
+        kit_set_bg_color(r->dot[i], hi);
+    }
+}
+
+/* ------------------------------------------------------------------ value editor */
+
+void kit_edit_create(kit_edit_t * e, lv_obj_t * parent, int32_t x, int32_t y, int32_t w, int32_t h)
+{
+    memset(e, 0, sizeof(*e));
+    e->root = kit_plain(parent);
+    lv_obj_set_pos(e->root, x, y);
+    lv_obj_set_size(e->root, w, h);
+    lv_obj_set_flex_flow(e->root, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(e->root, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(e->root, KS(8), 0);
+    lv_obj_set_style_opa(e->root, LV_OPA_TRANSP, 0);
+
+    e->title = wifi_label(e->root, &brew_font_caps, 0x66717c);
+    lv_obj_set_style_text_letter_space(e->title, KS(3), 0);
+    lv_obj_t * row = kit_plain(e->root);
+    lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
+    lv_obj_set_style_pad_column(row, KS(8), 0);
+    e->value = wifi_label(row, &brew_font_num_big, 0xffffff);
+    e->unit = wifi_label(row, &brew_font_status, 0xa9b3bd);
+    lv_obj_set_style_pad_bottom(e->unit, KS(22), 0);
+    e->explain = wifi_label(e->root, &brew_font_small, 0xa9b3bd);
+    lv_obj_set_width(e->explain, w - KS(60));
+    lv_label_set_long_mode(e->explain, LV_LABEL_LONG_WRAP);
+    e->foot = wifi_label(e->root, &brew_font_caps, 0x66717c);
+    lv_obj_set_style_text_letter_space(e->foot, KS(3), 0);
+    lv_obj_set_style_margin_top(e->foot, KS(18), 0);
+}
+
+void kit_edit_update(kit_edit_t * e, const brew_model_t * m)
+{
+    brew_edit_text_t t;
+    brew_model_edit_text(m, &t);
+    kit_set_text(e->title, t.title);
+    kit_set_text(e->value, t.value);
+    kit_set_text(e->unit, t.unit);
+    kit_set_text(e->explain, t.explain);
+    kit_set_text(e->foot, t.foot);
 }
