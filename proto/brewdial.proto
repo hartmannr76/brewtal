@@ -35,17 +35,28 @@ message Settings {
   uint32 heat_delay_s = 3;       // restart delays
   uint32 cool_delay_s = 4;
   sint32 crash_default_cc = 5;   // where Cold crash starts
+  uint32 profile = 6;            // 0 constant, 1 schedule
+  uint32 step = 7;               // the running step, 255 = finished
+  uint32 flags = 8;              // bit0 the dial overrides the step's target
+  uint32 nsteps = 9;             // <= 8
+  repeated sint32 step_temp_cc = 10;
+  repeated uint32 step_ramp_h = 11;   // hours to ramp to the step's temperature (0 = jump)
+  repeated uint32 step_hold_h = 12;   // hours to hold it
 }
 
 // msg_type 2, display -> controller. Idempotent.
 message Command {
   uint32 kind = 1;      // 1 set_setpoint, 2 set_mode, 3 set_units, 4 request_sync,
-                        // 5 start_day_count, 6 set_tuning
+                        // 5 start_day_count, 6 set_tuning, 7 set_profile, 8 set_step,
+                        // 9 set_step_count
   uint32 mode = 2;
   sint32 setpoint_cc = 3;
   uint32 flags = 4;     // bit0 paused, bit1 celsius
   uint32 tuning = 5;    // set_tuning: 0 heat_diff, 1 cool_diff, 2 heat_delay, 3 cool_delay, 4 crash_default
-  sint32 value = 6;     // set_tuning: centi-degC, or seconds for delays
+  sint32 value = 6;     // set_tuning: centi-degC or seconds; set_profile; set_step_count
+  uint32 step = 7;      // set_step: which step (temperature in setpoint_cc)
+  uint32 ramp_h = 8;    // set_step
+  uint32 hold_h = 9;    // set_step
 }
 
 // msg_type 3, controller -> display. A reset chunk starts a new series.

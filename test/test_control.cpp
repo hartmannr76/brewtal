@@ -342,6 +342,83 @@ TEST(controller_settings_change_the_law_and_guard_and_are_kept)
     CHECK_EQ(port3.settings.cool_delay_s, static_cast<uint16_t>(180));
 }
 
+TEST(controller_runs_a_schedule_with_ramps_overrides_and_restarts)
+{
+    CapturePort port;
+    FakeSensor s;
+    s.set(19.0f);
+    HysteresisLaw law(0.3f);
+    FakeOut h, c;
+    OutputGuard guard(&h, &c, {});
+    MemStore store;
+    Controller::Config cfg;
+    cfg.clock_save_s = 60;
+    cfg.setpoint_c[0] = 18.0f;
+    uint32_t now = 0;
+    Controller ctl(port, s, law, guard, &store, cfg);
+    ctl.begin(now);
+    ctl.tick(now);
+    CHECK(port.settings.profile == Profile::Constant);
+    CHECK_EQ(port.settings.nsteps, 2);                       // the default schedule is there to start from
+
+    /* 18 C for 2 h (jump), then ramp to 22 C over 2 h and hold it 2 h */
+    port.in.push(Command::setStep(0, 18.0f, 0, 2));
+    port.in.push(Command::setStep(1, 22.0f, 2, 2));
+    port.in.push(Command::setStepCount(2));
+    port.in.push(Command::setStep(0, 18.0f, 0, 0));          // a hold of 0: refused
+    port.in.push(Command::setProfile(Profile::Schedule));
+    ctl.tick(now += 20);
+    CHECK(port.settings.profile == Profile::Schedule);
+    CHECK_EQ(port.settings.steps[0].hold_h, 2);
+    CHECK_EQ(port.settings.step, 0);
+    CHECK_NEAR(port.last.setpoint_c[0], 18.0, 1e-3);
+
+    run_s(ctl, now, 1800);                                   // 0:30 into step 1: the dial overrides it
+    port.in.push(Command::setSetpoint(Mode::Ferment, 19.0f));
+    ctl.tick(now += 20);
+    CHECK(port.settings.override_on);
+    CHECK_NEAR(port.last.setpoint_c[0], 19.0, 1e-3);
+    run_s(ctl, now, 3600);                                   // 1:30: still step 1, still overridden
+    CHECK_NEAR(port.last.setpoint_c[0], 19.0, 1e-3);
+    CHECK_EQ(store.i["sch_ovr_step"], 0);
+
+    /* a power cut at 1:30 */
+    CapturePort port2;
+    uint32_t now2 = 0;
+    Controller ctl2(port2, s, law, guard, &store, cfg);
+    ctl2.begin(now2);
+    ctl2.tick(now2);
+    CHECK(port2.settings.profile == Profile::Schedule);
+    CHECK(port2.settings.override_on);                        // the override survives too
+    CHECK_NEAR(port2.last.setpoint_c[0], 19.0, 1e-3);
+
+    run_s(ctl2, now2, 1800 + 3600);                           // ~3:00: halfway up the ramp, override gone
+    CHECK_EQ(port2.settings.step, 1);
+    CHECK(!port2.settings.override_on);
+    CHECK(port2.last.setpoint_c[0] > 19.7f && port2.last.setpoint_c[0] < 20.3f);
+    run_s(ctl2, now2, 3600 + 600);                            // ~4:10: holding 22
+    CHECK_NEAR(port2.last.setpoint_c[0], 22.0, 1e-3);
+    run_s(ctl2, now2, 2 * 3600);                              // past the end: done, still 22
+    CHECK_EQ(port2.settings.step, Settings::kDone);
+    CHECK_NEAR(port2.last.setpoint_c[0], 22.0, 1e-3);
+    port2.in.push(Command::setSetpoint(Mode::Ferment, 21.0f));   /* finished: the dial still sets the target */
+    ctl2.tick(now2 += 20);
+    run_s(ctl2, now2, 3600);
+    CHECK(port2.settings.override_on);
+    CHECK_NEAR(port2.last.setpoint_c[0], 21.0, 1e-3);
+
+    /* Cold crash ignores the schedule; stopping it keeps the target it reached */
+    port2.in.push(Command::setMode(Mode::Crash, false));
+    ctl2.tick(now2 += 20);
+    CHECK(port2.last.mode == Mode::Crash);
+    port2.in.push(Command::setMode(Mode::Ferment, false));
+    port2.in.push(Command::setProfile(Profile::Constant));
+    ctl2.tick(now2 += 20);
+    CHECK(port2.settings.profile == Profile::Constant);
+    CHECK_NEAR(port2.last.setpoint_c[0], 21.0, 1e-3);
+    CHECK_EQ(store.i["sp0_cc"], 2100);
+}
+
 TEST(controller_publishes_what_it_wants_while_the_guard_holds_it_off)
 {
     CapturePort port;

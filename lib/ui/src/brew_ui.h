@@ -68,6 +68,7 @@ void brew_ui_push_history(float temp_f);
 /** The display's WiFi status (strings are copied). Starting setup brings up its screens. */
 void brew_ui_set_wifi(const brew_wifi_t * wifi);
 /** The controller's heat/cool settings: differences and temperatures in F, delays in seconds. */
+void brew_ui_set_schedule(const brew_schedule_t * s);
 void brew_ui_set_tuning(float heat_diff_f, float cool_diff_f, int heat_delay_s, int cool_delay_s, float crash_default_f);
 
 /* ---- input -> UI ---- */

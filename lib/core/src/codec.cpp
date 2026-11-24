@@ -52,6 +52,9 @@ size_t encode(const Command & c, uint16_t seq, uint8_t * buf, size_t max)
     w.u8(static_cast<uint8_t>((c.paused ? 1u : 0u) | (c.celsius ? 2u : 0u)));   // #4
     w.u8(static_cast<uint8_t>(c.tuning));                           // #5
     w.i32(c.value);                                                 // #6
+    w.u8(c.step);                                                   // #7
+    w.u16(c.ramp_h);                                                // #8
+    w.u16(c.hold_h);                                                // #9
     return w.size();
 }
 
@@ -64,6 +67,14 @@ size_t encode(const Settings & s, uint16_t seq, uint8_t * buf, size_t max)
     w.u16(s.heat_delay_s);                                          // #3
     w.u16(s.cool_delay_s);                                          // #4
     w.i16(to_cc(s.crash_default_c));                                // #5
+    const uint8_t n = s.nsteps > Settings::kMaxSteps ? Settings::kMaxSteps : s.nsteps;
+    w.u8(static_cast<uint8_t>(s.profile));                          // #6
+    w.u8(s.step);                                                   // #7
+    w.u8(s.override_on ? 1u : 0u);                                  // #8
+    w.u8(n);                                                        // #9
+    for(uint8_t i = 0; i < n; i++) w.i16(to_cc(s.steps[i].temp_c)); // #10
+    for(uint8_t i = 0; i < n; i++) w.u16(s.steps[i].ramp_h);        // #11
+    for(uint8_t i = 0; i < n; i++) w.u16(s.steps[i].hold_h);        // #12
     return w.size();
 }
 
@@ -129,7 +140,7 @@ DecodeResult decodeCommand(Reader & r, Command & c)
     c = Command{};
     const uint8_t kind = r.u8();
     if(kind < static_cast<uint8_t>(Command::Kind::SetSetpoint) ||
-       kind > static_cast<uint8_t>(Command::Kind::SetTuning))
+       kind > static_cast<uint8_t>(Command::Kind::SetStepCount))
         return DecodeResult::BadPayload;
     c.kind = static_cast<Command::Kind>(kind);
     const uint8_t mode = r.u8();
@@ -149,7 +160,16 @@ DecodeResult decodeCommand(Reader & r, Command & c)
             c.tuning = static_cast<Tuning>(t);
         }
     }
-    else if(c.kind == Command::Kind::SetTuning) {
+    else if(c.kind == Command::Kind::SetTuning || c.kind == Command::Kind::SetProfile ||
+            c.kind == Command::Kind::SetStepCount) {
+        return DecodeResult::BadPayload;
+    }
+    if(r.has(5)) {   // #7..#9 (appended)
+        c.step = r.u8();
+        c.ramp_h = r.u16();
+        c.hold_h = r.u16();
+    }
+    else if(c.kind == Command::Kind::SetStep) {
         return DecodeResult::BadPayload;
     }
     return DecodeResult::Ok;
@@ -164,6 +184,19 @@ DecodeResult decodeSettings(Reader & r, Settings & s)
     s.heat_delay_s = r.u16();
     s.cool_delay_s = r.u16();
     s.crash_default_c = from_cc(r.i16());
+    if(r.has(4)) {   // #6..#12 (appended)
+        const uint8_t p = r.u8();
+        if(p >= kProfileCount) return DecodeResult::BadPayload;
+        s.profile = static_cast<Profile>(p);
+        s.step = r.u8();
+        s.override_on = r.u8() & 1u;
+        const uint8_t n = r.u8();
+        if(n > Settings::kMaxSteps || !r.has(static_cast<size_t>(n) * 6)) return DecodeResult::BadPayload;
+        s.nsteps = n;
+        for(uint8_t i = 0; i < n; i++) s.steps[i].temp_c = from_cc(r.i16());
+        for(uint8_t i = 0; i < n; i++) s.steps[i].ramp_h = r.u16();
+        for(uint8_t i = 0; i < n; i++) s.steps[i].hold_h = r.u16();
+    }
     return DecodeResult::Ok;
 }
 

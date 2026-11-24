@@ -48,6 +48,11 @@ public:
             case Command::Kind::StartDayCount:
                 RT_LOG("I", "day count restarted");
                 break;
+            case Command::Kind::SetProfile:
+            case Command::Kind::SetStep:
+            case Command::Kind::SetStepCount:
+                RT_LOG("I", "schedule command %d", static_cast<int>(c.kind));
+                break;
             case Command::Kind::SetTuning:
                 RT_LOG("I", "setting %d = %ld", static_cast<int>(c.tuning), static_cast<long>(c.value));
                 break;

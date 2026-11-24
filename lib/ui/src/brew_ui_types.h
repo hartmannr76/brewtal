@@ -57,6 +57,27 @@ typedef enum {
     BREW_TUNE_N,
 } brew_tuning_t;
 
+/** How the Ferment target is set. */
+typedef enum { BREW_PROFILE_CONSTANT = 0, BREW_PROFILE_SCHEDULE = 1 } brew_profile_t;
+
+#define BREW_STEPS_MAX 8
+#define BREW_STEP_DONE 255   /* brew_schedule_t.step once the last step has finished */
+
+/** One schedule step: ramp to temp_f over ramp_h hours (0 = jump), then hold it hold_h hours. */
+typedef struct {
+    float temp_f;
+    int ramp_h;
+    int hold_h;
+} brew_step_t;
+
+typedef struct {
+    brew_profile_t profile;
+    int step;             /* the running step (0-based), or BREW_STEP_DONE */
+    bool override_on;     /* the dial set the target until the next step */
+    int nsteps;
+    brew_step_t steps[BREW_STEPS_MAX];
+} brew_schedule_t;
+
 /** How the history graph behind the reading is drawn. Presentation only: same data either way. */
 typedef enum {
     BREW_GRAPH_HAIRLINE = 0,   /* a thin line fading in from the left, no fill (default) */
@@ -81,6 +102,12 @@ typedef struct {
     void (*on_wifi_forget)(void * user);
     /** User saved a value in Settings › Heat / Cool. Temperatures and differences in F, delays in s. */
     void (*on_tuning)(brew_tuning_t what, float value, void * user);
+    /** User picked a profile (Constant, or Use this schedule / Stop schedule). */
+    void (*on_profile)(brew_profile_t profile, void * user);
+    /** User changed schedule step `i` (0-based). */
+    void (*on_step)(int i, float temp_f, int ramp_h, int hold_h, void * user);
+    /** User added or removed a step: the schedule now has `n`. */
+    void (*on_step_count)(int n, void * user);
     void * user;
 } brew_ui_cbs_t;
 

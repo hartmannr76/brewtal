@@ -13,6 +13,8 @@
 #include "brew/network/wifi_setup.h"
 #include "brew/ports.h"
 
+#include "brew_ui_types.h"
+
 #include "lvgl.h"
 
 struct brew_layout;   // brew_layout.h (brew_ui)
@@ -46,6 +48,9 @@ public:
     static void onWifiCancelThunk(void * user);
     static void onWifiForgetThunk(void * user);
     static void onTuningThunk(int what, float value, void * user);
+    static void onProfileThunk(int profile, void * user);
+    static void onStepThunk(int i, float temp_f, int ramp_h, int hold_h, void * user);
+    static void onStepCountThunk(int n, void * user);
 
 private:
     struct Shown {
@@ -62,6 +67,8 @@ private:
         bool  tuned = false;
         float heat_diff_c = 0.0f, cool_diff_c = 0.0f, crash_c = 0.0f;
         uint16_t heat_delay_s = 0, cool_delay_s = 0;
+        bool  sched_shown = false;
+        brew_schedule_t sched = {};
         char  batch[State::kBatchLen] = { 0 };
         uint16_t day = 0;
     };

@@ -56,6 +56,16 @@ public:
             case Command::Kind::StartDayCount:
                 h_.log("UI -> controller: day count starts over");
                 break;
+            case Command::Kind::SetProfile:
+                h_.log("UI -> controller: profile %s", c.value == 1 ? "schedule" : "constant");
+                break;
+            case Command::Kind::SetStep:
+                h_.log("UI -> controller: step %d = %.1f\xC2\xB0""F, ramp %u h, hold %u h", c.step + 1, c_to_f(c.setpoint_c),
+                       static_cast<unsigned>(c.ramp_h), static_cast<unsigned>(c.hold_h));
+                break;
+            case Command::Kind::SetStepCount:
+                h_.log("UI -> controller: %ld steps", static_cast<long>(c.value));
+                break;
             case Command::Kind::SetTuning: {
                 static const char * const what[] = { "heat differential", "cool differential", "heat restart delay",
                                                      "cool restart delay", "cold crash" };

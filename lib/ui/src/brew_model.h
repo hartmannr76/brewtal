@@ -53,11 +53,17 @@ typedef enum {
     BREW_LIST_COOL,
     BREW_LIST_PROFILE,
     BREW_LIST_BREWFATHER,  /* a stub for now */
+    BREW_LIST_SCHEDULE,    /* the steps, Add step, Use / Stop */
+    BREW_LIST_STEP,        /* one step: temperature, ramp, hold, Remove */
     BREW_LIST_N
 } brew_list_t;
 
 /** The values Settings › Heat / Cool can edit. */
-typedef enum { BREW_EDIT_HEAT_DIFF, BREW_EDIT_HEAT_DELAY, BREW_EDIT_COOL_DIFF, BREW_EDIT_COOL_DELAY, BREW_EDIT_CRASH, BREW_EDIT_N } brew_edit_t;
+typedef enum {
+    BREW_EDIT_HEAT_DIFF, BREW_EDIT_HEAT_DELAY, BREW_EDIT_COOL_DIFF, BREW_EDIT_COOL_DELAY, BREW_EDIT_CRASH,
+    BREW_EDIT_STEP_TEMP, BREW_EDIT_STEP_RAMP, BREW_EDIT_STEP_HOLD,   /* of schedule step m->step_sel */
+    BREW_EDIT_N
+} brew_edit_t;
 
 /** Which icon a list row shows; layouts map these to glyphs. */
 typedef enum {
@@ -68,7 +74,7 @@ typedef enum {
 /** A marker beside a row: the mode that's running (dot) or the option that's chosen (check). */
 typedef enum { BREW_MARK_NONE, BREW_MARK_ACTIVE, BREW_MARK_CHOSEN } brew_mark_t;
 
-#define BREW_LIST_MAX 8   /* rows in the longest list */
+#define BREW_LIST_MAX 12   /* rows in the longest list (a full schedule: 8 steps, Add, Use, Previous) */
 
 typedef struct {
     char label[32];       /* "Restart delay" */
@@ -156,6 +162,10 @@ typedef struct {
     int cool_delay_s;
     float crash_default_f;    /* where Cold crash starts */
 
+    /* the Ferment profile, and the schedule (from the controller; edited from Settings › Profile) */
+    brew_schedule_t sched;
+    int step_sel;             /* the step open in BREW_LIST_STEP */
+
     /* interaction */
     brew_view_t view;
     bool setting;             /* adjusting the target (home view) */
@@ -183,6 +193,8 @@ uint32_t brew_model_set_batch(brew_model_t * m, const char * name, int day);
 /** Out-of-range styles fall back to BREW_GRAPH_HAIRLINE. Redraws the graph only if it changed. */
 uint32_t brew_model_set_graph_style(brew_model_t * m, brew_graph_style_t style);
 uint32_t brew_model_set_history(brew_model_t * m, const float * temps_f, int n, int ms_per_sample);
+/** The profile and schedule (temperatures in F). */
+uint32_t brew_model_set_schedule(brew_model_t * m, const brew_schedule_t * s);
 /** The controller's heat/cool settings (differences and temperatures in F, delays in s). */
 uint32_t brew_model_set_tuning(brew_model_t * m, float heat_diff_f, float cool_diff_f, int heat_delay_s, int cool_delay_s,
                                float crash_default_f);
@@ -219,7 +231,8 @@ void brew_model_batch_text(const brew_model_t * m, char * buf, size_t n);
 /** The status as a short word for a pill: "COOLING", "HOLDING", "HEATING", "CRASHING", "PAUSED",
  *  "COOLING IN 3 MIN" while held off, "SET TARGET" while adjusting. */
 void brew_model_pill_text(const brew_model_t * m, char * buf, size_t n);
-/** The line under the reading: "Target 66.0° · Manual · Day 4", or the adjust hint. */
+/** The line under the reading: "Target 66.0° · Manual · Day 4"; with a schedule "Step 2/3 · ramp 1 d ·
+ *  hold 3 d" (or "... · your target until step 3", "Schedule done"); or the adjust hint. */
 void brew_model_detail_text(const brew_model_t * m, char * buf, size_t n);
 /** The unit after a reading: "°F" or "°C". */
 const char * brew_model_unit(const brew_model_t * m);

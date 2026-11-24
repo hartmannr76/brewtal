@@ -123,6 +123,9 @@ int RemoteControllerProxy::slotOf(const Command & c)
         case Command::Kind::SetMode:     return kMode;
         case Command::Kind::SetUnits:    return kUnits;
         case Command::Kind::SetTuning:   return kTune0 + static_cast<int>(c.tuning);
+        case Command::Kind::SetProfile:  return kProfile;
+        case Command::Kind::SetStepCount: return kStepCount;
+        case Command::Kind::SetStep:     return c.step < Settings::kMaxSteps ? kStep0 + c.step : -1;
         default:                         return -1;   // RequestSync: answered by State itself
     }
 }
@@ -151,10 +154,24 @@ void RemoteControllerProxy::overlay(const Command & c, State & s)
 }
 
 /* SetTuning: confirmed / shown by Settings (values in centi-C or s, as on the wire) */
+static bool viaSettings(const Command & c)
+{
+    return c.kind == Command::Kind::SetTuning || c.kind == Command::Kind::SetProfile || c.kind == Command::Kind::SetStep ||
+           c.kind == Command::Kind::SetStepCount;
+}
+
 bool RemoteControllerProxy::confirmed(const Command & c, const Settings & s)
 {
-    if(c.kind != Command::Kind::SetTuning) return false;
     auto cc = [](float v) { return static_cast<int32_t>(v * 100.0f + (v < 0 ? -0.5f : 0.5f)); };
+    switch(c.kind) {
+        case Command::Kind::SetProfile:   return static_cast<int32_t>(s.profile) == c.value;
+        case Command::Kind::SetStepCount: return s.nsteps == c.value;
+        case Command::Kind::SetStep:
+            return c.step < s.nsteps && cc(s.steps[c.step].temp_c) == cc(c.setpoint_c) && s.steps[c.step].ramp_h == c.ramp_h &&
+                   s.steps[c.step].hold_h == c.hold_h;
+        case Command::Kind::SetTuning: break;
+        default: return false;
+    }
     switch(c.tuning) {
         case Tuning::HeatDiff:     return cc(s.heat_diff_c) == c.value;
         case Tuning::CoolDiff:     return cc(s.cool_diff_c) == c.value;
@@ -167,6 +184,22 @@ bool RemoteControllerProxy::confirmed(const Command & c, const Settings & s)
 
 void RemoteControllerProxy::overlay(const Command & c, Settings & s)
 {
+    if(c.kind == Command::Kind::SetProfile) {
+        if(c.value >= 0 && c.value < kProfileCount) s.profile = static_cast<Profile>(c.value);
+        return;
+    }
+    if(c.kind == Command::Kind::SetStepCount) {
+        if(c.value >= 1 && c.value <= Settings::kMaxSteps) s.nsteps = static_cast<uint8_t>(c.value);
+        return;
+    }
+    if(c.kind == Command::Kind::SetStep) {
+        if(c.step >= Settings::kMaxSteps) return;
+        s.steps[c.step].temp_c = c.setpoint_c;
+        s.steps[c.step].ramp_h = c.ramp_h;
+        s.steps[c.step].hold_h = c.hold_h;
+        if(c.step >= s.nsteps) s.nsteps = static_cast<uint8_t>(c.step + 1);
+        return;
+    }
     if(c.kind != Command::Kind::SetTuning) return;
     switch(c.tuning) {
         case Tuning::HeatDiff:     s.heat_diff_c = static_cast<float>(c.value) / 100.0f; break;
@@ -215,13 +248,13 @@ void RemoteControllerProxy::pump()
             fresh_ = true;
             last_rx_ = now_;
             for(Pending & p : pending_)
-                if(p.active && p.cmd.kind != Command::Kind::SetTuning && confirmed(p.cmd, state_)) p.active = false;
+                if(p.active && !viaSettings(p.cmd) && confirmed(p.cmd, state_)) p.active = false;
         }
         else if(m.type == codec::MsgType::Settings) {
             settings_ = m.settings;
             settings_fresh_ = true;
             for(Pending & p : pending_)
-                if(p.active && p.cmd.kind == Command::Kind::SetTuning && confirmed(p.cmd, settings_)) p.active = false;
+                if(p.active && viaSettings(p.cmd) && confirmed(p.cmd, settings_)) p.active = false;
         }
         else if(m.type == codec::MsgType::History) {
             hist_.push(m.history);

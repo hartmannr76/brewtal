@@ -104,7 +104,8 @@ TEST(codec_command_and_history_golden_v1)
     uint8_t b[codec::kMaxEncoded];
     size_t n = codec::encode(Command::setSetpoint(Mode::Ferment, 18.5f), 1, b, sizeof(b));
     CHECK_EQ(hex(bytes(b, n)), std::string("010201000100" "3a07" "00"   /* v1 as deployed */
-                                           "00" "00000000"));          /* #5 tuning, #6 value (appended) */
+                                           "00" "00000000"             /* #5 tuning, #6 value (appended) */
+                                           "00" "0000" "0000"));       /* #7 step, #8 ramp_h, #9 hold_h */
     HistoryChunk h;
     h.reset = true;
     h.ms_per_sample = 30u * 60u * 1000u;
@@ -178,7 +179,7 @@ TEST(codec_round_trips)
     n = codec::encode(Command::startDayCount(), 4, b, sizeof(b));
     CHECK(codec::decode(b, n, m) == codec::DecodeResult::Ok);
     CHECK(m.command.kind == Command::Kind::StartDayCount);
-    b[4] = 7;   // a kind this version doesn't know is refused, not guessed at
+    b[4] = 10;  // a kind this version doesn't know is refused, not guessed at
     CHECK(codec::decode(b, n, m) == codec::DecodeResult::BadPayload);
 }
 
@@ -405,7 +406,8 @@ TEST(codec_tuning_round_trips_and_older_messages_still_decode)
     st.crash_default_c = -1.5f;
     n = codec::encode(st, 8, b, sizeof(b));
     /* ver 01, type 04 (Settings), seq 0800 | 1c00 (28) 3800 (56) 7800 (120) 5802 (600) 6aff (-150) */
-    CHECK_EQ(hex(bytes(b, n)), std::string("01040800" "1c00" "3800" "7800" "5802" "6aff"));
+    CHECK_EQ(hex(bytes(b, n)), std::string("01040800" "1c00" "3800" "7800" "5802" "6aff"
+                                           "00" "00" "00" "00"));   /* #6..#9: constant, step 0, no flags, no steps */
     CHECK(codec::decode(b, n, m) == codec::DecodeResult::Ok);
     CHECK(m.type == codec::MsgType::Settings);
     CHECK_NEAR(m.settings.heat_diff_c, 0.28, 1e-6);
@@ -413,7 +415,7 @@ TEST(codec_tuning_round_trips_and_older_messages_still_decode)
     CHECK_EQ(m.settings.heat_delay_s, static_cast<uint16_t>(120));
     CHECK_EQ(m.settings.cool_delay_s, static_cast<uint16_t>(600));
     CHECK_NEAR(m.settings.crash_default_c, -1.5, 1e-6);
-    CHECK(codec::decode(b, n - 1, m) == codec::DecodeResult::BadPayload);
+    CHECK(codec::decode(b, 13, m) == codec::DecodeResult::BadPayload);   // #1..#5 cut short
 }
 
 TEST(remote_tuning_lost_on_the_wire_is_resent_and_shown_meanwhile)
@@ -457,4 +459,33 @@ TEST(remote_tuning_lost_on_the_wire_is_resent_and_shown_meanwhile)
     run(30);                            // re-sent after retry_ms, applied, confirmed by Settings
     CHECK_EQ(ctl.settings().cool_delay_s, static_cast<uint16_t>(420));
     CHECK_EQ(display.pendingCommands(), 0);
+}
+
+TEST(codec_settings_carry_the_schedule)
+{
+    uint8_t b[codec::kMaxEncoded];
+    codec::Message m;
+    Settings st;
+    st.profile = Profile::Schedule;
+    st.step = 1;
+    st.override_on = true;
+    st.nsteps = Settings::kMaxSteps;   // the longest: still fits a frame
+    for(int i = 0; i < st.nsteps; i++) st.steps[i] = { 18.0f + static_cast<float>(i), static_cast<uint16_t>(i * 24), 72 };
+    size_t n = codec::encode(st, 1, b, sizeof(b));
+    CHECK(n > 0 && n < 100);
+    CHECK(codec::decode(b, n, m) == codec::DecodeResult::Ok);
+    CHECK(m.settings.profile == Profile::Schedule && m.settings.step == 1 && m.settings.override_on);
+    CHECK_EQ(m.settings.nsteps, 8);
+    CHECK_NEAR(m.settings.steps[7].temp_c, 25.0, 1e-6);
+    CHECK_EQ(m.settings.steps[7].ramp_h, 168);
+    CHECK_EQ(m.settings.steps[3].hold_h, 72);
+    CHECK(codec::decode(b, n - 1, m) == codec::DecodeResult::BadPayload);   // steps cut short
+
+    n = codec::encode(Command::setStep(2, 20.5f, 24, 48), 2, b, sizeof(b));
+    CHECK(codec::decode(b, n, m) == codec::DecodeResult::Ok);
+    CHECK(m.command.kind == Command::Kind::SetStep && m.command.step == 2);
+    CHECK_NEAR(m.command.setpoint_c, 20.5, 1e-6);
+    CHECK_EQ(m.command.ramp_h, 24);
+    CHECK_EQ(m.command.hold_h, 48);
+    CHECK(codec::decode(b, 14, m) == codec::DecodeResult::BadPayload);   // set_step without #7..#9
 }

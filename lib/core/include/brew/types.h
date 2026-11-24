@@ -43,12 +43,32 @@ struct State {
  * controller on change, on a sync request and every few seconds. Kept out of State, which goes
  * out five times a second: these rarely change, and a short State survives a noisy link better.
  */
+/** How the Ferment target is set: by hand from the dial, or by a schedule of steps. */
+enum class Profile : uint8_t { Constant = 0, Schedule = 1 };
+constexpr int kProfileCount = 2;
+
+/** One schedule step: ramp to temp_c over ramp_h hours (0 = jump), then hold it hold_h hours. */
+struct ScheduleStep {
+    float    temp_c = 0.0f;
+    uint16_t ramp_h = 0;
+    uint16_t hold_h = 24;
+};
+
 struct Settings {
+    static constexpr int kMaxSteps = 8;
+    static constexpr uint8_t kDone = 0xFF;   // `step` once the last step has finished
+
     float    heat_diff_c = 0.0f;           // heating starts this far below the setpoint
     float    cool_diff_c = 0.0f;           // cooling starts this far above it
     uint16_t heat_delay_s = 0;             // restart delays
     uint16_t cool_delay_s = 0;
     float    crash_default_c = 0.0f;       // where Cold crash starts
+
+    Profile  profile = Profile::Constant;
+    uint8_t  step = 0;                     // the running step (Schedule), or kDone
+    bool     override_on = false;          // the dial set the target until the next step
+    uint8_t  nsteps = 0;
+    ScheduleStep steps[kMaxSteps];
 };
 
 /** What Command::Kind::SetTuning changes. Temperatures and differences in centi-C, delays in s. */
@@ -65,6 +85,9 @@ struct Command {
         StartDayCount = 5, // day count starts over at Day 1 now ("day 1 begins now": repeating it
                            // moments later changes nothing visible)
         SetTuning = 6,     // tuning, value: set one Settings value
+        SetProfile = 7,    // value: Profile. Picking Schedule (from Constant) starts it at step 1
+        SetStep = 8,       // step, setpoint_c, ramp_h, hold_h: set schedule step `step`
+        SetStepCount = 9,  // value: how many schedule steps there are
     };
 
     Kind  kind = Kind::RequestSync;
@@ -74,6 +97,8 @@ struct Command {
     bool  celsius = false;
     Tuning tuning = Tuning::HeatDiff;
     int32_t value = 0;
+    uint8_t step = 0;
+    uint16_t ramp_h = 0, hold_h = 0;
 
     static Command setSetpoint(Mode m, float c) { Command x; x.kind = Kind::SetSetpoint; x.mode = m; x.setpoint_c = c; return x; }
     static Command setMode(Mode m, bool p)      { Command x; x.kind = Kind::SetMode; x.mode = m; x.paused = p; return x; }
@@ -81,6 +106,18 @@ struct Command {
     static Command requestSync()                { return Command{}; }
     static Command startDayCount()              { Command x; x.kind = Kind::StartDayCount; return x; }
     static Command setTuning(Tuning t, int32_t v) { Command x; x.kind = Kind::SetTuning; x.tuning = t; x.value = v; return x; }
+    static Command setProfile(Profile p)          { Command x; x.kind = Kind::SetProfile; x.value = static_cast<int32_t>(p); return x; }
+    static Command setStep(uint8_t i, float temp_c, uint16_t ramp_h, uint16_t hold_h)
+    {
+        Command x;
+        x.kind = Kind::SetStep;
+        x.step = i;
+        x.setpoint_c = temp_c;
+        x.ramp_h = ramp_h;
+        x.hold_h = hold_h;
+        return x;
+    }
+    static Command setStepCount(uint8_t n)        { Command x; x.kind = Kind::SetStepCount; x.value = n; return x; }
 };
 
 /**

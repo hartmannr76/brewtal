@@ -14,6 +14,12 @@ constexpr const char * kKeyMode = "mode";
 constexpr const char * kKeyPaused = "paused";
 constexpr const char * kKeyCelsius = "celsius";
 constexpr const char * kKeyTuning[kTuningCount] = { "hdiff_cc", "cdiff_cc", "hdelay_s", "cdelay_s", "crash_cc" };
+constexpr const char * kKeyProfile = "profile";
+constexpr const char * kKeySchedN = "sch_n";
+constexpr const char * kKeySchedStart = "sch_start";     // day-count clock, seconds
+constexpr const char * kKeySchedFrom = "sch_from_cc";
+constexpr const char * kKeySchedOvr = "sch_ovr_cc";      // the override target, centi-C
+constexpr const char * kKeySchedOvrStep = "sch_ovr_step"; // ...and its step (-1 = none)
 constexpr const char * kKeyClock = "clk_s";      // day-count clock, seconds
 constexpr const char * kKeyDayStart = "day0_s";  // clock value when Day 1 began
 /* Manual control: hold a target. (Fermentation profiles will name themselves here.) */
@@ -34,6 +40,8 @@ Controller::Controller(ControlPort & port, hal::TempSensor & sensor, ControlLaw 
     set_.heat_delay_s = cfg_.heat_delay_s;
     set_.cool_delay_s = cfg_.cool_delay_s;
     set_.crash_default_c = cfg_.crash_default_c;
+    set_.nsteps = cfg_.nsteps > Settings::kMaxSteps ? Settings::kMaxSteps : cfg_.nsteps;
+    for(int i = 0; i < set_.nsteps; i++) set_.steps[i] = cfg_.steps[i];
     std::snprintf(st_.batch, sizeof(st_.batch), "%s", kManual);
     st_.day = 1;
 }
@@ -50,6 +58,28 @@ void Controller::begin(uint32_t now)
         if(store_->getI32(kKeyCelsius, v)) st_.celsius = v != 0;
         for(int i = 0; i < kTuningCount; i++)   // -1 (or out of range) = not set: keep Config's
             if(store_->getI32(kKeyTuning[i], v) && v >= 0) setTuning(static_cast<Tuning>(i), v);
+        /* the schedule: steps as typed keys (sch_t0 / sch_r0 / sch_h0 ...), then where it is */
+        if(store_->getI32(kKeySchedN, v) && v >= 0 && v <= Settings::kMaxSteps) {
+            set_.nsteps = static_cast<uint8_t>(v);
+            for(int i = 0; i < set_.nsteps; i++) {
+                char k[16];
+                std::snprintf(k, sizeof(k), "sch_t%d", i);
+                if(store_->getI32(k, v)) set_.steps[i].temp_c = static_cast<float>(v) / 100.0f;
+                std::snprintf(k, sizeof(k), "sch_r%d", i);
+                if(store_->getI32(k, v) && v >= 0) set_.steps[i].ramp_h = static_cast<uint16_t>(v);
+                std::snprintf(k, sizeof(k), "sch_h%d", i);
+                if(store_->getI32(k, v) && v >= 0) set_.steps[i].hold_h = static_cast<uint16_t>(v);
+            }
+        }
+        if(store_->getI32(kKeyProfile, v) && v >= 0 && v < kProfileCount) set_.profile = static_cast<Profile>(v);
+        if(store_->getI32(kKeySchedStart, v) && v >= 0) sched_start_s_ = static_cast<uint32_t>(v);
+        if(store_->getI32(kKeySchedFrom, v)) sched_from_c_ = static_cast<float>(v) / 100.0f;
+        int32_t os = -1;
+        if(store_->getI32(kKeySchedOvrStep, os) && os >= 0 && store_->getI32(kKeySchedOvr, v)) {
+            set_.override_on = true;
+            set_.step = static_cast<uint8_t>(os);
+            override_c_ = static_cast<float>(v) / 100.0f;
+        }
         if(store_->getI32(kKeyClock, v) && v >= 0) clk_s_ = static_cast<uint32_t>(v);
         if(store_->getI32(kKeyDayStart, v) && v >= 0 && static_cast<uint32_t>(v) <= clk_s_)
             day0_s_ = static_cast<uint32_t>(v);
@@ -114,6 +144,70 @@ void Controller::applyTuning()
 {
     law_.setDiffs(set_.heat_diff_c, set_.cool_diff_c);
     guard_.setRestartDelays(static_cast<uint32_t>(set_.heat_delay_s) * 1000u, static_cast<uint32_t>(set_.cool_delay_s) * 1000u);
+}
+
+/* Step 1 begins now, ramping from today's Ferment target. */
+void Controller::startSchedule()
+{
+    sched_start_s_ = clk_s_;
+    sched_from_c_ = st_.setpoint_c[static_cast<int>(Mode::Ferment)];
+    set_.step = 0;
+    set_.override_on = false;
+    if(!store_) return;
+    store_->setI32(kKeySchedStart, static_cast<int32_t>(sched_start_s_ & 0x7FFFFFFFu));
+    store_->setI32(kKeySchedFrom, static_cast<int32_t>(std::lround(sched_from_c_ * 100.0f)));
+    store_->setI32(kKeySchedOvrStep, -1);
+    store_->commit();
+}
+
+void Controller::saveSchedule()
+{
+    if(!store_) return;
+    store_->setI32(kKeySchedN, set_.nsteps);
+    for(int i = 0; i < set_.nsteps; i++) {
+        char k[16];
+        std::snprintf(k, sizeof(k), "sch_t%d", i);
+        store_->setI32(k, static_cast<int32_t>(std::lround(set_.steps[i].temp_c * 100.0f)));
+        std::snprintf(k, sizeof(k), "sch_r%d", i);
+        store_->setI32(k, set_.steps[i].ramp_h);
+        std::snprintf(k, sizeof(k), "sch_h%d", i);
+        store_->setI32(k, set_.steps[i].hold_h);
+    }
+    store_->commit();
+}
+
+/* Where the schedule is now: each step ramps from the previous step's temperature (step 1 from
+ * the Ferment target when it started) over ramp_h, then holds for hold_h. After the last step,
+ * its temperature holds. A dial override holds until the step changes. */
+float Controller::scheduleTarget()
+{
+    uint32_t t = clk_s_ - sched_start_s_;
+    float prev = sched_from_c_;
+    uint8_t step = Settings::kDone;
+    float target = set_.steps[set_.nsteps - 1].temp_c;
+    for(uint8_t i = 0; i < set_.nsteps; i++) {
+        const ScheduleStep & s = set_.steps[i];
+        const uint32_t ramp = static_cast<uint32_t>(s.ramp_h) * 3600u, hold = static_cast<uint32_t>(s.hold_h) * 3600u;
+        if(t < ramp + hold) {
+            step = i;
+            target = t < ramp ? prev + (s.temp_c - prev) * static_cast<float>(t) / static_cast<float>(ramp) : s.temp_c;
+            break;
+        }
+        t -= ramp + hold;
+        prev = s.temp_c;
+    }
+    if(step != set_.step) {   /* a new step: any override ends with the old one */
+        set_.step = step;
+        if(set_.override_on) {
+            set_.override_on = false;
+            if(store_) {
+                store_->setI32(kKeySchedOvrStep, -1);
+                store_->commit();
+            }
+        }
+        publishSettings(last_eval_);
+    }
+    return set_.override_on ? override_c_ : target;
 }
 
 void Controller::publishSettings(uint32_t now)
@@ -203,6 +297,9 @@ void Controller::evaluate(uint32_t now)
         hist_cnt_++;
     }
 
+    /* A running schedule sets the Ferment target (Cold crash ignores it). */
+    if(scheduleRunning()) st_.setpoint_c[static_cast<int>(Mode::Ferment)] = scheduleTarget();
+
     /* Fail safe: no valid reading or paused -> everything off. */
     Action want = Action::Idle;
     if(!st_.paused && r.valid) want = law_.step(st_.temp_c, st_.setpoint_c[static_cast<int>(st_.mode)], now);
@@ -223,6 +320,17 @@ void Controller::handle(const Command & c, uint32_t now)
             const int m = static_cast<int>(c.mode);
             if(m < 0 || m >= kModeCount) return;
             st_.setpoint_c[m] = c.setpoint_c;
+            if(c.mode == Mode::Ferment && scheduleRunning()) {
+                /* the dial overrides the schedule until its next step (once it's done: from then on);
+                 * the step itself is kept */
+                set_.override_on = true;
+                override_c_ = c.setpoint_c;
+                if(store_) {
+                    store_->setI32(kKeySchedOvr, static_cast<int32_t>(std::lround(override_c_ * 100.0f)));
+                    store_->setI32(kKeySchedOvrStep, set_.step);
+                }
+                publishSettings(now);
+            }
             persist();
             evaluate(now);
             break;
@@ -257,6 +365,43 @@ void Controller::handle(const Command & c, uint32_t now)
             }
             publishSettings(now);
             evaluate(now);
+            break;
+        }
+        case Command::Kind::SetProfile: {
+            if(c.value < 0 || c.value >= kProfileCount) return;
+            const Profile p = static_cast<Profile>(c.value);
+            if(p == set_.profile) break;   /* picking the running profile again changes nothing */
+            set_.profile = p;
+            if(p == Profile::Schedule) startSchedule();
+            persist();   /* stopping a schedule keeps the target it had reached */
+            if(store_) {
+                store_->setI32(kKeyProfile, c.value);
+                store_->commit();
+            }
+            evaluate(now);
+            publishSettings(now);
+            break;
+        }
+        case Command::Kind::SetStep: {
+            if(c.step >= Settings::kMaxSteps || c.setpoint_c < -10.0f || c.setpoint_c > 40.0f) return;
+            if(c.hold_h == 0 || c.hold_h > 24u * 90u || c.ramp_h > 24u * 30u) return;
+            ScheduleStep & s = set_.steps[c.step];
+            s.temp_c = c.setpoint_c;
+            s.ramp_h = c.ramp_h;
+            s.hold_h = c.hold_h;
+            if(c.step >= set_.nsteps) set_.nsteps = static_cast<uint8_t>(c.step + 1);
+            saveSchedule();
+            evaluate(now);
+            publishSettings(now);
+            break;
+        }
+        case Command::Kind::SetStepCount: {
+            if(c.value < 1 || c.value > Settings::kMaxSteps) return;   /* a schedule has a step */
+            for(int i = set_.nsteps; i < c.value; i++) set_.steps[i] = set_.steps[set_.nsteps - 1];   /* grows by copying the last */
+            set_.nsteps = static_cast<uint8_t>(c.value);
+            saveSchedule();
+            evaluate(now);
+            publishSettings(now);
             break;
         }
         case Command::Kind::StartDayCount:

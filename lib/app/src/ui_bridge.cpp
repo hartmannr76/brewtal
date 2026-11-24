@@ -32,6 +32,9 @@ static void cb_wifi_setup(void * u) { UiBridge::onWifiSetupThunk(u); }
 static void cb_wifi_cancel(void * u) { UiBridge::onWifiCancelThunk(u); }
 static void cb_wifi_forget(void * u) { UiBridge::onWifiForgetThunk(u); }
 static void cb_tuning(brew_tuning_t t, float v, void * u) { UiBridge::onTuningThunk(static_cast<int>(t), v, u); }
+static void cb_profile(brew_profile_t p, void * u) { UiBridge::onProfileThunk(static_cast<int>(p), u); }
+static void cb_step(int i, float t, int r, int h, void * u) { UiBridge::onStepThunk(i, t, r, h, u); }
+static void cb_step_count(int n, void * u) { UiBridge::onStepCountThunk(n, u); }
 }
 
 void UiBridge::create(lv_obj_t * screen, const brew_layout * layout)
@@ -45,6 +48,9 @@ void UiBridge::create(lv_obj_t * screen, const brew_layout * layout)
     cbs.on_wifi_cancel = cb_wifi_cancel;
     cbs.on_wifi_forget = cb_wifi_forget;
     cbs.on_tuning = cb_tuning;
+    cbs.on_profile = cb_profile;
+    cbs.on_step = cb_step;
+    cbs.on_step_count = cb_step_count;
     cbs.user = this;
     brew_ui_create_with_layout(screen, &cbs, layout);
     port_.send(Command::requestSync());
@@ -118,6 +124,23 @@ void UiBridge::onTuningThunk(int what, float value, void * user)
     }
 }
 
+void UiBridge::onProfileThunk(int profile, void * user)
+{
+    static_cast<UiBridge *>(user)->port_.send(Command::setProfile(profile == BREW_PROFILE_SCHEDULE ? Profile::Schedule : Profile::Constant));
+}
+
+void UiBridge::onStepThunk(int i, float temp_f, int ramp_h, int hold_h, void * user)
+{
+    if(i < 0 || i >= Settings::kMaxSteps) return;
+    static_cast<UiBridge *>(user)->port_.send(Command::setStep(static_cast<uint8_t>(i), f_to_c(temp_f), static_cast<uint16_t>(ramp_h),
+                                                               static_cast<uint16_t>(hold_h)));
+}
+
+void UiBridge::onStepCountThunk(int n, void * user)
+{
+    static_cast<UiBridge *>(user)->port_.send(Command::setStepCount(static_cast<uint8_t>(n)));
+}
+
 void UiBridge::poll(uint32_t now_ms)
 {
     now_ = now_ms;
@@ -165,6 +188,21 @@ void UiBridge::pushWifi()
 void UiBridge::apply(const Settings & s)
 {
     Shown & v = shown_;
+    brew_schedule_t sc = {};
+    sc.profile = s.profile == Profile::Schedule ? BREW_PROFILE_SCHEDULE : BREW_PROFILE_CONSTANT;
+    sc.step = s.step == Settings::kDone ? BREW_STEP_DONE : s.step;
+    sc.override_on = s.override_on;
+    sc.nsteps = s.nsteps > BREW_STEPS_MAX ? BREW_STEPS_MAX : s.nsteps;
+    for(int i = 0; i < sc.nsteps; i++) {
+        sc.steps[i].temp_f = std::round(c_to_f(s.steps[i].temp_c) * 10.0f) / 10.0f;   /* centi-C round trip */
+        sc.steps[i].ramp_h = s.steps[i].ramp_h;
+        sc.steps[i].hold_h = s.steps[i].hold_h;
+    }
+    if(!v.sched_shown || std::memcmp(&sc, &v.sched, sizeof(sc)) != 0) {
+        v.sched_shown = true;
+        v.sched = sc;
+        brew_ui_set_schedule(&sc);
+    }
     if(v.tuned && s.heat_diff_c == v.heat_diff_c && s.cool_diff_c == v.cool_diff_c && s.heat_delay_s == v.heat_delay_s &&
        s.cool_delay_s == v.cool_delay_s && s.crash_default_c == v.crash_c)
         return;   // re-sent unchanged (it is, every few seconds)

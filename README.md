@@ -97,10 +97,17 @@ Behaviour changes go in the model; looks go in a layout.
 | Settings | Scrolls Units / WiFi / Heat / Cool / Profile / Previous           | Switches, or opens a list |
 | Heat, Cool | Scrolls their values (differential, restart delay, cold crash)  | Opens the value's editor  |
 | Editor  | Changes the value                                                  | Saves it, back to the list |
+| Profile | Constant / Schedule / Brewfather (coming) / Restart day count      | Picks Constant, or opens  |
+| Schedule | Scrolls the steps, Add step, Use this schedule (or Stop)          | Opens a step, or acts     |
 
 A tap on the screen is the same as a press, on every screen. Previous goes back to the list (or
 screen) that opened this one. Cold crash starts at its setting in Settings › Cool, and can still
 be adjusted from the dial.
+
+A schedule is a list of steps (a temperature, how many days to ramp there, how many to hold
+it) that the controller follows while in Ferment, through power cuts. Turning the knob during a
+step sets your own target until the next step begins; the step itself doesn't change. Cold
+crash ignores the schedule until Ferment or Pause is picked again.
 
 Panels with keys instead of a ring use `ButtonInput` (`brew/input.h`): up/down step like one detent each (holding repeats: first after 450 ms, then every 120 ms), and select acts as the press, on release.
 

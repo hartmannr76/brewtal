@@ -10,6 +10,9 @@ namespace {
 
 struct Calls {
     int setpoints = 0, modes = 0, units = 0, day_resets = 0, wifi_setups = 0, wifi_cancels = 0, wifi_forgets = 0, tunings = 0;
+    int profiles = 0, steps = 0, counts = 0, last_count = 0, last_step = -1;
+    brew_profile_t profile = BREW_PROFILE_CONSTANT;
+    brew_step_t step = {};
     brew_tuning_t tuning = BREW_TUNE_N;
     float tuning_value = 0;
     brew_mode_t mode = BREW_MODE_FERMENT;
@@ -42,6 +45,22 @@ brew_ui_cbs_t cbs_for(Calls & c)
     cbs.on_wifi_setup = [](void * u) { static_cast<Calls *>(u)->wifi_setups++; };
     cbs.on_wifi_cancel = [](void * u) { static_cast<Calls *>(u)->wifi_cancels++; };
     cbs.on_wifi_forget = [](void * u) { static_cast<Calls *>(u)->wifi_forgets++; };
+    cbs.on_profile = [](brew_profile_t p, void * u) {
+        auto & k = *static_cast<Calls *>(u);
+        k.profiles++;
+        k.profile = p;
+    };
+    cbs.on_step = [](int i, float t, int r, int h, void * u) {
+        auto & k = *static_cast<Calls *>(u);
+        k.steps++;
+        k.last_step = i;
+        k.step = { t, r, h };
+    };
+    cbs.on_step_count = [](int n, void * u) {
+        auto & k = *static_cast<Calls *>(u);
+        k.counts++;
+        k.last_count = n;
+    };
     cbs.on_tuning = [](brew_tuning_t t, float v, void * u) {
         auto & k = *static_cast<Calls *>(u);
         k.tunings++;
@@ -553,11 +572,11 @@ TEST(ui_model_profile_list_and_brewfather_stub)
     brew_list_item_t it;
     brew_model_list_item(&m, 0, &it);
     CHECK(std::string(it.label) == "Constant" && it.mark == BREW_MARK_CHOSEN);
-    CHECK(row(m, 2) == "Restart day count = Day 6");
+    CHECK(row(m, 3) == "Restart day count = Day 6");
     go(m, "Restart");
     brew_model_press(&m);
     CHECK_EQ(c.day_resets, 1);
-    CHECK(row(m, 2) == "Restart day count = Day 1");
+    CHECK(row(m, 3) == "Restart day count = Day 1");
     CHECK(m.view == BREW_VIEW_LIST);             // stays on the list
     go(m, "Brewfather");
     brew_model_press(&m);
@@ -567,6 +586,129 @@ TEST(ui_model_profile_list_and_brewfather_stub)
     brew_model_list_note(&m, note, sizeof(note));
     CHECK(std::string(note) == "Coming soon. Needs WiFi.");
     brew_model_press(&m);                        // Previous
-    CHECK(m.list == BREW_LIST_PROFILE && m.list_idx == 1);
+    CHECK(m.list == BREW_LIST_PROFILE && m.list_idx == 2);
+}
+
+TEST(ui_model_schedule_lists_editors_and_home_text)
+{
+    Calls c;
+    brew_model_t m;
+    brew_model_init(&m, nullptr);
+    m.cbs = cbs_for(c);
+    brew_model_set_mode(&m, BREW_MODE_CRASH, false);
+    brew_model_press(&m);
+    go(m, "Settings");
+    brew_model_press(&m);
+    go(m, "Profile");
+    brew_model_press(&m);
+    go(m, "Schedule");
+    brew_model_press(&m);
+    CHECK(m.list == BREW_LIST_SCHEDULE);
+    char note[64];
+    brew_model_list_note(&m, note, sizeof(note));
+    CHECK_EQ(std::string(note), std::string("2 steps \xC2\xB7 8 d"));
+    CHECK_EQ(row(m, 0), std::string("1 \xC2\xB7 66.0\xC2\xB0" "F = 4 d"));
+    CHECK_EQ(row(m, 1), std::string("2 \xC2\xB7 70.0\xC2\xB0" "F = ramp 1 d, 3 d"));
+    CHECK(row(m, 2) == "Add step" && row(m, 3) == "Use this schedule" && row(m, 4) == "Previous");
+
+    /* edit step 2: 68 F, a 2-day ramp, a 5-day hold */
+    go(m, "2 ");
+    brew_model_press(&m);
+    CHECK(m.list == BREW_LIST_STEP && m.step_sel == 1);
+    CHECK(std::string(brew_model_list_title(&m)) == "STEP 2");
+    CHECK(row(m, 1) == "Ramp = 1 d");
+    brew_model_press(&m);                        // Temperature
+    brew_edit_text_t t;
+    brew_model_edit_text(&m, &t);
+    CHECK(std::string(t.title) == "STEP 2 \xC2\xB7 TEMPERATURE");
+    brew_model_encoder(&m, -4);
+    brew_model_press(&m);
+    CHECK_EQ(c.last_step, 1);
+    CHECK_NEAR(c.step.temp_f, 68.0, 0.01);
+    go(m, "Ramp");
+    brew_model_press(&m);
+    brew_model_encoder(&m, 1);
+    brew_model_edit_text(&m, &t);
+    CHECK(std::string(t.value) == "2" && std::string(t.unit) == "days");
+    brew_model_press(&m);
+    CHECK_EQ(c.step.ramp_h, 48);
+    go(m, "Hold");
+    brew_model_press(&m);
+    brew_model_encoder(&m, 2);
+    brew_model_press(&m);
+    CHECK_EQ(c.step.hold_h, 120);
+    CHECK(row(m, 2) == "Hold = 5 d");
+
+    /* add a step (it copies the last), then remove step 1 */
+    go(m, "Previous");
+    brew_model_press(&m);
+    CHECK(m.list == BREW_LIST_SCHEDULE && m.list_idx == 1);
+    go(m, "Add step");
+    brew_model_press(&m);
+    CHECK_EQ(c.last_count, 3);
+    CHECK(m.list == BREW_LIST_STEP && m.step_sel == 2);
+    go(m, "Previous");
+    brew_model_press(&m);
+    go(m, "1 ");
+    brew_model_press(&m);
+    go(m, "Remove");
+    brew_model_press(&m);
+    CHECK_EQ(c.last_count, 2);
+    CHECK_EQ(m.sched.nsteps, 2);
+    brew_schedule_t one = m.sched;
+    one.nsteps = 1;
+    brew_model_set_schedule(&m, &one);
+    brew_model_list_note(&m, note, sizeof(note));
+    CHECK_EQ(std::string(note), std::string("1 step \xC2\xB7 7 d"));
+    brew_model_set_schedule(&m, &m.sched);
+    one.nsteps = 2;
+    brew_model_set_schedule(&m, &one);
+    CHECK_NEAR(m.sched.steps[0].temp_f, 68.0, 0.01);         // what was step 2 moved up
+
+    /* use it: a schedule runs as Ferment */
+    go(m, "Use");
+    brew_model_press(&m);
+    CHECK_EQ(c.profiles, 1);
+    CHECK(c.profile == BREW_PROFILE_SCHEDULE);
+    CHECK(m.view == BREW_VIEW_HOME);
+    CHECK(m.mode == BREW_MODE_FERMENT);
+    CHECK_EQ(c.modes, 1);
+
+    char b[64];
+    auto detail = [&] { brew_model_detail_text(&m, b, sizeof(b)); return std::string(b); };
+    brew_schedule_t s = m.sched;
+    s.step = 0;
+    brew_model_set_schedule(&m, &s);
+    CHECK(detail() == "Step 1/2 \xC2\xB7 ramp 2 d \xC2\xB7 hold 5 d");
+    s.steps[1].ramp_h = 0;
+    s.override_on = true;
+    brew_model_set_schedule(&m, &s);
+    CHECK(detail() == "Step 1/2 \xC2\xB7 your target until step 2");
+    s.override_on = false;
+    s.step = 1;
+    brew_model_set_schedule(&m, &s);
+    CHECK(detail() == "Step 2/2 \xC2\xB7 hold 5 d");                    // a jump: no ramp shown
+    s.step = BREW_STEP_DONE;
+    brew_model_set_schedule(&m, &s);
+    CHECK(detail() == "Schedule done");
+    s.override_on = true;
+    brew_model_set_schedule(&m, &s);
+    CHECK(detail() == "Schedule done \xC2\xB7 your target");
+    s.override_on = false;
+    brew_model_set_schedule(&m, &s);
+
+    /* the Profile list shows it chosen, and Constant goes back */
+    brew_model_press(&m);
+    go(m, "Settings");
+    brew_model_press(&m);
+    CHECK(row(m, 4) == "Profile = Schedule");
+    go(m, "Profile");
+    brew_model_press(&m);
+    brew_list_item_t it;
+    brew_model_list_item(&m, 1, &it);
+    CHECK(it.mark == BREW_MARK_CHOSEN);
+    brew_model_press(&m);                        // Constant (row 0)
+    CHECK(c.profile == BREW_PROFILE_CONSTANT);
+    CHECK(m.sched.profile == BREW_PROFILE_CONSTANT);
 }
 

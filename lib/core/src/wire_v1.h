@@ -22,12 +22,17 @@
  *
  * Command (msg_type 2)
  *   #1 kind             u8    1 set_setpoint, 2 set_mode, 3 set_units, 4 request_sync,
- *                             5 start_day_count, 6 set_tuning
+ *                             5 start_day_count, 6 set_tuning, 7 set_profile, 8 set_step,
+ *                             9 set_step_count
  *   #2 mode             u8
  *   #3 setpoint_cc      i16
  *   #4 flags            u8    bit0 paused, bit1 celsius
  *   #5 tuning           u8    set_tuning: 0 heat_diff, 1 cool_diff, 2 heat_delay, 3 cool_delay, 4 crash_default
- *   #6 value            i32   set_tuning: centi-degC, or seconds for delays
+ *   #6 value            i32   set_tuning: centi-degC, or seconds for delays; set_profile: the
+ *                             profile; set_step_count: how many steps
+ *   #7 step             u8    set_step: which step (its temperature is #3 setpoint_cc)
+ *   #8 ramp_h           u16   set_step
+ *   #9 hold_h           u16   set_step
  *
  * Settings (msg_type 4)
  *   #1 heat_diff_cc     u16   heating starts this far below the setpoint
@@ -35,6 +40,13 @@
  *   #3 heat_delay_s     u16   restart delays
  *   #4 cool_delay_s     u16
  *   #5 crash_default_cc i16   where Cold crash starts
+ *   #6 profile          u8    0 constant, 1 schedule              (#6..#12 appended together;
+ *   #7 step             u8    running step, 255 = finished          missing: constant, no steps)
+ *   #8 flags            u8    bit0 the dial overrides the step's target
+ *   #9 nsteps           u8    <= 8
+ *   #10 step_temp_cc    i16 x nsteps
+ *   #11 step_ramp_h     u16 x nsteps   hours to ramp there (0 = jump)
+ *   #12 step_hold_h     u16 x nsteps   hours to hold it
  *
  * HistoryChunk (msg_type 3)
  *   #1 flags            u8    bit0 reset, bit1 more chunks follow

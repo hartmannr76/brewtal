@@ -27,6 +27,9 @@ void brew_model_init(brew_model_t * m, const brew_ui_cbs_t * cbs)
     m->heat_delay_s = 180;
     m->cool_delay_s = 180;
     m->crash_default_f = 34.0f;
+    m->sched.nsteps = 2;   /* until the controller says otherwise (its default schedule) */
+    m->sched.steps[0] = (brew_step_t){ 66.0f, 0, 96 };
+    m->sched.steps[1] = (brew_step_t){ 70.0f, 24, 72 };
 }
 
 void brew_model_free(brew_model_t * m)
@@ -121,10 +124,46 @@ void brew_model_pill_text(const brew_model_t * m, char * buf, size_t n)
     }
 }
 
+/* "4 d", "1 d", "12 h", "1 d 12 h" */
+static void fmt_dur(char * buf, size_t n, int h)
+{
+    if(h % 24 == 0) snprintf(buf, n, "%d d", h / 24);
+    else if(h < 24) snprintf(buf, n, "%d h", h);
+    else snprintf(buf, n, "%d d %d h", h / 24, h % 24);
+}
+
+static bool schedule_shown(const brew_model_t * m)
+{
+    return m->sched.profile == BREW_PROFILE_SCHEDULE && m->sched.nsteps > 0 && m->mode == BREW_MODE_FERMENT;
+}
+
 void brew_model_detail_text(const brew_model_t * m, char * buf, size_t n)
 {
     if(m->setting) {
         snprintf(buf, n, "Turn to adjust \xC2\xB7 press to set");
+        return;
+    }
+    if(schedule_shown(m)) {
+        const brew_schedule_t * s = &m->sched;
+        if(s->step == BREW_STEP_DONE || s->step >= s->nsteps) {
+            snprintf(buf, n, "%s", s->override_on ? "Schedule done \xC2\xB7 your target" : "Schedule done");
+            return;
+        }
+        if(s->override_on) {
+            if(s->step + 1 < s->nsteps) snprintf(buf, n, "Step %d/%d \xC2\xB7 your target until step %d", s->step + 1, s->nsteps, s->step + 2);
+            else snprintf(buf, n, "Step %d/%d \xC2\xB7 your target", s->step + 1, s->nsteps);
+            return;
+        }
+        const brew_step_t * st = &s->steps[s->step];
+        char r[16], h[16];
+        fmt_dur(h, sizeof(h), st->hold_h);
+        if(st->ramp_h > 0) {
+            fmt_dur(r, sizeof(r), st->ramp_h);
+            snprintf(buf, n, "Step %d/%d \xC2\xB7 ramp %s \xC2\xB7 hold %s", s->step + 1, s->nsteps, r, h);
+        }
+        else {
+            snprintf(buf, n, "Step %d/%d \xC2\xB7 hold %s", s->step + 1, s->nsteps, h);
+        }
         return;
     }
     char t[16], b[48];
@@ -143,7 +182,8 @@ float brew_model_hist_val(const brew_model_t * m, int i) { return i < m->hist_n 
 
 enum {
     ACT_NONE, ACT_FERMENT, ACT_CRASH, ACT_PAUSE, ACT_OPEN, ACT_BACK, ACT_UNITS, ACT_WIFI_SETUP, ACT_WIFI_FORGET,
-    ACT_EDIT, ACT_CONSTANT, ACT_RESET_DAY,
+    ACT_EDIT, ACT_CONSTANT, ACT_RESET_DAY, ACT_STEP, ACT_ADD_STEP, ACT_USE_SCHEDULE, ACT_STOP_SCHEDULE,
+    ACT_REMOVE_STEP,
 };
 
 static void fmt_temp_unit(const brew_model_t * m, char * buf, size_t n, float f)
@@ -192,7 +232,7 @@ static int build(const brew_model_t * m, brew_list_t l, brew_list_item_t * it)
             add(it, &n, "Heat", BREW_IC_FLAME, ACT_OPEN, BREW_LIST_HEAT);
             add(it, &n, "Cool", BREW_IC_SNOWFLAKE, ACT_OPEN, BREW_LIST_COOL);
             x = add(it, &n, "Profile", BREW_IC_PROFILE, ACT_OPEN, BREW_LIST_PROFILE);
-            snprintf(x->value, sizeof(x->value), "Constant");
+            snprintf(x->value, sizeof(x->value), "%s", m->sched.profile == BREW_PROFILE_SCHEDULE ? "Schedule" : "Constant");
             break;
         case BREW_LIST_WIFI:
             if(m->wifi_phase == BREW_WIFI_CONNECTED || m->wifi_phase == BREW_WIFI_OFFLINE) {
@@ -219,11 +259,48 @@ static int build(const brew_model_t * m, brew_list_t l, brew_list_item_t * it)
             break;
         case BREW_LIST_PROFILE:
             x = add(it, &n, "Constant", BREW_IC_NONE, ACT_CONSTANT, 0);
-            x->mark = BREW_MARK_CHOSEN;
+            x->mark = m->sched.profile == BREW_PROFILE_CONSTANT ? BREW_MARK_CHOSEN : BREW_MARK_NONE;
+            x = add(it, &n, "Schedule", BREW_IC_NONE, ACT_OPEN, BREW_LIST_SCHEDULE);
+            x->mark = m->sched.profile == BREW_PROFILE_SCHEDULE ? BREW_MARK_CHOSEN : BREW_MARK_NONE;
             add(it, &n, "Brewfather", BREW_IC_NONE, ACT_OPEN, BREW_LIST_BREWFATHER);
             x = add(it, &n, "Restart day count", BREW_IC_CALENDAR, ACT_RESET_DAY, 0);
             snprintf(x->value, sizeof(x->value), "Day %d", m->day);
             break;
+        case BREW_LIST_SCHEDULE: {
+            const brew_schedule_t * s = &m->sched;
+            for(int i = 0; i < s->nsteps && i < BREW_STEPS_MAX; i++) {
+                char l[32], d[16], r[16];
+                snprintf(l, sizeof(l), "%d \xC2\xB7 ", i + 1);
+                fmt_temp_unit(m, l + strlen(l), sizeof(l) - strlen(l), s->steps[i].temp_f);
+                x = add(it, &n, l, BREW_IC_NONE, ACT_STEP, (uint8_t)i);
+                fmt_dur(d, sizeof(d), s->steps[i].hold_h);
+                if(s->steps[i].ramp_h > 0) {
+                    fmt_dur(r, sizeof(r), s->steps[i].ramp_h);
+                    snprintf(x->value, sizeof(x->value), "ramp %s, %s", r, d);
+                }
+                else {
+                    snprintf(x->value, sizeof(x->value), "%s", d);
+                }
+                x->opens = true;
+                if(s->profile == BREW_PROFILE_SCHEDULE && s->step == i) x->mark = BREW_MARK_ACTIVE;
+            }
+            if(s->nsteps < BREW_STEPS_MAX) add(it, &n, "Add step", BREW_IC_NONE, ACT_ADD_STEP, 0);
+            if(s->profile == BREW_PROFILE_SCHEDULE) add(it, &n, "Stop schedule", BREW_IC_PAUSE, ACT_STOP_SCHEDULE, 0);
+            else add(it, &n, "Use this schedule", BREW_IC_PLAY, ACT_USE_SCHEDULE, 0);
+            break;
+        }
+        case BREW_LIST_STEP: {
+            const brew_step_t * st = &m->sched.steps[m->step_sel];
+            x = add(it, &n, "Temperature", BREW_IC_NONE, ACT_EDIT, BREW_EDIT_STEP_TEMP);
+            fmt_temp_unit(m, x->value, sizeof(x->value), st->temp_f);
+            x = add(it, &n, "Ramp", BREW_IC_NONE, ACT_EDIT, BREW_EDIT_STEP_RAMP);
+            if(st->ramp_h > 0) fmt_dur(x->value, sizeof(x->value), st->ramp_h);
+            else snprintf(x->value, sizeof(x->value), "jump");
+            x = add(it, &n, "Hold", BREW_IC_NONE, ACT_EDIT, BREW_EDIT_STEP_HOLD);
+            fmt_dur(x->value, sizeof(x->value), st->hold_h);
+            if(m->sched.nsteps > 1) add(it, &n, "Remove step", BREW_IC_NONE, ACT_REMOVE_STEP, 0);
+            break;
+        }
         case BREW_LIST_BREWFATHER:
         case BREW_LIST_N:
             break;
@@ -233,15 +310,17 @@ static int build(const brew_model_t * m, brew_list_t l, brew_list_item_t * it)
 }
 
 /* Where Previous goes: the parent list, on the row that opened this one (the menu: home). */
-static void parent(brew_list_t l, brew_list_t * pl, int * pi)
+static void parent(const brew_model_t * m, brew_list_t l, brew_list_t * pl, int * pi)
 {
     switch(l) {
+        case BREW_LIST_SCHEDULE:   *pl = BREW_LIST_PROFILE; *pi = 1; break;
+        case BREW_LIST_STEP:       *pl = BREW_LIST_SCHEDULE; *pi = m->step_sel; break;
         case BREW_LIST_SETTINGS:   *pl = BREW_LIST_MENU; *pi = 3; break;
         case BREW_LIST_WIFI:       *pl = BREW_LIST_SETTINGS; *pi = 1; break;
         case BREW_LIST_HEAT:       *pl = BREW_LIST_SETTINGS; *pi = 2; break;
         case BREW_LIST_COOL:       *pl = BREW_LIST_SETTINGS; *pi = 3; break;
         case BREW_LIST_PROFILE:    *pl = BREW_LIST_SETTINGS; *pi = 4; break;
-        case BREW_LIST_BREWFATHER: *pl = BREW_LIST_PROFILE; *pi = 1; break;
+        case BREW_LIST_BREWFATHER: *pl = BREW_LIST_PROFILE; *pi = 2; break;
         default:                   *pl = BREW_LIST_N; *pi = 0; break;   /* home */
     }
 }
@@ -265,7 +344,12 @@ void brew_model_list_item(const brew_model_t * m, int i, brew_list_item_t * out)
 
 const char * brew_model_list_title(const brew_model_t * m)
 {
-    static const char * const t[BREW_LIST_N] = { "", "SETTINGS", "WIFI", "HEAT", "COOL", "PROFILE", "BREWFATHER" };
+    static const char * const t[BREW_LIST_N] = { "", "SETTINGS", "WIFI", "HEAT", "COOL", "PROFILE", "BREWFATHER", "SCHEDULE", "" };
+    static char step[16];   /* the UI runs in one task */
+    if(m->list == BREW_LIST_STEP) {
+        snprintf(step, sizeof(step), "STEP %d", m->step_sel + 1);
+        return step;
+    }
     return m->list < BREW_LIST_N ? t[m->list] : "";
 }
 
@@ -283,6 +367,17 @@ void brew_model_list_note(const brew_model_t * m, char * buf, size_t n)
             }
             break;
         case BREW_LIST_BREWFATHER: snprintf(buf, n, "Coming soon. Needs WiFi."); break;
+        case BREW_LIST_SCHEDULE: {
+            const brew_schedule_t * s = &m->sched;
+            int h = 0;
+            for(int i = 0; i < s->nsteps; i++) h += s->steps[i].ramp_h + s->steps[i].hold_h;
+            char d[16];
+            fmt_dur(d, sizeof(d), h);
+            if(s->profile != BREW_PROFILE_SCHEDULE) snprintf(buf, n, "%d %s \xC2\xB7 %s", s->nsteps, s->nsteps == 1 ? "step" : "steps", d);
+            else if(s->step == BREW_STEP_DONE || s->step >= s->nsteps) snprintf(buf, n, "Done: holding the last step");
+            else snprintf(buf, n, "Running \xC2\xB7 step %d of %d", s->step + 1, s->nsteps);
+            break;
+        }
         default: break;
     }
 }
@@ -304,9 +399,13 @@ static const edit_def_t s_edit[BREW_EDIT_N] = {
     { "COOL \xC2\xB7 DIFFERENTIAL",  0.1f, 5.0f, 0.1f,   0.1f, 3.0f, 0.1f,  BREW_LIST_COOL, 0, BREW_TUNE_COOL_DIFF },
     { "COOL \xC2\xB7 RESTART DELAY", 0.0f, 30.0f, 1.0f,  0.0f, 30.0f, 1.0f, BREW_LIST_COOL, 1, BREW_TUNE_COOL_DELAY },
     { "COOL \xC2\xB7 COLD CRASH",    28.0f, 50.0f, 0.5f, -2.0f, 10.0f, 0.5f, BREW_LIST_COOL, 2, BREW_TUNE_CRASH },
+    { "TEMPERATURE",                 30.0f, 80.0f, 0.5f, -1.0f, 26.5f, 0.5f, BREW_LIST_STEP, 0, BREW_TUNE_N },
+    { "RAMP",                        0.0f, 14.0f, 1.0f,  0.0f, 14.0f, 1.0f, BREW_LIST_STEP, 1, BREW_TUNE_N },
+    { "HOLD",                        1.0f, 60.0f, 1.0f,  1.0f, 60.0f, 1.0f, BREW_LIST_STEP, 2, BREW_TUNE_N },
 };
 
 static bool is_delay(brew_edit_t e) { return e == BREW_EDIT_HEAT_DELAY || e == BREW_EDIT_COOL_DELAY; }
+static bool is_days(brew_edit_t e) { return e == BREW_EDIT_STEP_RAMP || e == BREW_EDIT_STEP_HOLD; }
 static bool is_diff(brew_edit_t e) { return e == BREW_EDIT_HEAT_DIFF || e == BREW_EDIT_COOL_DIFF; }
 
 static float snap(float v, float step) { return roundf(v / step) * step; }
@@ -320,6 +419,9 @@ static float edit_start(const brew_model_t * m, brew_edit_t e)
         case BREW_EDIT_HEAT_DELAY: return (float)((m->heat_delay_s + 30) / 60);
         case BREW_EDIT_COOL_DELAY: return (float)((m->cool_delay_s + 30) / 60);
         case BREW_EDIT_CRASH:      return brew_model_to_disp(m, m->crash_default_f);
+        case BREW_EDIT_STEP_TEMP:  return brew_model_to_disp(m, m->sched.steps[m->step_sel].temp_f);
+        case BREW_EDIT_STEP_RAMP:  return (float)((m->sched.steps[m->step_sel].ramp_h + 12) / 24);
+        case BREW_EDIT_STEP_HOLD:  return (float)((m->sched.steps[m->step_sel].hold_h + 12) / 24);
         default:                   return 0.0f;
     }
 }
@@ -327,7 +429,7 @@ static float edit_start(const brew_model_t * m, brew_edit_t e)
 static void edit_range(const brew_model_t * m, brew_edit_t e, float * lo, float * hi, float * step)
 {
     const edit_def_t * d = &s_edit[e];
-    const bool c = m->celsius && !is_delay(e);
+    const bool c = m->celsius && !is_delay(e) && !is_days(e);
     *lo = c ? d->min_c : d->min_f;
     *hi = c ? d->max_c : d->max_f;
     *step = c ? d->step_c : d->step_f;
@@ -340,7 +442,8 @@ void brew_model_edit_text(const brew_model_t * m, brew_edit_text_t * t)
     float lo, hi, step;
     edit_range(m, e, &lo, &hi, &step);
     const float v = m->edit_val;
-    snprintf(t->title, sizeof(t->title), "%s", s_edit[e].title);
+    if(e >= BREW_EDIT_STEP_TEMP) snprintf(t->title, sizeof(t->title), "STEP %d \xC2\xB7 %s", m->step_sel + 1, s_edit[e].title);
+    else snprintf(t->title, sizeof(t->title), "%s", s_edit[e].title);
     snprintf(t->foot, sizeof(t->foot), "TURN TO CHANGE \xC2\xB7 PRESS TO SAVE");
     t->frac = hi > lo ? (v - lo) / (hi - lo) : 0.0f;
     char d[16];
@@ -353,12 +456,22 @@ void brew_model_edit_text(const brew_model_t * m, brew_edit_text_t * t)
         else snprintf(t->explain, sizeof(t->explain), "A rest for the compressor: %d min after it stops", mins);
         return;
     }
+    if(is_days(e)) {
+        const int days = (int)lroundf(v);
+        snprintf(t->value, sizeof(t->value), "%d", days);
+        snprintf(t->unit, sizeof(t->unit), "%s", days == 1 ? "day" : "days");
+        if(e == BREW_EDIT_STEP_HOLD) snprintf(t->explain, sizeof(t->explain), "Holds the temperature this long");
+        else if(days == 0) snprintf(t->explain, sizeof(t->explain), "Jumps straight to the new temperature");
+        else snprintf(t->explain, sizeof(t->explain), "Moves the target there gradually");
+        return;
+    }
     snprintf(t->value, sizeof(t->value), "%.1f", (double)v);
     snprintf(t->unit, sizeof(t->unit), "%s", brew_model_unit(m));
     snprintf(d, sizeof(d), "%.1f%s", (double)v, brew_model_unit(m));
     if(e == BREW_EDIT_HEAT_DIFF) snprintf(t->explain, sizeof(t->explain), "Heating starts %s below the target", d);
     else if(e == BREW_EDIT_COOL_DIFF) snprintf(t->explain, sizeof(t->explain), "Cooling starts %s above the target", d);
-    else snprintf(t->explain, sizeof(t->explain), "Where Cold crash starts");
+    else if(e == BREW_EDIT_CRASH) snprintf(t->explain, sizeof(t->explain), "Where Cold crash starts");
+    else snprintf(t->explain, sizeof(t->explain), "The step's temperature");
 }
 
 static uint32_t open_list(brew_model_t * m, brew_list_t l, int idx)
@@ -391,6 +504,16 @@ static uint32_t save_edit(brew_model_t * m)
         case BREW_EDIT_HEAT_DELAY: m->heat_delay_s = (int)lroundf(v) * 60; out = (float)m->heat_delay_s; break;
         case BREW_EDIT_COOL_DELAY: m->cool_delay_s = (int)lroundf(v) * 60; out = (float)m->cool_delay_s; break;
         case BREW_EDIT_CRASH:      out = m->crash_default_f = m->celsius ? v * 9.0f / 5.0f + 32.0f : v; break;
+        case BREW_EDIT_STEP_TEMP:
+        case BREW_EDIT_STEP_RAMP:
+        case BREW_EDIT_STEP_HOLD: {
+            brew_step_t * st = &m->sched.steps[m->step_sel];
+            if(e == BREW_EDIT_STEP_TEMP) st->temp_f = m->celsius ? v * 9.0f / 5.0f + 32.0f : v;
+            else if(e == BREW_EDIT_STEP_RAMP) st->ramp_h = (int)lroundf(v) * 24;
+            else st->hold_h = (int)lroundf(v) * 24;
+            if(m->cbs.on_step) m->cbs.on_step(m->step_sel, st->temp_f, st->ramp_h, st->hold_h, m->cbs.user);
+            return open_list(m, s_edit[e].list, s_edit[e].row);
+        }
         default: return 0;
     }
     if(m->cbs.on_tuning) m->cbs.on_tuning(s_edit[e].tune, out, m->cbs.user);
@@ -416,6 +539,11 @@ const char * brew_model_press_hint(const brew_model_t * m)
                 case ACT_WIFI_FORGET: return "Forget";
                 case ACT_EDIT:        return "Edit";
                 case ACT_CONSTANT:    return "Use";
+                case ACT_STEP:        return "Edit";
+                case ACT_ADD_STEP:    return "Add";
+                case ACT_USE_SCHEDULE: return "Start";
+                case ACT_STOP_SCHEDULE: return "Stop";
+                case ACT_REMOVE_STEP: return "Remove";
                 case ACT_RESET_DAY:   return "Reset";
                 default:              return "";
             }
@@ -622,6 +750,16 @@ uint32_t brew_model_set_history(brew_model_t * m, const float * t, int n, int ms
     return BREW_CH_GRAPH | BREW_CH_REFRESH;
 }
 
+uint32_t brew_model_set_schedule(brew_model_t * m, const brew_schedule_t * s)
+{
+    m->sched = *s;
+    if(m->sched.nsteps > BREW_STEPS_MAX) m->sched.nsteps = BREW_STEPS_MAX;
+    if(m->sched.nsteps < 0) m->sched.nsteps = 0;
+    if(m->list == BREW_LIST_STEP && m->step_sel >= m->sched.nsteps && m->view == BREW_VIEW_LIST)   /* that step is gone */
+        return open_list(m, BREW_LIST_SCHEDULE, 0);
+    return BREW_CH_REFRESH;
+}
+
 uint32_t brew_model_set_tuning(brew_model_t * m, float heat_diff_f, float cool_diff_f, int heat_delay_s, int cool_delay_s,
                                float crash_default_f)
 {
@@ -732,7 +870,7 @@ static uint32_t press_item(brew_model_t * m, const brew_list_item_t * it)
         case ACT_BACK: {
             brew_list_t pl;
             int pi;
-            parent(m->list, &pl, &pi);
+            parent(m, m->list, &pl, &pi);
             return pl == BREW_LIST_N ? set_view(m, BREW_VIEW_HOME) : open_list(m, pl, pi);
         }
         case ACT_UNITS:
@@ -749,7 +887,46 @@ static uint32_t press_item(brew_model_t * m, const brew_list_item_t * it)
         case ACT_EDIT:
             return open_edit(m, (brew_edit_t)it->arg);
         case ACT_CONSTANT:
-            return BREW_CH_REFRESH;   /* the only profile so far, and already chosen */
+        case ACT_STOP_SCHEDULE:
+            if(m->sched.profile != BREW_PROFILE_CONSTANT) {
+                m->sched.profile = BREW_PROFILE_CONSTANT;
+                if(m->cbs.on_profile) m->cbs.on_profile(BREW_PROFILE_CONSTANT, m->cbs.user);
+            }
+            return BREW_CH_REFRESH | BREW_CH_GRAPH;
+        case ACT_USE_SCHEDULE:
+            m->sched.profile = BREW_PROFILE_SCHEDULE;
+            m->sched.step = 0;
+            m->sched.override_on = false;
+            if(m->cbs.on_profile) m->cbs.on_profile(BREW_PROFILE_SCHEDULE, m->cbs.user);
+            if(m->mode != BREW_MODE_FERMENT || m->paused) {   /* a schedule runs as Ferment */
+                m->mode = BREW_MODE_FERMENT;
+                m->paused = false;
+                if(m->cbs.on_mode) m->cbs.on_mode(m->mode, m->paused, m->cbs.user);
+            }
+            return BREW_CH_GRAPH | set_view(m, BREW_VIEW_HOME);
+        case ACT_STEP:
+            m->step_sel = it->arg;
+            return open_list(m, BREW_LIST_STEP, 0);
+        case ACT_ADD_STEP: {
+            brew_schedule_t * s = &m->sched;
+            if(s->nsteps >= BREW_STEPS_MAX) return 0;
+            s->steps[s->nsteps] = s->nsteps > 0 ? s->steps[s->nsteps - 1] : (brew_step_t){ 66.0f, 0, 72 };
+            s->nsteps++;
+            if(m->cbs.on_step_count) m->cbs.on_step_count(s->nsteps, m->cbs.user);
+            m->step_sel = s->nsteps - 1;
+            return open_list(m, BREW_LIST_STEP, 0);   /* straight into the new step */
+        }
+        case ACT_REMOVE_STEP: {
+            brew_schedule_t * s = &m->sched;
+            if(s->nsteps <= 1) return 0;
+            for(int i = m->step_sel; i < s->nsteps - 1; i++) {
+                s->steps[i] = s->steps[i + 1];
+                if(m->cbs.on_step) m->cbs.on_step(i, s->steps[i].temp_f, s->steps[i].ramp_h, s->steps[i].hold_h, m->cbs.user);
+            }
+            s->nsteps--;
+            if(m->cbs.on_step_count) m->cbs.on_step_count(s->nsteps, m->cbs.user);
+            return open_list(m, BREW_LIST_SCHEDULE, m->step_sel < s->nsteps ? m->step_sel : s->nsteps - 1);
+        }
         case ACT_RESET_DAY:
             m->day = 1;   /* the controller confirms in its next State */
             if(m->cbs.on_reset_day) m->cbs.on_reset_day(m->cbs.user);
