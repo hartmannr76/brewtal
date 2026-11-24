@@ -10,6 +10,7 @@
 #include "brew/drivers/interfaces/io.h"
 #include "brew/drivers/interfaces/platform.h"
 #include "brew/drivers/interfaces/sensor.h"
+#include "brew/drivers/interfaces/wifi.h"
 
 #include <cmath>
 #include <cstdint>
@@ -19,6 +20,7 @@
 #include <map>
 #include <random>
 #include <string>
+#include <vector>
 
 namespace brew::sim {
 
@@ -257,6 +259,119 @@ private:
     std::deque<uint8_t> q_[2];
     std::mt19937 rng_{ 777 };
     std::uniform_real_distribution<float> u_{ 0.0f, 1.0f };
+};
+
+/**
+ * A WiFi radio in a made-up neighbourhood. Joining takes connect_ms; scanning takes scan_ms.
+ * Any password works except "wrong" (and secured networks want at least 8 characters, like
+ * WPA2). Turning the router off makes every network vanish and drops the link. When the setup
+ * network closes, the phone on it falls off, as a real one would.
+ */
+class SimWifi final : public hal::Wifi {
+public:
+    struct Net {
+        std::string ssid;
+        int rssi;
+        bool secured;
+    };
+
+    explicit SimWifi(const uint32_t & now) : now_(now) {}
+
+    std::vector<Net> networks = { { "Hartmann-5G", -48, true }, { "Hartmann-IoT", -61, true },
+                                  { "NETGEAR27", -72, true }, { "xfinitywifi", -83, false } };
+    bool router_up = true;
+    bool phone = false;          // a phone has joined the setup network
+    uint32_t connect_ms = 2500;
+    uint32_t scan_ms = 1500;
+
+    bool apOn() const { return ap_; }
+    const std::string & apSsid() const { return ap_ssid_; }
+    const std::string & joined() const { return joined_; }
+
+    bool begin() override { return true; }
+    uint32_t deviceId() override { return 0x00A14F2Au; }
+    uint32_t random() override { return rng_(); }
+
+    bool startAccessPoint(const char * ssid, const char * password) override
+    {
+        ap_ = true;
+        ap_ssid_ = ssid;
+        ap_pw_ = password;
+        return true;
+    }
+    void stopAccessPoint() override
+    {
+        ap_ = false;
+        phone = false;
+    }
+    int accessPointClients() override { return ap_ && phone ? 1 : 0; }
+
+    bool startScan() override
+    {
+        scanning_ = true;
+        scan_done_ = now_ + scan_ms;
+        return true;
+    }
+    int scanResults(hal::WifiNetwork * out, int max) override
+    {
+        if(scanning_ && static_cast<int32_t>(now_ - scan_done_) < 0) return -1;
+        scanning_ = false;
+        if(!router_up) return 0;
+        int n = 0;
+        for(const Net & w : networks) {
+            if(n >= max) break;
+            std::snprintf(out[n].ssid, sizeof(out[n].ssid), "%s", w.ssid.c_str());
+            out[n].rssi = static_cast<int8_t>(w.rssi);
+            out[n].secured = w.secured;
+            n++;
+        }
+        return n;
+    }
+
+    bool connect(const char * ssid, const char * password) override
+    {
+        try_ssid_ = ssid ? ssid : "";
+        try_pw_ = password ? password : "";
+        link_ = hal::WifiLink::Connecting;
+        result_at_ = now_ + connect_ms;
+        joined_.clear();
+        return true;
+    }
+    void disconnect() override
+    {
+        link_ = hal::WifiLink::Down;
+        joined_.clear();
+    }
+    hal::WifiLink link() override
+    {
+        if(link_ == hal::WifiLink::Connecting && static_cast<int32_t>(now_ - result_at_) >= 0) {
+            const Net * w = nullptr;
+            for(const Net & n : networks)
+                if(n.ssid == try_ssid_) w = &n;
+            if(!router_up || !w) link_ = hal::WifiLink::NotFound;
+            else if(w->secured && (try_pw_ == "wrong" || try_pw_.size() < 8)) link_ = hal::WifiLink::WrongPassword;
+            else {
+                link_ = hal::WifiLink::Up;
+                joined_ = try_ssid_;
+            }
+        }
+        if(link_ == hal::WifiLink::Up && !router_up) {
+            link_ = hal::WifiLink::Down;
+            joined_.clear();
+        }
+        return link_;
+    }
+
+private:
+    const uint32_t & now_;
+    std::mt19937 rng_{ 2026 };
+    bool ap_ = false;
+    std::string ap_ssid_, ap_pw_;
+    bool scanning_ = false;
+    uint32_t scan_done_ = 0;
+    hal::WifiLink link_ = hal::WifiLink::Down;
+    std::string try_ssid_, try_pw_, joined_;
+    uint32_t result_at_ = 0;
 };
 
 }  // namespace brew::sim

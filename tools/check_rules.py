@@ -21,15 +21,17 @@ UI = [r"^lvgl\.h", r"^brew_ui\.h", r"^brew_bg\.h", r"^fonts/", r"^SDL"]
 APP = [r"^brew/app/"]
 DRIVERS = [r"^brew/drivers/(?!interfaces/)"]   # driver implementations (chips, esp32, ...)
 INTERFACES = [r"^brew/drivers/interfaces/"]
+NETWORK = [r"^brew/network/"]
 CORE = [r"^brew/[^/]+\.h$"]                   # brew/<x>.h
 
 LAYERS = {
-    "lib/drivers/interfaces": PLATFORM + UI + APP + DRIVERS + CORE,
-    "lib/core":               PLATFORM + UI + APP + DRIVERS,
-    "lib/drivers/chips":      PLATFORM + UI + APP + CORE + [r"^brew/drivers/esp32/"],
-    "lib/drivers/esp32":      UI + APP + CORE + [r"^brew/drivers/chips/", r"^Arduino", r"^Wire\.h"],
+    "lib/drivers/interfaces": PLATFORM + UI + APP + DRIVERS + CORE + NETWORK,
+    "lib/core":               PLATFORM + UI + APP + DRIVERS + NETWORK,
+    "lib/network":            PLATFORM + UI + APP + DRIVERS + CORE,
+    "lib/drivers/chips":      PLATFORM + UI + APP + CORE + NETWORK + [r"^brew/drivers/esp32/"],
+    "lib/drivers/esp32":      UI + APP + CORE + NETWORK + [r"^brew/drivers/chips/", r"^Arduino", r"^Wire\.h"],
     "lib/app":                DRIVERS + [r"^Arduino", r"^Wire\.h"],
-    "lib/ui":                 APP + DRIVERS + CORE + INTERFACES + PLATFORM[:-1],
+    "lib/ui":                 APP + DRIVERS + CORE + INTERFACES + NETWORK + PLATFORM[:-1],
 }
 # lib/ui may use esp_heap_caps.h for its PSRAM allocator (guarded by ESP_PLATFORM).
 LAYER_EXCEPTIONS = {("lib/ui", "esp_heap_caps.h")}
@@ -189,7 +191,20 @@ def run(root):
         check_layers(root, p, text, errors)
         check_wire(root, p, text, errors)
     check_schema(root, errors)
+    check_generated(root, errors)
     return errors
+
+
+def check_generated(root, errors):
+    """Generated sources must match what they're generated from (so an edit isn't silently lost)."""
+    sys.path.insert(0, os.path.join(root, "tools"))
+    try:
+        import gen_setup_page
+        if not gen_setup_page.is_current():
+            errors.append("generated: lib/network/src/setup_page.cpp is out of date with "
+                          "lib/network/web/setup.html: run  python tools/gen_setup_page.py")
+    finally:
+        sys.path.pop(0)
 
 
 def main(root):

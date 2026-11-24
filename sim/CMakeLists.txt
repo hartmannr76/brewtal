@@ -97,6 +97,12 @@ target_include_directories(brew_core PUBLIC ${ROOT}/lib/core/include)
 target_link_libraries(brew_core PUBLIC brew_hal)
 target_compile_options(brew_core PRIVATE ${BREW_WARN})
 
+file(GLOB BREW_NET_SRC ${ROOT}/lib/network/src/*.cpp)
+add_library(brew_network STATIC ${BREW_NET_SRC})
+target_include_directories(brew_network PUBLIC ${ROOT}/lib/network/include)
+target_link_libraries(brew_network PUBLIC brew_hal)
+target_compile_options(brew_network PRIVATE ${BREW_WARN})
+
 file(GLOB BREW_DRV_SRC ${ROOT}/lib/drivers/chips/src/*.cpp)
 add_library(brew_drivers STATIC ${BREW_DRV_SRC})
 target_include_directories(brew_drivers PUBLIC ${ROOT}/lib/drivers/chips/include)
@@ -132,7 +138,7 @@ target_compile_options(brew_app PRIVATE ${BREW_WARN})
 # ---- test harness: firmware display + controller on simulated hardware (sim/harness) ----
 add_library(brew_harness STATIC harness/harness.cpp)
 target_include_directories(brew_harness PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/harness)
-target_link_libraries(brew_harness PUBLIC brew_app)
+target_link_libraries(brew_harness PUBLIC brew_app brew_network)
 target_compile_options(brew_harness PRIVATE ${BREW_WARN})
 
 if(EMSCRIPTEN)
@@ -148,7 +154,7 @@ if(EMSCRIPTEN)
         -sALLOW_MEMORY_GROWTH=1
         -sSINGLE_FILE=1            # wasm embedded in the .js: index.html works from file://
         -sENVIRONMENT=web,node     # node: lets harness/web_smoke.js run it headless
-        "-sEXPORTED_RUNTIME_METHODS=['UTF8ToString','HEAPU8']")
+        "-sEXPORTED_RUNTIME_METHODS=['UTF8ToString','HEAPU8','ccall']")
     # Always re-copy the page (a target with no outputs runs every build), so editing
     # index.html / app.js / style.css shows up even when no C++ changed.
     add_custom_target(brew_web_page ALL
@@ -180,7 +186,7 @@ target_compile_options(harness_check PRIVATE ${BREW_WARN})
 # ---- unit tests ----
 file(GLOB TEST_SRC ${ROOT}/test/*.cpp)
 add_executable(brew_tests ${TEST_SRC})
-target_link_libraries(brew_tests PRIVATE brew_core brew_drivers brew_ui_model)
+target_link_libraries(brew_tests PRIVATE brew_core brew_drivers brew_network brew_ui_model)
 target_compile_options(brew_tests PRIVATE ${BREW_WARN})
 enable_testing()
 add_test(NAME brew_tests COMMAND brew_tests)

@@ -125,6 +125,13 @@ void Harness::start(uint32_t ui_now)
     bridge_ = std::make_unique<app::UiBridge>(*ui_front_);
     bridge_->create(lv_screen_active());
 
+    /* The display board's WiFi: setup opens by itself when nothing is saved. Its settings share
+     * the one NVS with the controller, as on a single-board CrowPanel. */
+    wifi_setup_ = std::make_unique<net::WifiSetup>(wifi_, &settings_, net::WifiSetup::Config{});
+    portal_ = std::make_unique<net::SetupPortal>(*wifi_setup_);
+    wifi_setup_->begin(ui_now);
+    watchWifi();
+
     started_ = true;
     log("Harness ready: %dx%d screen, controller on the same board", size_, size_);
 }
@@ -176,7 +183,71 @@ void Harness::frame(uint32_t ui_now)
         advanceSim(static_cast<float>(step) * speed_);
     }
     bridge_->poll(ui_ms_);
+    wifi_setup_->tick(ui_ms_);
+    watchWifi();
     lv_timer_handler();
+}
+
+/* ------------------------------------------------------------------ WiFi */
+
+void Harness::http(const net::HttpRequest & req, net::HttpResponse & res)
+{
+    portal_->handle(req, ui_ms_, res);
+    wifi_setup_->tick(ui_ms_);
+    watchWifi();
+}
+
+void Harness::setWifiPhone(bool on)
+{
+    wifi_.phone = on && wifi_.apOn();   // only possible while the setup network is up
+}
+
+void Harness::setWifiRouter(bool up)
+{
+    if(up == wifi_.router_up) return;
+    wifi_.router_up = up;
+    log(up ? "WiFi: router on" : "WiFi: router off");
+}
+
+void Harness::wifiStartSetup() { wifi_setup_->startSetup(ui_ms_); watchWifi(); }
+void Harness::wifiCancelSetup() { wifi_setup_->cancelSetup(ui_ms_); watchWifi(); }
+void Harness::wifiForget()
+{
+    wifi_setup_->forget(ui_ms_);
+    log("WiFi: saved network forgotten");
+    watchWifi();
+}
+
+void Harness::watchWifi()
+{
+    const net::SetupStatus & w = wifi_setup_->status();
+    /* a new password means it was reopened, even if it never showed as down in between */
+    if(wifi_.apOn() != last_ap_ || (wifi_.apOn() && last_ap_pw_ != w.ap_password)) {
+        last_ap_ = wifi_.apOn();
+        last_ap_pw_ = w.ap_password;
+        if(last_ap_) log("WiFi: setup network %s is up (password %s)", w.ap_ssid, w.ap_password);
+        else log("WiFi: setup network closed");
+    }
+    if(w.clients != last_clients_) {
+        last_clients_ = w.clients;
+        log(w.clients ? "WiFi: a phone joined the setup network" : "WiFi: the phone left the setup network");
+    }
+    if(w.error != last_wifi_error_) {
+        last_wifi_error_ = w.error;
+        if(w.error == net::SetupError::WrongPassword) log("WiFi: wrong password for %s", w.ssid);
+        else if(w.error == net::SetupError::NotFound) log("WiFi: %s not found", w.ssid);
+        else if(w.error == net::SetupError::Failed) log("WiFi: couldn't connect to %s", w.ssid);
+    }
+    if(w.phase != last_wifi_phase_) {
+        last_wifi_phase_ = w.phase;
+        switch(w.phase) {
+            case net::SetupPhase::Connecting: log("WiFi: connecting to %s", w.ssid); break;
+            case net::SetupPhase::Connected:  log("WiFi: connected to %s", w.ssid); break;
+            case net::SetupPhase::Offline:    log("WiFi: not connected; retrying %s", w.ssid); break;
+            case net::SetupPhase::Off:        log("WiFi: off (no network saved)"); break;
+            default: break;
+        }
+    }
 }
 
 void Harness::advanceSim(float ms)
@@ -317,6 +388,7 @@ void Harness::rebootController()
 void Harness::factoryReset()
 {
     settings_.clear();
+    wifi_setup_->forget(ui_ms_);
     buildController();
     log("Controller factory reset: settings wiped");
 }
@@ -358,9 +430,18 @@ std::string Harness::statusJson() const
 {
     const State & s = ctl_->state();
     const hal::TempReading r = probe_.latest();
+    const net::SetupStatus & w = wifi_setup_->status();
+    char wifi[512];
+    std::snprintf(wifi, sizeof(wifi),
+                  "\"wifi\":{\"phase\":\"%s\",\"error\":\"%s\",\"ssid\":\"%s\",\"ap\":%s,\"ap_ssid\":\"%s\","
+                  "\"ap_password\":\"%s\",\"clients\":%d,\"setup_left_s\":%u,\"phone\":%s,\"router\":%s,"
+                  "\"joined\":\"%s\"}",
+                  net::phaseName(w.phase), net::errorName(w.error), w.ssid, wifi_.apOn() ? "true" : "false",
+                  w.ap_ssid, w.ap_password, w.clients, static_cast<unsigned>(w.setup_left_ms / 1000u),
+                  wifi_.phone ? "true" : "false", wifi_.router_up ? "true" : "false", wifi_.joined().c_str());
     char ui_status[48];
     brew_ui_status_text(ui_status, sizeof(ui_status));
-    char b[2048];
+    char b[4096];
     std::snprintf(
         b, sizeof(b),
         "{\"ui_ms\":%u,\"sim_ms\":%u,\"speed\":%g,\"split\":%s,\"boots\":%u,\"commits\":%u,"
@@ -377,7 +458,7 @@ std::string Harness::statusJson() const
         "\"setup\":{\"law\":%d,\"heat_diff_f\":%g,\"cool_diff_f\":%g,\"heat_min_on_s\":%u,\"heat_min_off_s\":%u,"
         "\"cool_min_on_s\":%u,\"cool_min_off_s\":%u,\"changeover_s\":%u,\"history_period_ms\":%u},"
         "\"knob\":{\"button\":%s},\"layout\":\"%s\",\"graph_style\":\"%s\","
-        "\"pending\":{\"wanted\":%d,\"wait_s\":%u},\"ui_status\":\"%s\"}",
+        "\"pending\":{\"wanted\":%d,\"wait_s\":%u},\"ui_status\":\"%s\",%s}",
         ui_ms_, sim_ms_, static_cast<double>(speed_), split_ ? "true" : "false", static_cast<unsigned>(boots_),
         static_cast<unsigned>(settings_.commits), num(plant_.actual()), r.valid ? "true" : "false", num(r.celsius),
         static_cast<int>(probe_.fault), probe_.physics ? "true" : "false", static_cast<double>(probe_.noise_c),
@@ -406,7 +487,7 @@ std::string Harness::statusJson() const
         static_cast<unsigned>(setup_.changeover_s), static_cast<unsigned>(setup_.history_period_ms),
         button_.down() ? "true" : "false", brew_ui_layout_name(),
         brew_ui_graph_style() == BREW_GRAPH_MIST ? "mist" : "hairline", static_cast<int>(s.wanted),
-        static_cast<unsigned>(s.wait_s), ui_status);
+        static_cast<unsigned>(s.wait_s), ui_status, wifi);
     return b;
 }
 

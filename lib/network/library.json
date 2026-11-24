@@ -1,0 +1,11 @@
+{
+  "name": "brewdial-network",
+  "version": "1.0.0",
+  "description": "BrewDial WiFi setup: the setup flow (hotspot, phone, connect, reconnect), the setup page and its HTTP handler. Portable: only driver interfaces, so it is host-tested and runs in the web harness.",
+  "frameworks": "*",
+  "platforms": "*",
+  "build": {
+    "includeDir": "include",
+    "srcDir": "src"
+  }
+}

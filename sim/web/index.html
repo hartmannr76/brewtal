@@ -245,6 +245,27 @@
       <p class="readout" id="link-stats">–</p>
     </article>
 
+    <article class="card wide" id="c-wifi">
+      <header class="card-h"><h2>WiFi setup</h2><span class="card-sub">the display's WiFi, on a fake radio and neighbourhood</span></header>
+      <div class="wifi">
+        <div class="wifi-side">
+          <div class="field"><label>On the dial</label><p class="readout" id="wifi-dial">–</p></div>
+          <label class="switch-row"><input type="checkbox" class="switch" id="wifi-phone"> Phone on the setup network <span class="wifi-why">(like scanning the dial's code)</span></label>
+          <label class="switch-row"><input type="checkbox" class="switch" id="wifi-router" checked> Home router on</label>
+          <p class="note">Any password connects except <code>wrong</code>, or one shorter than 8 characters.</p>
+          <div class="actions">
+            <button id="wifi-setup" class="btn">Open setup (menu)</button>
+            <button id="wifi-skip" class="btn">Skip (dial press)</button>
+            <button id="wifi-forget" class="btn danger">Forget WiFi</button>
+          </div>
+        </div>
+        <div class="wifi-phone">
+          <iframe id="wifi-page" title="The device's setup page" hidden></iframe>
+          <div class="wifi-off" id="wifi-off"></div>
+        </div>
+      </div>
+    </article>
+
     <article class="card wide" id="c-log">
       <header class="card-h"><h2>Events</h2>
         <label class="switch-row inline"><input type="checkbox" class="switch" id="log-actions" checked> Relay changes</label>

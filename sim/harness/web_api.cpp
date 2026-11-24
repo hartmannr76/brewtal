@@ -5,6 +5,7 @@
  */
 #include "harness.h"
 
+#include <cstring>
 #include <string>
 
 #ifdef __EMSCRIPTEN__
@@ -98,6 +99,32 @@ BD_API void bd_link(int unplugged, float drop, float corrupt)
     w.drop_rate = drop;
     w.corrupt_rate = corrupt;
 }
+
+/* WiFi (fake radio). bd_http is a request to the device's setup page, as from a phone on its
+ * setup network; the response stays readable through bd_http_* until the next bd_http. */
+namespace {
+brew::net::HttpResponse g_res;
+std::string g_res_body;
+}  // namespace
+BD_API int bd_http(const char * method, const char * path, const char * body)
+{
+    brew::net::HttpRequest rq;
+    rq.method = method ? method : "GET";
+    rq.path = path ? path : "/";
+    rq.body = body ? body : "";
+    rq.body_len = std::strlen(rq.body);
+    H->http(rq, g_res);
+    g_res_body.assign(g_res.body ? g_res.body : "", g_res.body_len);
+    return g_res.status;
+}
+BD_API const char * bd_http_body() { return g_res_body.c_str(); }
+BD_API const char * bd_http_type() { return g_res.content_type ? g_res.content_type : ""; }
+BD_API const char * bd_http_location() { return g_res.location ? g_res.location : ""; }
+BD_API void bd_wifi_phone(int on) { H->setWifiPhone(on != 0); }
+BD_API void bd_wifi_router(int up) { H->setWifiRouter(up != 0); }
+BD_API void bd_wifi_setup() { H->wifiStartSetup(); }
+BD_API void bd_wifi_skip() { H->wifiCancelSetup(); }
+BD_API void bd_wifi_forget() { H->wifiForget(); }
 
 /* readouts (pointers stay valid until the next call of the same kind) */
 BD_API const char * bd_status()

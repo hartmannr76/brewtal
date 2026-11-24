@@ -1,0 +1,202 @@
+<!doctype html>
+<!-- BrewDial setup page: served by the device on its setup network (no internet there, so
+     everything is inline). Embedded into firmware by tools/gen_setup_page.py; the web harness
+     shows the same file. Talks to /api/state, /api/scan, /api/connect, /api/skip. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BrewDial setup</title>
+<style>
+:root {
+  --bg: #0b0e11; --well: #090c0f; --hair: rgba(255,255,255,.08); --hair-2: rgba(255,255,255,.14);
+  --text: #eef2f5; --text-2: #a9b3bd; --text-3: #66717c;
+  --hi: #7cd4ff; --hi-2: #5fb8ee; --warn: #ffb36b; --ok: #8fe3b0;
+  --f: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  background: radial-gradient(120% 60% at 50% 100%, rgba(48,112,176,.28), transparent 70%), var(--bg);
+  color: var(--text); font: 400 16px/1.45 var(--f); -webkit-font-smoothing: antialiased;
+  padding: max(20px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) 28px max(18px, env(safe-area-inset-left));
+}
+main { max-width: 420px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+.caps { font-size: 11px; font-weight: 600; letter-spacing: .22em; text-transform: uppercase; color: var(--text-3); }
+h1 { font-size: 26px; font-weight: 300; margin: 4px 0 0; line-height: 1.2; }
+p { margin: 0; color: var(--text-2); font-size: 15px; }
+.nets { border: 1px solid var(--hair-2); border-radius: 14px; overflow: hidden; }
+.net { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border-top: 1px solid var(--hair); cursor: pointer; }
+.net:first-child { border-top: 0; }
+.net input { accent-color: var(--hi); margin: 0; width: 18px; height: 18px; }
+.net .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.net.sel { background: rgba(124,212,255,.08); }
+.lock { width: 12px; height: 12px; fill: var(--text-3); }
+.bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 13px; }
+.bars i { width: 3px; border-radius: 1px; background: var(--text-2); opacity: .25; }
+.bars i.on { opacity: 1; }
+.empty { padding: 16px 14px; color: var(--text-3); font-size: 14px; }
+.other { display: none; }
+.other.show { display: block; }
+label.f { display: block; font-size: 13px; color: var(--text-2); margin: 0 0 6px; }
+.box { display: flex; border: 1px solid var(--hair-2); border-radius: 12px; background: var(--well); overflow: hidden; }
+.box input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text); font: 400 16px var(--f); padding: 13px 14px; }
+.box input:focus { outline: none; }
+.box:focus-within { border-color: var(--hi-2); }
+.box button { border: 0; background: transparent; color: var(--text-3); font: 600 13px var(--f); padding: 0 14px; cursor: pointer; }
+.err { color: var(--warn); font-size: 14.5px; }
+.go { border: 0; border-radius: 12px; padding: 15px; font: 600 16px var(--f); color: #04121c; cursor: pointer;
+      background: linear-gradient(180deg, #9fe0ff, var(--hi-2)); }
+.go:disabled { opacity: .4; cursor: default; }
+.row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.link { border: 0; background: none; color: var(--text-3); font: 500 14px var(--f); padding: 4px 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.center { min-height: 60vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 14px; }
+.spin { width: 42px; height: 42px; border-radius: 50%; border: 2px solid var(--hair-2); border-top-color: var(--hi); animation: sp 1s linear infinite; }
+@keyframes sp { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation-duration: 3s; } }
+.tick { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: rgba(143,227,176,.12); }
+.tick svg { width: 24px; height: 24px; stroke: var(--ok); fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+:focus-visible { outline: 2px solid var(--hi); outline-offset: 2px; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <section id="v-form" hidden>
+    <form id="f" novalidate style="display:flex;flex-direction:column;gap:18px">
+      <div><div class="caps" id="dev">BrewDial setup</div><h1>Choose your WiFi</h1></div>
+      <div>
+        <div class="row" style="margin-bottom:8px"><span class="f" style="font-size:13px;color:var(--text-2)">Networks</span>
+          <button type="button" class="link" id="rescan">Search again</button></div>
+        <div class="nets" id="nets" role="radiogroup" aria-label="Networks"></div>
+      </div>
+      <div class="other" id="other">
+        <label class="f" for="ossid">Network name</label>
+        <div class="box"><input id="ossid" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="32"></div>
+      </div>
+      <div id="pwrow">
+        <label class="f" for="pw">Password</label>
+        <div class="box"><input id="pw" type="password" autocomplete="current-password" maxlength="64">
+          <button type="button" id="show" aria-controls="pw">Show</button></div>
+      </div>
+      <div class="err" id="err" role="alert" hidden></div>
+      <button class="go" id="go" type="submit">Connect</button>
+      <div class="row"><p style="font-size:13.5px;color:var(--text-3)">BrewDial keeps controlling temperature while you do this.</p>
+        <button type="button" class="link" id="later">Set up later</button></div>
+    </form>
+  </section>
+
+  <section class="center" id="v-wait" hidden>
+    <div class="spin" aria-hidden="true"></div>
+    <h1 id="wait-h">Connecting</h1>
+    <p>This takes a few seconds. Keep this page open.</p>
+  </section>
+
+  <section class="center" id="v-done" hidden>
+    <div class="tick" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg></div>
+    <h1 id="done-h">Connected</h1>
+    <p>Your phone will go back to your usual WiFi. You can close this page.</p>
+  </section>
+
+  <section class="center" id="v-closed" hidden>
+    <h1>Setup is closed</h1>
+    <p>To change networks, choose WiFi in the dial's menu. This page opens again.</p>
+  </section>
+</main>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var OTHER = '\u0001other';
+  var picked = null, lastNets = '', posting = false, s = null;
+  var LOCK = '<svg class="lock" viewBox="0 0 12 12" aria-label="needs a password"><path d="M3.5 5V3.8a2.5 2.5 0 015 0V5h.6c.5 0 .9.4.9.9v4.2c0 .5-.4.9-.9.9H2.9a.9.9 0 01-.9-.9V5.9c0-.5.4-.9.9-.9h.6zm1.2 0h2.6V3.8a1.3 1.3 0 00-2.6 0V5z"/></svg>';
+  var ERR = {
+    wrong_password: function (n) { return 'That password didn’t work for ' + n + '. Check it and try again.'; },
+    not_found: function (n) { return 'Couldn’t find ' + n + '. Is it in range, and is the name exactly right?'; },
+    failed: function (n) { return 'Couldn’t connect to ' + n + '. Try again.'; }
+  };
+  function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function bars(rssi) {
+    var n = rssi >= -55 ? 4 : rssi >= -67 ? 3 : rssi >= -78 ? 2 : 1, h = '';
+    for (var i = 1; i <= 4; i++) h += '<i class="' + (i <= n ? 'on' : '') + '" style="height:' + (i * 3 + 1) + 'px"></i>';
+    return '<span class="bars" aria-label="signal ' + n + ' of 4">' + h + '</span>';
+  }
+  function show(id) { ['v-form', 'v-wait', 'v-done', 'v-closed'].forEach(function (v) { $(v).hidden = v !== id; }); }
+  function current() { return (s && s.networks || []).filter(function (n) { return n.ssid === picked; })[0]; }
+  function sync() {
+    var other = picked === OTHER, net = current();
+    $('other').classList.toggle('show', other);
+    $('pwrow').hidden = !other && net && !net.secured;
+    var rows = $('nets').querySelectorAll('.net');
+    for (var i = 0; i < rows.length; i++) rows[i].classList.toggle('sel', rows[i].querySelector('input').checked);
+    $('go').disabled = posting || !picked || (other && !$('ossid').value.trim());
+  }
+  function drawNets() {
+    var list = s.networks || [];
+    var key = JSON.stringify(list) + s.scanning;
+    if (key === lastNets) return;
+    lastNets = key;
+    if (picked === null && s.ssid && list.some(function (n) { return n.ssid === s.ssid; })) picked = s.ssid;
+    var h = list.map(function (n) {
+      return '<label class="net"><input type="radio" name="net" value="' + esc(n.ssid) + '"' + (n.ssid === picked ? ' checked' : '') + '>' +
+        '<span class="nm">' + esc(n.ssid) + '</span>' + (n.secured ? LOCK : '') + bars(n.rssi) + '</label>';
+    }).join('');
+    if (!list.length) h = '<div class="empty">' + (s.scanning ? 'Looking for networks…' : 'No networks found. Try searching again.') + '</div>';
+    h += '<label class="net"><input type="radio" name="net" value="' + OTHER + '"' + (picked === OTHER ? ' checked' : '') + '><span class="nm">Other network…</span></label>';
+    $('nets').innerHTML = h;
+    sync();
+  }
+  function render() {
+    if (!s) return;
+    $('dev').textContent = s.device ? s.device + ' setup' : 'BrewDial setup';
+    if (s.phase === 'connecting') { $('wait-h').textContent = 'Connecting to ' + s.ssid; show('v-wait'); return; }
+    if (s.phase === 'connected') { $('done-h').textContent = 'BrewDial is on ' + s.ssid; show('v-done'); return; }
+    if (s.phase === 'hotspot' || s.phase === 'phone_joined') {
+      show('v-form');
+      drawNets();
+      var e = s.error && ERR[s.error];
+      $('err').hidden = !e;
+      if (e) $('err').textContent = e(s.ssid);
+      return;
+    }
+    show('v-closed');
+  }
+  function poll() {
+    fetch('/api/state', { cache: 'no-store' }).then(function (r) { return r.json(); })
+      .then(function (j) { s = j; render(); }).catch(function () {})
+      .then(function () { setTimeout(poll, 1000); });
+  }
+  function post(path, data) {
+    return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: data ? new URLSearchParams(data).toString() : '' }).then(function (r) { return r.json(); });
+  }
+
+  $('nets').addEventListener('change', function (e) { if (e.target.name === 'net') { picked = e.target.value; sync(); if (picked === OTHER) $('ossid').focus(); } });
+  $('ossid').addEventListener('input', sync);
+  $('show').addEventListener('click', function () {
+    var p = $('pw'), on = p.type === 'password';
+    p.type = on ? 'text' : 'password';
+    this.textContent = on ? 'Hide' : 'Show';
+  });
+  $('rescan').addEventListener('click', function () { lastNets = ''; post('/api/scan').then(poll0); });
+  $('later').addEventListener('click', function () { post('/api/skip').then(poll0); });
+  $('f').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var ssid = picked === OTHER ? $('ossid').value.trim() : picked;
+    if (!ssid) return;
+    var net = current();
+    posting = true; sync();
+    post('/api/connect', { ssid: ssid, password: net && !net.secured ? '' : $('pw').value })
+      .then(function (j) { if (!j.ok) { $('err').hidden = false; $('err').textContent = j.error || 'Couldn’t start connecting.'; } })
+      .catch(function () {})
+      .then(function () { posting = false; sync(); poll0(); });
+  });
+  function poll0() {
+    fetch('/api/state', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { s = j; render(); }).catch(function () {});
+  }
+  poll();
+})();
+</script>
+</body>
+</html>

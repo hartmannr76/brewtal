@@ -37,6 +37,10 @@ createBrewDial().then((M) => {
     speed: M._bd_set_speed, reboot: M._bd_reboot, factory: M._bd_factory_reset, setup: M._bd_setup,
     split: M._bd_set_split, link: M._bd_link, key: M._bd_key, layout: M._bd_layout, graphStyle: M._bd_graph_style,
     status: () => JSON.parse(M.UTF8ToString(M._bd_status())),
+    http: (method, path, body) => M.ccall('bd_http', 'number', ['string', 'string', 'string'], [method, path, body]),
+    httpBody: () => M.UTF8ToString(M._bd_http_body()), httpType: () => M.UTF8ToString(M._bd_http_type()),
+    wifiPhone: M._bd_wifi_phone, wifiRouter: M._bd_wifi_router, wifiSetup: M._bd_wifi_setup,
+    wifiSkip: M._bd_wifi_skip, wifiForget: M._bd_wifi_forget,
     nextLog: () => M.UTF8ToString(M._bd_next_log()),
   };
 
@@ -393,11 +397,73 @@ createBrewDial().then((M) => {
       $('beer-v').textContent = toF(s.beer_c).toFixed(2) + '°F';
     }
 
+    renderWifi(s.wifi);
+
     const L = s.link;
     $('link-stats').textContent = s.split
       ? `to controller ${L.bytes_to_ctl} B · to display ${L.bytes_to_ui} B · lost ${L.bytes_lost} B · ` +
         `flipped ${L.bytes_corrupted} B · bad frames ${L.bad_frames_display + L.bad_frames_controller}`
       : 'Same board: no cable (LocalBus).';
+  }
+
+  /* ------------------------------------------------------------ WiFi setup */
+  /* The setup page is the device's own file (lib/network/web/setup.html), served by bd_http. It
+   * runs in an iframe whose fetch() is routed here, so its /api calls reach the firmware's
+   * handler exactly as they would over the setup network. */
+  window.__bdFetch = (url, opt) => {
+    const u = new URL(url, 'http://192.168.4.1/');
+    const status = api.http(String(opt.method || 'GET').toUpperCase(), u.pathname, opt.body ? String(opt.body) : '');
+    const body = status === 204 ? null : api.httpBody();
+    return Promise.resolve(new Response(body, { status: status === 302 ? 200 : status, headers: { 'Content-Type': api.httpType() } }));
+  };
+  const wifiPage = $('wifi-page'), wifiOff = $('wifi-off');
+  let pageShown = false;
+  function showPage(on) {
+    if (on === pageShown) return;
+    pageShown = on;
+    if (on) {
+      api.http('GET', '/', '');
+      const shim = '<script>window.fetch=function(u,o){return parent.__bdFetch(String(u),o||{});};<\/script>';
+      wifiPage.srcdoc = api.httpBody().replace('<head>', '<head>' + shim);
+    } else {
+      wifiPage.removeAttribute('srcdoc');
+    }
+    wifiPage.hidden = !on;
+    wifiOff.hidden = on;
+  }
+  $('wifi-phone').onchange = (e) => api.wifiPhone(e.target.checked ? 1 : 0);
+  $('wifi-router').onchange = (e) => api.wifiRouter(e.target.checked ? 1 : 0);
+  $('wifi-setup').onclick = () => api.wifiSetup();
+  $('wifi-skip').onclick = () => api.wifiSkip();
+  $('wifi-forget').onclick = () => api.wifiForget();
+  if (qs.get('wifi_phone') === '1') api.wifiPhone(1);   // for screenshots
+
+  const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  const WIFI_ERR = { wrong_password: 'Wrong password for', not_found: 'Couldn\u2019t find', failed: 'Couldn\u2019t connect to' };
+  function renderWifi(w) {
+    let dial;
+    if (w.phase === 'connecting') dial = `CONNECTING\n${w.ssid}`;
+    else if (w.phase === 'hotspot' || w.phase === 'phone_joined') {
+      dial = w.error ? `COULDN\u2019T CONNECT\n${WIFI_ERR[w.error]} ${w.ssid}. Try again on the phone.`
+        : w.phase === 'hotspot' ? `WIFI SETUP\nScan to join ${w.ap_ssid}  ·  password ${w.ap_password}`
+        : 'WIFI SETUP\nFinish on your phone  ·  page didn\u2019t open? 192.168.4.1';
+      dial += `\nCloses by itself in ${mmss(w.setup_left_s)}`;
+    }
+    else if (w.phase === 'connected') dial = `CONNECTED\n${w.ssid}${w.ap ? '  ·  setup network closes in a moment' : ''}`;
+    else if (w.phase === 'offline') dial = `Not connected: retrying ${w.ssid} in the background`;
+    else dial = 'No WiFi saved (setup skipped). Open it from the menu.';
+    setText($('wifi-dial'), dial);
+    const ph = $('wifi-phone');
+    if (ph.checked !== w.phone) ph.checked = w.phone;
+    ph.disabled = !w.ap;
+    $('wifi-router').checked = w.router;
+    showPage(w.phone);
+    if (!w.phone) {
+      const html = w.ap
+        ? `<strong>Phone not on the setup network</strong><span>Turn on \u201cPhone on the setup network\u201d, like scanning the code on the dial. The setup page opens here, at phone width.</span>`
+        : `<strong>No setup network</strong><span>Setup is closed. Open it from the menu to change networks.</span>`;
+      if (wifiOff.dataset.html !== html) { wifiOff.dataset.html = html; wifiOff.innerHTML = html; }
+    }
   }
 
   /* ------------------------------------------------------------ log */

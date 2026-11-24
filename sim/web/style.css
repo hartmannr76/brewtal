@@ -330,7 +330,7 @@ main {
 .card.wide { grid-column: 1 / -1; }
 .console > :nth-child(1) { --i: 0; } .console > :nth-child(2) { --i: 1; } .console > :nth-child(3) { --i: 2; }
 .console > :nth-child(4) { --i: 3; } .console > :nth-child(5) { --i: 4; } .console > :nth-child(6) { --i: 5; }
-.console > :nth-child(7) { --i: 6; } .console > :nth-child(8) { --i: 7; }
+.console > :nth-child(7) { --i: 6; } .console > :nth-child(8) { --i: 7; } .console > :nth-child(9) { --i: 8; }
 
 .card-h { display: flex; align-items: baseline; gap: 12px; margin: 0 0 16px; min-height: 20px; }
 .card-h h2 {
@@ -610,3 +610,16 @@ input:focus-visible, select:focus-visible { outline: none; }
   .tele-doing { grid-column: 1 / -1; align-items: flex-start; }
   .relays, .grid2 { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* WiFi setup card: controls beside the device's own setup page at phone width */
+.wifi { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 24px; align-items: start; }
+.wifi-side { min-width: 0; }
+.wifi-why { color: var(--text-3); }
+.wifi-side code { font-family: var(--f-mono, monospace); color: var(--text-2); }
+.wifi-phone { width: 100%; max-width: 360px; height: 600px; border-radius: 20px; overflow: hidden;
+              box-shadow: inset 0 0 0 1px var(--hair-2, rgba(255,255,255,.12)), 0 18px 50px -20px rgba(0,0,0,.6); background: #0b0e11; }
+.wifi-phone iframe { width: 100%; height: 100%; border: 0; display: block; background: #0b0e11; }
+.wifi-off { height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 10px; padding: 28px;
+            text-align: center; color: var(--text-3); font-size: 13px; }
+.wifi-off strong { color: var(--text-2); font-weight: 500; font-size: 14px; }
+@media (max-width: 860px) { .wifi { grid-template-columns: minmax(0, 1fr); } .wifi-phone { margin: 0 auto; } }

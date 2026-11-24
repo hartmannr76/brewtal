@@ -22,6 +22,7 @@ lib/
                        (layout_round: ring, digit animation, menu wheel, history scrub)
   fonts/<size>/        Inter + Tabler icons, per panel size (360, 480)
   app/                 UiBridge (brew_ui <-> controller), LVGL port, ESP32 display runtime
+  network/             WiFi setup: the setup flow, the setup page your phone opens, its web handler
 boards/                one folder per board: pins + which drivers (the only board-specific code)
   crowpanel21/         Elecrow CrowPanel 2.1" (480)
   controller_devkit/   headless controller (probe + relays) for a two-board setup over UART

@@ -24,6 +24,8 @@
 #include "brew/input.h"
 #include "brew/link.h"
 #include "brew/local_bus.h"
+#include "brew/network/setup_portal.h"
+#include "brew/network/wifi_setup.h"
 
 #include <cstdint>
 #include <deque>
@@ -90,6 +92,15 @@ public:
     void setSplit(bool split);
     SimWire & wire() { return wire_; }
 
+    /* ---- WiFi (the display board's), on a fake radio ---- */
+    /** A request to the device's setup page, as a phone on its setup network would make. */
+    void http(const net::HttpRequest & req, net::HttpResponse & res);
+    void setWifiPhone(bool on);       // a phone joins / leaves the setup network
+    void setWifiRouter(bool up);      // the home router on / off
+    void wifiStartSetup();            // the WiFi menu item
+    void wifiCancelSetup();           // a press on the dial while setup shows
+    void wifiForget();                // forget the saved network (setup opens again)
+
     /* ---- outputs ---- */
     const uint8_t * rgba();           // size x size x 4, updated when the screen changed
     uint32_t frameCount() const { return panel_.flushes; }
@@ -111,6 +122,7 @@ private:
     void advanceSim(float sim_ms);
     void log(const char * fmt, ...);
     void watchController();
+    void watchWifi();
 
     int size_;
     SimPanel panel_;
@@ -136,6 +148,16 @@ private:
     std::vector<uint8_t> buf1_, buf2_;
     std::unique_ptr<UiFront> ui_front_;
     std::unique_ptr<app::UiBridge> bridge_;
+
+    /* display side: WiFi */
+    SimWifi wifi_{ ui_ms_ };
+    std::unique_ptr<net::WifiSetup> wifi_setup_;
+    std::unique_ptr<net::SetupPortal> portal_;
+    net::SetupPhase last_wifi_phase_ = net::SetupPhase::Off;
+    net::SetupError last_wifi_error_ = net::SetupError::None;
+    bool last_ap_ = false;
+    std::string last_ap_pw_;
+    int last_clients_ = 0;
 
     /* transport */
     bool split_ = false;

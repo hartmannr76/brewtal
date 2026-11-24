@@ -30,6 +30,14 @@ void bd_set_split(int);
 void bd_link(int, float, float);
 const char * bd_status();
 const char * bd_next_log();
+int bd_http(const char *, const char *, const char *);
+const char * bd_http_body();
+const char * bd_http_location();
+void bd_wifi_phone(int);
+void bd_wifi_router(int);
+void bd_wifi_setup();
+void bd_wifi_skip();
+void bd_factory_reset();
 }
 
 namespace {
@@ -62,6 +70,19 @@ double field(const char * obj, const char * key)
     if(!std::strncmp(v, "false", 5)) return 0;
     if(*v == '[') v++;
     return std::atof(v);
+}
+
+/* String field: "key":"value" after "object":. */
+std::string sfield(const char * obj, const char * key)
+{
+    const std::string s = bd_status();
+    const size_t at = s.find(std::string("\"") + obj + "\":");
+    if(at == std::string::npos) return "?";
+    const std::string k = std::string("\"") + key + "\":\"";
+    const size_t i = s.find(k, at);
+    if(i == std::string::npos) return "?";
+    const size_t v = i + k.size();
+    return s.substr(v, s.find('"', v) - v);
 }
 
 void check(bool ok, const char * what)
@@ -229,6 +250,57 @@ int main()
     check(orig > 0 && rec > 0, "both had to cool against the yeast heat");
     check(rec * 2 <= orig, "chamber defaults switch the relays far less often");
     check(rlo > 63.0 && rhi < 65.0, "and still hold the beer within 1 F of 64 F");
+
+    std::printf("wifi: first start opens setup; a phone joins; wrong password; then connects\n");
+    bd_factory_reset();   // nothing saved
+    run_ms(200);
+    check(sfield("wifi", "phase") == "hotspot", "setup network up on first start");
+    check(sfield("wifi", "ap_ssid") == "BrewDial-4F2A", "named after the device");
+    check(sfield("wifi", "ap_password").size() >= 8, "with a WPA2-length password");
+    bd_wifi_phone(1);
+    run_ms(1700);         // the scan takes 1.5 s
+    check(sfield("wifi", "phase") == "phone_joined", "the phone is on it");
+    check(bd_http("GET", "/hotspot-detect.html", "") == 302 &&
+          std::string(bd_http_location()) == "http://192.168.4.1/", "the phone's internet check is sent to the page");
+    check(bd_http("GET", "/", "") == 200 && std::string(bd_http_body()).find("Choose your WiFi") != std::string::npos,
+          "the setup page is served");
+    bd_http("GET", "/api/state", "");
+    check(std::string(bd_http_body()).find("\"Hartmann-5G\"") != std::string::npos, "and lists the networks");
+    bd_http("POST", "/api/connect", "ssid=Hartmann-5G&password=wrong");
+    run_ms(3000);
+    check(sfield("wifi", "error") == "wrong_password" && sfield("wifi", "phase") == "phone_joined",
+          "wrong password: back to the form, setup still open");
+    bd_http("POST", "/api/connect", "ssid=Hartmann-5G&password=hops2026");
+    run_ms(200);
+    check(sfield("wifi", "phase") == "connecting", "connecting");
+    run_ms(3000);
+    check(sfield("wifi", "phase") == "connected" && sfield("wifi", "joined") == "Hartmann-5G", "connected");
+    check(field("wifi", "ap") == 1, "the setup network lingers so the page can say so");
+    run_ms(10500);
+    check(field("wifi", "ap") == 0 && field("wifi", "phone") == 0, "then closes, and the phone falls off");
+    drain_log();
+
+    std::printf("wifi: the router drops out and comes back\n");
+    bd_wifi_router(0);
+    run_ms(200);
+    check(sfield("wifi", "phase") == "offline", "offline, retrying in the background");
+    check(field("wifi", "ap") == 0, "without reopening setup");
+    bd_wifi_router(1);
+    run_ms(8000);         // next retry after 5 s, joining takes 2.5 s
+    check(sfield("wifi", "phase") == "connected", "back on Hartmann-5G by itself");
+    bd_reboot();
+    run_ms(500);
+    check(sfield("wifi", "phase") == "connected", "a controller reboot doesn't touch the display's WiFi");
+    drain_log();
+
+    std::printf("wifi: setup from the menu, then skipped\n");
+    bd_wifi_setup();
+    run_ms(100);
+    check(sfield("wifi", "phase") == "hotspot" && field("wifi", "ap") == 1, "the setup network opens again");
+    bd_wifi_skip();
+    run_ms(100);
+    check(sfield("wifi", "phase") == "connected" && field("wifi", "ap") == 0, "skipping keeps the saved network");
+    drain_log();
 
     std::printf("%s (%d failure%s)\n", g_fail ? "FAILED" : "PASSED", g_fail, g_fail == 1 ? "" : "s");
     return g_fail ? 1 : 0;

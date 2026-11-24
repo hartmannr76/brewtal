@@ -24,6 +24,11 @@ lib/ui                  the C view. brew_model.c = UI state + rules (no LVGL, un
                         (layout_round.c, layout_square.c, sharing layout_kit.c) draw it behind
                         brew_layout.h; brew_ui.c = API glue.
                         Knows nothing about controller/drivers.
+lib/network             WiFi setup: WifiSetup (setup network -> phone -> connect -> reconnect), SetupPortal
+                        (the setup page's HTTP handler, no HTTP library) and the page itself
+                        (web/setup.html, embedded by tools/gen_setup_page.py into src/setup_page.cpp;
+                        check_rules.py fails the build if that copy is stale). Includes only std +
+                        interfaces. Runs on the display board.
 lib/fonts/<size>        generated fonts (tools/gen_fonts.sh); an env lists exactly one.
 lib/app                 UiBridge (brew_ui <-> UiPort), LvglPort, ESP display runtime. Never includes drivers.
                         Folders carry no brew_ prefix; each library.json names it brewdial-<...>, and
@@ -65,6 +70,12 @@ sim/harness sim/web     web test harness: real firmware on fake devices (sim_dev
 7. Commands are idempotent ("set X to Y", never "+0.5"), and the controller re-publishes `State`
    periodically, so lost or duplicated messages are harmless.
 8. Settings are persisted as typed key/value pairs (`SettingsStore::setI32/setStr`), never as struct blobs.
+
+## Generated files
+
+- `lib/fonts/<size>/src/*.c`: `tools/gen_fonts.sh <size>`.
+- `lib/network/src/setup_page.cpp`: edit `lib/network/web/setup.html`, then `python tools/gen_setup_page.py`.
+  The page is served on a network without internet: keep it self-contained (no external fonts or scripts).
 
 ## Verifying changes
 
