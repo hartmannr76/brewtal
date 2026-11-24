@@ -12,10 +12,12 @@ The screen, the link between display and controller (same chip, UART, ...), and 
 lib/
   drivers/
     interfaces/        what each kind of hardware can do: DisplayPanel, Touch, Encoder,
-                       DigitalIn/Out, I2cBus, ByteStream, TempSensor, SettingsStore, Link
+                       DigitalIn/Out, I2cBus, ByteStream, TempSensor, SettingsStore, Link,
+                       Wifi, HttpServer, WallClock
     chips/             portable chip drivers, one file per chip: pcf8574, mcp23008, cst8xx (touch)
     esp32/             ESP-IDF drivers, one file per part: i2c, gpio, pcnt_encoder, ledc_backlight,
-                       rgb_panel, qspi_panel, st7701, uart, nvs_settings, ds18b20, task
+                       rgb_panel, qspi_panel, st7701, uart, nvs_settings, ds18b20, wifi,
+                       http_server, udp_responder (the setup DNS), sntp_clock, task
   core/                portable logic: Controller, control laws, OutputGuard, KnobInput, codec,
                        COBS/CRC framing, LocalBus, remote proxies, FakePlant (demo fermenter)
   ui/                  the UI (C): brew_model (state + rules, no LVGL) drawn by a layout

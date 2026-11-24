@@ -1,4 +1,5 @@
 #include "brew/drivers/esp32/i2c.h"
+#include "brew/drivers/esp32/log.h"
 
 #include "driver/i2c_master.h"
 #include "esp_log.h"
@@ -27,7 +28,7 @@ bool EspI2cBus::begin()
     i2c_master_bus_handle_t h = nullptr;
     const esp_err_t err = i2c_new_master_bus(&bc, &h);
     if(err != ESP_OK) {
-        ESP_LOGE(TAG, "i2c_new_master_bus: %s", esp_err_to_name(err));
+        BREW_LOGE(TAG, "i2c_new_master_bus: %s", esp_err_to_name(err));
         return false;
     }
     bus_ = h;
@@ -93,7 +94,7 @@ void EspI2cBus::scan()
     int o = std::snprintf(line, sizeof(line), "I2C%d scan:", cfg_.port);
     for(uint8_t a = 0x08; a < 0x78; a++)
         if(probe(a) && o < static_cast<int>(sizeof(line)) - 6) o += std::snprintf(line + o, sizeof(line) - o, " 0x%02X", a);
-    ESP_LOGI(TAG, "%s", line);
+    BREW_LOGI(TAG, "%s", line);
 }
 
 }  // namespace brew::drivers

@@ -11,6 +11,14 @@
 #include <Arduino.h>
 
 #include "brew/app/runtime.h"
+#include "brew/drivers/esp32/http_server.h"
+#include "brew/drivers/esp32/sntp_clock.h"
+#include "brew/drivers/esp32/udp_responder.h"
+#include "brew/drivers/esp32/wifi.h"
+#include "brew/network/captive_dns.h"
+#include "esp_log.h"
+#include "brew/network/setup_portal.h"
+#include "brew/network/wifi_setup.h"
 #include "brew/controller.h"
 #include "brew/drivers/esp32/i2c.h"
 #include "brew/drivers/esp32/lcd_init.h"
@@ -65,6 +73,29 @@ HysteresisLaw law(ChamberDefaults::kHeatDiffF * 5.0f / 9.0f, ChamberDefaults::kC
 OutputGuard guard(&plant.heat(), &plant.cool(), ChamberDefaults::guard());
 Controller controller(bus, plant, law, guard, &settings, Controller::Config{});
 
+/* ---------------- WiFi (setup page, internet time) ---------------- */
+EspWifi wifi;
+NvsSettingsStore wifiSettings("brew_wifi");   // the display's own settings namespace
+net::WifiSetup wifiSetup(wifi, &wifiSettings, net::WifiSetup::Config{});
+net::SetupPortal portal(wifiSetup);
+EspHttpServer http;
+/* The setup network's DNS: every name is the device, so phones find the setup page. */
+size_t answerDns(void *, const uint8_t * in, size_t n, const uint8_t src[4], uint8_t * out, size_t cap)
+{
+    static const uint8_t kIp[4] = { 192, 168, 4, 1 };
+    static int logged = 0;
+    net::DnsQuestion q;
+    const size_t len = net::captiveDnsAnswer(in, n, src, kIp, 30, out, cap, &q);
+    if(q.name[0] && logged < 40) {   // the phone's internet checks, for the serial log
+        logged++;
+        ESP_LOGI("brew.dns", "%u.%u.%u.%u asked for %s (type %d)%s", src[0], src[1], src[2], src[3], q.name, q.type,
+                 len ? "" : ": ignored");
+    }
+    return len;
+}
+EspUdpResponder dns(53, answerDns, nullptr);
+EspSntpClock wallClock;
+
 }  // namespace
 
 void setup()
@@ -79,7 +110,13 @@ void setup()
     d.backlight = &backlight;
     d.touch = &touch;
     d.encoder = &encoder;
+    d.wifi = &wifiSetup;
+    d.portal = &portal;
+    d.http = &http;
+    wifiSettings.begin();
     app::startDisplay(d, bus);
+    dns.begin();     // after startDisplay: it brought up the network stack
+    wallClock.begin();
     Serial.println("BrewDial ready (Waveshare knob 1.8, UNVERIFIED port)");
 }
 

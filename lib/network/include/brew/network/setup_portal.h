@@ -14,6 +14,7 @@
  */
 #pragma once
 
+#include "brew/drivers/interfaces/http.h"
 #include "brew/network/wifi_setup.h"
 
 #include <cstddef>
@@ -21,20 +22,8 @@
 
 namespace brew::net {
 
-struct HttpRequest {
-    const char * method = "GET";
-    const char * path = "/";      // without the query string
-    const char * body = "";       // application/x-www-form-urlencoded for POSTs
-    size_t body_len = 0;
-};
-
-struct HttpResponse {
-    int status = 200;
-    const char * content_type = "text/plain";
-    const char * body = "";
-    size_t body_len = 0;
-    const char * location = nullptr;   // for redirects
-};
+using HttpRequest = hal::HttpRequest;
+using HttpResponse = hal::HttpResponse;
 
 class SetupPortal {
 public:
@@ -42,6 +31,8 @@ public:
     SetupPortal(WifiSetup & setup, const char * home = "http://192.168.4.1/") : setup_(setup), home_(home) {}
 
     void handle(const HttpRequest & req, uint32_t now_ms, HttpResponse & res);
+    /** Answers every request the server has waiting (call from the task that owns `setup`). */
+    void serve(hal::HttpServer & server, uint32_t now_ms);
 
     /** Decodes form field `name` from an x-www-form-urlencoded body. False if it isn't there. */
     static bool formField(const char * body, size_t len, const char * name, char * out, size_t n);

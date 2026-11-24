@@ -12,13 +12,17 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include <cstdio>
 #include <cstdlib>
+
+/* ESP_LOGI is compiled out in this framework build (error level only): print directly. */
+#define RT_LOG(lvl, fmt, ...) \
+    std::printf("[%7u][" lvl "][brewdial] " fmt "\n", static_cast<unsigned>(esp_timer_get_time() / 1000), ##__VA_ARGS__)
 
 namespace brew::app {
 
 namespace {
 
-const char * TAG = "brewdial";
 
 constexpr uint32_t kInputPeriodMs = 5;
 constexpr uint32_t kTouchEvery = 2;   // touch sampled every 10 ms
@@ -33,13 +37,16 @@ public:
     {
         switch(c.kind) {
             case Command::Kind::SetSetpoint:
-                ESP_LOGI(TAG, "setpoint[%d] = %.2f C (%.1f F)", static_cast<int>(c.mode), c.setpoint_c, c_to_f(c.setpoint_c));
+                RT_LOG("I", "setpoint[%d] = %.2f C (%.1f F)", static_cast<int>(c.mode), c.setpoint_c, c_to_f(c.setpoint_c));
                 break;
             case Command::Kind::SetMode:
-                ESP_LOGI(TAG, "mode=%d paused=%d", static_cast<int>(c.mode), c.paused);
+                RT_LOG("I", "mode=%d paused=%d", static_cast<int>(c.mode), c.paused);
                 break;
             case Command::Kind::SetUnits:
-                ESP_LOGI(TAG, "celsius=%d", c.celsius);
+                RT_LOG("I", "celsius=%d", c.celsius);
+                break;
+            case Command::Kind::StartDayCount:
+                RT_LOG("I", "day count restarted");
                 break;
             case Command::Kind::RequestSync:
                 break;
@@ -81,16 +88,43 @@ void input_task(void *)
     }
 }
 
+const char * phase_name(int p)
+{
+    static const char * const n[] = { "off", "setup network up", "phone joined", "connecting", "connected", "offline" };
+    return p >= 0 && p < 6 ? n[p] : "?";
+}
+
 void ui_task(void *)
 {
     DisplayCtx & d = *s_disp;
+    uint32_t beat = 0, loops = 0, presses = 0;
     for(;;) {
         InputEvent e;
         while(d.events.pop(e)) {
+            if(e.kind == InputEvent::Kind::Press) {
+                presses++;
+                RT_LOG("I", "knob press");
+            }
             if(e.kind == InputEvent::Kind::Rotate || e.kind == InputEvent::Kind::Press) d.bridge->handle(e);
             else d.lvgl.pushTouch(e);
         }
-        d.bridge->poll(millis32());
+        loops++;
+        if(millis32() - beat >= 5000) {   // heartbeat: if these stop, the UI task is stuck
+            beat = millis32();
+            if(d.cfg.wifi) {
+                const net::SetupStatus & w = d.cfg.wifi->status();
+                RT_LOG("I", "ui alive (%u loops, %u presses); wifi: %s, %d phone(s), ssid '%s'", static_cast<unsigned>(loops),
+                       static_cast<unsigned>(presses), phase_name(static_cast<int>(w.phase)), w.clients, w.ssid);
+            }
+            else {
+                RT_LOG("I", "ui alive (%u loops, %u presses)", static_cast<unsigned>(loops), static_cast<unsigned>(presses));
+            }
+            loops = 0;
+        }
+        const uint32_t now = millis32();
+        if(d.cfg.wifi) d.cfg.wifi->tick(now);
+        if(d.cfg.portal && d.cfg.http) d.cfg.portal->serve(*d.cfg.http, now);
+        d.bridge->poll(now);
         const uint32_t wait = lv_timer_handler();
         /* run at least every 5 ms so knob events are applied promptly */
         vTaskDelay(pdMS_TO_TICKS(wait > 5 ? 5 : (wait < 1 ? 1 : wait)));
@@ -101,7 +135,7 @@ uint32_t lv_tick_cb() { return millis32(); }
 
 [[noreturn]] void fatal(const char * msg)
 {
-    ESP_LOGE(TAG, "FATAL: %s", msg);
+    RT_LOG("E", "FATAL: %s", msg);
     for(;;) vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
@@ -114,9 +148,9 @@ void startDisplay(const DisplayConfig & cfg, UiPort & port)
     DisplayCtx & d = *s_disp;
     d.cfg = cfg;
 
-    if(!cfg.panel->begin()) ESP_LOGE(TAG, "display panel begin() failed");
-    if(cfg.touch && !cfg.touch->begin()) ESP_LOGW(TAG, "touch controller not found");
-    if(cfg.encoder && !cfg.encoder->begin()) ESP_LOGW(TAG, "encoder init failed");
+    if(!cfg.panel->begin()) RT_LOG("E", "display panel begin() failed");
+    if(cfg.touch && !cfg.touch->begin()) RT_LOG("W", "touch controller not found");
+    if(cfg.encoder && !cfg.encoder->begin()) RT_LOG("W", "encoder init failed");
 
     lv_init();
     lv_tick_set_cb(lv_tick_cb);
@@ -133,6 +167,11 @@ void startDisplay(const DisplayConfig & cfg, UiPort & port)
     d.port = new LoggingUiPort(port);
     d.bridge = new UiBridge(*d.port);
     d.bridge->create(lv_screen_active());
+    if(cfg.wifi) {
+        cfg.wifi->begin(millis32());   // starts the radio; opens setup if nothing is saved
+        d.bridge->attachWifi(cfg.wifi);
+        if(cfg.http && !cfg.http->begin()) RT_LOG("E", "setup page server failed to start");
+    }
 
     /* First frame before the backlight, so there is no flash of garbage. Give the controller
      * a moment to answer the sync request so the first frame already shows real values. */
@@ -153,8 +192,11 @@ void startDisplay(const DisplayConfig & cfg, UiPort & port)
 
     xTaskCreatePinnedToCore(input_task, "input", 4096, nullptr, 5, nullptr, 0);
     xTaskCreatePinnedToCore(ui_task, "ui", 16384, nullptr, 2, nullptr, 1);
-    ESP_LOGI(TAG, "display ready (%ux%u, PSRAM free %u KB)", cfg.panel->width(), cfg.panel->height(),
-             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024));
+    RT_LOG("I", "display ready (%ux%u, PSRAM free %u KB, internal free %u KB, largest block %u KB)",
+             cfg.panel->width(), cfg.panel->height(),
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024),
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
+             static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024));
 }
 
 }  // namespace brew::app

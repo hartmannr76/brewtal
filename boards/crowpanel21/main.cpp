@@ -12,6 +12,14 @@
 
 #include "brew/app/runtime.h"
 #include "brew/controller.h"
+#include "brew/drivers/esp32/http_server.h"
+#include "brew/drivers/esp32/sntp_clock.h"
+#include "brew/drivers/esp32/udp_responder.h"
+#include "brew/drivers/esp32/wifi.h"
+#include "brew/network/captive_dns.h"
+#include "esp_log.h"
+#include "brew/network/setup_portal.h"
+#include "brew/network/wifi_setup.h"
 #include "brew/drivers/esp32/ds18b20.h"
 #include "brew/drivers/esp32/i2c.h"
 #include "brew/drivers/esp32/ledc_backlight.h"
@@ -74,6 +82,29 @@ Cst8xxTouch touch(i2c, { .addr = TOUCH_ADDR, .width = 480, .height = 480, .x_off
                          .y_offset = TOUCH_Y_OFFSET, .swap_xy = false, .mirror_x = false,
                          .mirror_y = false, .nack_means_released = false });
 EspPcntEncoder encoder({ .pin_a = ENCODER_A_PIN, .pin_b = ENCODER_B_PIN });
+
+/* ---------------- WiFi (setup page, internet time) ---------------- */
+EspWifi wifi;
+NvsSettingsStore wifiSettings("brew_wifi");   // the display's own settings namespace
+net::WifiSetup wifiSetup(wifi, &wifiSettings, net::WifiSetup::Config{});
+net::SetupPortal portal(wifiSetup);
+EspHttpServer http;
+/* The setup network's DNS: every name is the device, so phones find the setup page. */
+size_t answerDns(void *, const uint8_t * in, size_t n, const uint8_t src[4], uint8_t * out, size_t cap)
+{
+    static const uint8_t kIp[4] = { 192, 168, 4, 1 };
+    static int logged = 0;
+    net::DnsQuestion q;
+    const size_t len = net::captiveDnsAnswer(in, n, src, kIp, 30, out, cap, &q);
+    if(q.name[0] && logged < 40) {   // the phone's internet checks, for the serial log
+        logged++;
+        ESP_LOGI("brew.dns", "%u.%u.%u.%u asked for %s (type %d)%s", src[0], src[1], src[2], src[3], q.name, q.type,
+                 len ? "" : ": ignored");
+    }
+    return len;
+}
+EspUdpResponder dns(53, answerDns, nullptr);
+EspSntpClock wallClock;
 
 #if !BREW_ROLE_DISPLAY
 /* ---------------- controller side ---------------- */
@@ -166,7 +197,13 @@ void setup()
     d.knob.invert = ENCODER_INVERT;
     d.refresh_ms = REFRESH_MS;
     d.after_first_frame = lcdPowerOffAfterInit;
+    d.wifi = &wifiSetup;
+    d.portal = &portal;
+    d.http = &http;
+    wifiSettings.begin();
     app::startDisplay(d, uiPort);
+    dns.begin();     // after startDisplay: it brought up the network stack
+    wallClock.begin();
 
     Serial.println("BrewDial ready");
 }

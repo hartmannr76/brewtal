@@ -1,4 +1,5 @@
 #include "brew/drivers/esp32/qspi_panel.h"
+#include "brew/drivers/esp32/log.h"
 #include "brew/drivers/esp32/task.h"
 
 #include "driver/gpio.h"
@@ -56,7 +57,7 @@ bool EspQspiPanel::begin()
     const auto host = static_cast<spi_host_device_t>(cfg_.spi_host);
     esp_err_t err = spi_bus_initialize(host, &bc, SPI_DMA_CH_AUTO);
     if(err != ESP_OK) {
-        ESP_LOGE(TAG, "spi_bus_initialize: %s", esp_err_to_name(err));
+        BREW_LOGE(TAG, "spi_bus_initialize: %s", esp_err_to_name(err));
         return false;
     }
 
@@ -74,7 +75,7 @@ bool EspQspiPanel::begin()
     esp_lcd_panel_io_handle_t io = nullptr;
     err = esp_lcd_new_panel_io_spi(static_cast<esp_lcd_spi_bus_handle_t>(host), &ioc, &io);
     if(err != ESP_OK) {
-        ESP_LOGE(TAG, "esp_lcd_new_panel_io_spi: %s", esp_err_to_name(err));
+        BREW_LOGE(TAG, "esp_lcd_new_panel_io_spi: %s", esp_err_to_name(err));
         return false;
     }
     io_ = io;

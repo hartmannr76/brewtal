@@ -98,6 +98,16 @@ void SetupPortal::stateJson()
     put("]}");
 }
 
+void SetupPortal::serve(hal::HttpServer & server, uint32_t now)
+{
+    HttpRequest req;
+    while(server.pending(req)) {
+        HttpResponse res;
+        handle(req, now, res);
+        server.respond(res);
+    }
+}
+
 void SetupPortal::handle(const HttpRequest & req, uint32_t now, HttpResponse & res)
 {
     res = HttpResponse{};

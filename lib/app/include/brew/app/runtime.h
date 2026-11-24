@@ -16,7 +16,10 @@
 #include "brew/ports.h"
 #include "brew/drivers/interfaces/display.h"
 #include "brew/drivers/interfaces/input.h"
+#include "brew/drivers/interfaces/http.h"
 #include "brew/drivers/interfaces/io.h"
+#include "brew/network/setup_portal.h"
+#include "brew/network/wifi_setup.h"
 
 namespace brew::app {
 
@@ -31,6 +34,13 @@ struct DisplayConfig {
     uint32_t            refresh_ms = 16;      // LVGL refresh period
     /** Runs once after the first frame is on the panel, right after the backlight comes on. */
     void (*after_first_frame)() = nullptr;
+
+    /* The display's WiFi (optional). startDisplay() begins it (it opens setup when nothing is
+     * saved) and the setup page's server; the UI task then ticks it and answers the page, so
+     * WifiSetup is only ever touched from that one task. */
+    net::WifiSetup *   wifi = nullptr;
+    net::SetupPortal * portal = nullptr;
+    hal::HttpServer *  http = nullptr;
 };
 
 /** Sets up LVGL + brew_ui on `cfg.panel`, then starts the input and UI tasks. */

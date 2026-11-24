@@ -1,4 +1,5 @@
 #include "brew/drivers/esp32/rgb_panel.h"
+#include "brew/drivers/esp32/log.h"
 #include "brew/drivers/esp32/task.h"
 
 #include "driver/gpio.h"
@@ -112,7 +113,7 @@ bool EspRgbPanel::begin()
     esp_lcd_panel_handle_t p = nullptr;
     esp_err_t err = esp_lcd_new_rgb_panel(&pc, &p);
     if(err != ESP_OK) {
-        ESP_LOGE(TAG, "esp_lcd_new_rgb_panel: %s", esp_err_to_name(err));
+        BREW_LOGE(TAG, "esp_lcd_new_rgb_panel: %s", esp_err_to_name(err));
         return false;
     }
     esp_lcd_panel_reset(p);
@@ -131,7 +132,7 @@ bool EspRgbPanel::begin()
     }
     return true;
 #else
-    ESP_LOGE(TAG, "this chip has no RGB LCD peripheral");
+    BREW_LOGE(TAG, "this chip has no RGB LCD peripheral");
     return false;
 #endif
 }

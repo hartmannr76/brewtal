@@ -11,14 +11,16 @@ in the script on purpose.
 
 ```
 lib/drivers/interfaces  driver interfaces only (DisplayPanel, Touch, Encoder, DigitalIn/Out, I2cBus,
-                        ByteStream, TempSensor, SettingsStore, Link), namespace brew::hal, included as
+                        ByteStream, TempSensor, SettingsStore, Link, Wifi, HttpServer, WallClock),
+                        namespace brew::hal, included as
                         brew/drivers/interfaces/*.h. No implementations, no platform includes.
 lib/core                portable logic: Controller, ControlLaw, OutputGuard, History, KnobInput/TouchTracker,
                         codec, framing, LocalBus, remote proxies, FakePlant. Includes only std + interfaces.
 lib/drivers/chips       portable chip drivers on interface buses, one file per chip (pcf8574, mcp23008,
                         cst8xx). Host-testable.
 lib/drivers/esp32       ESP-IDF drivers, one file per peripheral or part (i2c, gpio, pcnt_encoder,
-                        ledc_backlight, rgb_panel, qspi_panel, st7701, uart, nvs_settings, ds18b20) + task.h
+                        ledc_backlight, rgb_panel, qspi_panel, st7701, uart, nvs_settings, ds18b20, wifi,
+                        http_server, udp_responder, sntp_clock) + task.h
                         (startPeriodic, delayMs). ESP-IDF APIs only: never Arduino APIs.
 lib/ui                  the C view. brew_model.c = UI state + rules (no LVGL, unit-tested); layouts
                         (layout_round.c, layout_square.c, sharing layout_kit.c) draw it behind
