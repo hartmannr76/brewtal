@@ -37,6 +37,8 @@ static void cb_profile(brew_profile_t p, void * u) { UiBridge::onProfileThunk(st
 static void cb_step(int i, float t, int r, int h, void * u) { UiBridge::onStepThunk(i, t, r, h, u); }
 static void cb_step_count(int n, void * u) { UiBridge::onStepCountThunk(n, u); }
 static void cb_bf_check(void * u) { UiBridge::onBfCheckThunk(u); }
+static void cb_bf_pick(int i, void * u) { UiBridge::onBfPickThunk(i, u); }
+static void cb_bf_run(void * u) { UiBridge::onBfRunThunk(u); }
 }
 
 void UiBridge::create(lv_obj_t * screen, const brew_layout * layout)
@@ -54,6 +56,8 @@ void UiBridge::create(lv_obj_t * screen, const brew_layout * layout)
     cbs.on_step = cb_step;
     cbs.on_step_count = cb_step_count;
     cbs.on_bf_check = cb_bf_check;
+    cbs.on_bf_pick = cb_bf_pick;
+    cbs.on_bf_run = cb_bf_run;
     cbs.user = this;
     brew_ui_create_with_layout(screen, &cbs, layout);
     port_.send(Command::requestSync());
@@ -145,6 +149,30 @@ void UiBridge::onBfCheckThunk(void * user)
     if(self->bf_) self->bf_->checkNow(self->now_);
 }
 
+void UiBridge::onBfPickThunk(int i, void * user)
+{
+    auto * self = static_cast<UiBridge *>(user);
+    if(self->bf_) self->bf_->fetchBatch(i, self->now_);
+}
+
+void UiBridge::onBfRunThunk(void * user) { static_cast<UiBridge *>(user)->importPreview(); }
+
+/* The previewed Brewfather batch into the schedule: its steps, how many, then SetBatch, which
+ * starts it as of the batch's fermentation start (the controller does the profile switch). */
+void UiBridge::importPreview()
+{
+    if(!bf_) return;
+    const net::BfPreview & p = bf_->status().preview;
+    if(p.state != net::BfPreview::State::Ready || p.nsteps < 1) return;
+    for(int i = 0; i < p.nsteps; i++)
+        port_.send(Command::setStep(static_cast<uint8_t>(i), p.steps[i].temp_c, p.steps[i].ramp_h, p.steps[i].hold_h));
+    port_.send(Command::setStepCount(static_cast<uint8_t>(p.nsteps)));
+    int64_t start_s = p.start_unix_ms / 1000;
+    if(start_s <= 0 && clock_ && clock_->valid()) start_s = clock_->unixSeconds();   // no start date: now
+    port_.send(Command::setBatch(static_cast<uint32_t>(start_s > 0 ? start_s : 0), p.name));
+    bf_->imported();
+}
+
 void UiBridge::onStepCountThunk(int n, void * user)
 {
     static_cast<UiBridge *>(user)->port_.send(Command::setStepCount(static_cast<uint8_t>(n)));
@@ -185,9 +213,47 @@ void UiBridge::tickBrewfather()
     u.batch = s.batch;
     const int64_t age = bf_->lastLogAgeS();
     u.last_log_min = age < 0 ? -1 : static_cast<int>(age / 60);
-    if(bf_pushed_ && u.account == bf_shown_.account && u.logging == bf_shown_.logging && u.attached == bf_shown_.attached &&
-       u.last_log_min == bf_shown_.last_log_min && std::strcmp(s.batch, bf_batch_shown_) == 0)
+    u.nbatches = s.nbatches;
+    for(int i = 0; i < s.nbatches && i < BREW_BF_BATCHES_MAX; i++) u.batches[i] = s.batches[i].label;
+    const net::BfPreview & p = s.preview;
+    switch(p.state) {
+        case net::BfPreview::State::None:    u.preview = BREW_BF_PREVIEW_NONE; break;
+        case net::BfPreview::State::Loading: u.preview = BREW_BF_PREVIEW_LOADING; break;
+        case net::BfPreview::State::Ready:   u.preview = BREW_BF_PREVIEW_READY; break;
+        case net::BfPreview::State::Failed:  u.preview = BREW_BF_PREVIEW_FAILED; break;
+    }
+    u.preview_label = p.label;
+    u.preview_total = p.total_steps;
+    u.preview_n = p.nsteps < BREW_BF_STEPS_MAX ? p.nsteps : BREW_BF_STEPS_MAX;
+    for(int i = 0; i < u.preview_n; i++) {
+        u.preview_steps[i].type = p.steps[i].type;
+        u.preview_steps[i].temp_f = std::round(c_to_f(p.steps[i].temp_c) * 10.0f) / 10.0f;
+        u.preview_steps[i].ramp_h = p.steps[i].ramp_h;
+        u.preview_steps[i].hold_h = p.steps[i].hold_h;
+    }
+    /* where today falls: days since the batch's fermentation start, and which step runs now */
+    u.today_day = -1;
+    u.today_step = -1;
+    if(p.start_unix_ms > 0 && unix_ms > 0) {
+        const int64_t el = (unix_ms - p.start_unix_ms) / 1000;
+        if(el >= 0) {
+            u.today_day = static_cast<int>(el / 86400) + 1;
+            int64_t t = el;
+            for(int i = 0; i < p.nsteps; i++) {
+                const int64_t len = (static_cast<int64_t>(p.steps[i].ramp_h) + p.steps[i].hold_h) * 3600;
+                if(t < len) {
+                    u.today_step = i;
+                    break;
+                }
+                t -= len;
+            }
+        }
+    }
+    if(bf_pushed_ && s.rev == bf_rev_shown_ && u.account == bf_shown_.account && u.logging == bf_shown_.logging &&
+       u.attached == bf_shown_.attached && u.last_log_min == bf_shown_.last_log_min && u.today_day == bf_shown_.today_day &&
+       u.today_step == bf_shown_.today_step && std::strcmp(s.batch, bf_batch_shown_) == 0)
         return;
+    bf_rev_shown_ = s.rev;
     bf_shown_ = u;
     std::snprintf(bf_batch_shown_, sizeof(bf_batch_shown_), "%s", s.batch);
     bf_pushed_ = true;

@@ -56,6 +56,8 @@ typedef enum {
     BREW_LIST_SCHEDULE,    /* the steps, Add step, Use / Stop */
     BREW_LIST_STEP,        /* one step: temperature, ramp, hold, Remove */
     BREW_LIST_BF_ACCOUNT,  /* Settings › Brewfather: account, logging, Check now */
+    BREW_LIST_BF_PREVIEW,  /* a Brewfather batch's steps, Run this profile */
+    BREW_LIST_BF_NOTICE,   /* "Only the first 8 steps are imported", OK */
     BREW_LIST_N
 } brew_list_t;
 
@@ -163,6 +165,15 @@ typedef struct {
     bool bf_logging, bf_attached;
     char bf_batch[64];
     int bf_last_log_min;
+    int bf_nbatches;
+    char bf_batches[BREW_BF_BATCHES_MAX][48];
+    int bf_pick;              /* the batch opened in BREW_LIST_BF_PREVIEW */
+    brew_bf_preview_t bf_preview;
+    char bf_preview_label[48];
+    int bf_preview_total, bf_preview_n;
+    brew_step_t bf_preview_steps[BREW_STEPS_MAX];
+    char bf_preview_types[BREW_STEPS_MAX][16];
+    int bf_today_day, bf_today_step;
 
     /* controller settings (Settings › Heat / Cool) */
     float heat_diff_f;        /* a difference, F */

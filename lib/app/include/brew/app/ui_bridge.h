@@ -63,6 +63,8 @@ public:
     static void onStepThunk(int i, float temp_f, int ramp_h, int hold_h, void * user);
     static void onStepCountThunk(int n, void * user);
     static void onBfCheckThunk(void * user);
+    static void onBfPickThunk(int i, void * user);
+    static void onBfRunThunk(void * user);
 
 private:
     struct Shown {
@@ -104,6 +106,8 @@ private:
     bool bf_pushed_ = false;
     brew_bf_t bf_shown_ = {};
     char bf_batch_shown_[64] = { 0 };
+    uint32_t bf_rev_shown_ = 0;
+    void importPreview();
     bool clock_sent_ = false;
     uint32_t clock_sent_ms_ = 0;
 };

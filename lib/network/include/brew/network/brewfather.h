@@ -107,6 +107,10 @@ public:
     void checkNow(uint32_t now_ms);
     /** Fetch batch `i` of status().batches for import (status().preview shows how it goes). */
     void fetchBatch(int i, uint32_t now_ms);
+    /** The preview was imported: remember the batch (and its version) to keep it in sync. */
+    void imported();
+    /** The batch imported last ("" if none). */
+    const char * importedId() const { return imported_id_; }
 
     /** Brewfather's names, cut for the dial: the batch's name, or the recipe's when the batch is
      *  just "Batch", without Brewfather's "(Modified) " prefix; at most n-1 bytes, whole characters. */
@@ -146,6 +150,7 @@ private:
     char key_upper_[24] = { 0 };   // our device as Brewfather keys it: "BREWDIALCB50"
     Pending pending_ = Pending::None;
     int64_t unix_ms_ = 0;
+    char imported_id_[40] = { 0 };
     uint32_t check_at_ = 0, post_at_ = 0;
     bool fetch_due_ = false;
     bool reading_valid_ = false;

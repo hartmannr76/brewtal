@@ -409,6 +409,8 @@ private:
  *                                           device appears in it once it has posted (as if the
  *                                           user attached it) while `attached` is on.
  *                                           API key "wrong": 401.
+ *   GET  .../v2/batches/sim18               that batch whole: Primary 66 F 7 days, then up to 53 F
+ *                                           over a day, held 14 days; fermentation started 3 days ago.
  *   POST log.brewfather.net/stream          200, counted in `posts`, body kept in `last_post`.
  */
 class SimHttpClient final : public hal::HttpClient {
@@ -478,6 +480,17 @@ private:
             last_log_ms_ = clock_.valid() ? clock_.unixSeconds() * 1000 : 0;
             status_ = 200;
             resp_ = "{ \"result\": \"OK\" }";
+            return;
+        }
+        if(url_.find("api.brewfather.app/v2/batches/sim18") != std::string::npos) {
+            const int64_t now_ms = clock_.valid() ? clock_.unixSeconds() * 1000 : 1795132800000LL;
+            const int64_t start = now_ms - 3LL * 86400000LL;
+            resp_ = "{\"_id\":\"sim18\",\"name\":\"Batch\",\"batchNo\":18,\"status\":\"Fermenting\","
+                    "\"fermentationStartDate\":" + std::to_string(start) + ",\"_timestamp_ms\":" + std::to_string(start) + ","
+                    "\"recipe\":{\"name\":\"(Modified) Pale Ale\",\"fermentation\":{\"name\":\"Ale\",\"steps\":["
+                    "{\"type\":\"Primary\",\"stepTemp\":18.888889,\"stepTime\":7,\"ramp\":null},"
+                    "{\"type\":\"Conditioning\",\"stepTemp\":11.666667,\"stepTime\":14,\"ramp\":1}]}}}";
+            status_ = 200;
             return;
         }
         if(url_.find("api.brewfather.app/v2/batches") != std::string::npos) {

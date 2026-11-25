@@ -60,6 +60,9 @@ public:
                 if(!clock_logged_) RT_LOG("I", "sending the controller the time (%lu)", static_cast<unsigned long>(static_cast<uint32_t>(c.value)));
                 clock_logged_ = true;
                 break;
+            case Command::Kind::SetBatch:
+                RT_LOG("I", "batch \"%s\", fermentation started at %lu", c.name, static_cast<unsigned long>(static_cast<uint32_t>(c.value)));
+                break;
             case Command::Kind::RequestSync:
                 break;
         }

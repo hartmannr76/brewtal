@@ -57,6 +57,10 @@ public:
                 if(!clock_logged_) h_.log("UI -> controller: internet time");
                 clock_logged_ = true;
                 break;
+            case Command::Kind::SetBatch:
+                h_.log("UI -> controller: batch \"%s\", started %ld h ago", c.name,
+                       static_cast<long>((h_.clock_.unixSeconds() - static_cast<uint32_t>(c.value)) / 3600));
+                break;
             case Command::Kind::StartDayCount:
                 h_.log("UI -> controller: day count starts over");
                 break;

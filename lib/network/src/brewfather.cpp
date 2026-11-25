@@ -11,6 +11,8 @@ namespace {
 constexpr const char * kKeyUser = "bf_user";
 constexpr const char * kKeyKey = "bf_key";
 constexpr const char * kKeyStream = "bf_stream";
+constexpr const char * kKeyBatch = "bf_batch";     // the imported batch's id
+constexpr const char * kKeyBatchMod = "bf_bmod";   // ...and its _timestamp_ms then (decimal text)
 
 /* Has `t` been reached? Unsigned millis: right across the 49-day wrap. */
 bool reached(uint32_t now, uint32_t t) { return static_cast<int32_t>(now - t) >= 0; }
@@ -72,6 +74,7 @@ void Brewfather::begin(const char * device, uint32_t now)
         if(!store_->getStr(kKeyUser, user_, sizeof(user_))) user_[0] = '\0';
         if(!store_->getStr(kKeyKey, key_, sizeof(key_))) key_[0] = '\0';
         if(!store_->getStr(kKeyStream, stream_, sizeof(stream_))) stream_[0] = '\0';
+        if(!store_->getStr(kKeyBatch, imported_id_, sizeof(imported_id_))) imported_id_[0] = '\0';
     }
     st_.user_set = user_[0] != '\0';
     st_.key_set = key_[0] != '\0';
@@ -140,6 +143,19 @@ void Brewfather::fetchBatch(int i, uint32_t now)
     p.state = BfPreview::State::Loading;
     fetch_due_ = true;
     st_.rev++;
+}
+
+void Brewfather::imported()
+{
+    const BfPreview & p = st_.preview;
+    if(p.state != BfPreview::State::Ready) return;
+    copy(imported_id_, sizeof(imported_id_), p.id);
+    if(!store_) return;
+    char mod[24];
+    std::snprintf(mod, sizeof(mod), "%lld", static_cast<long long>(p.modified_unix_ms));
+    store_->setStr(kKeyBatch, imported_id_);
+    store_->setStr(kKeyBatchMod, mod);
+    store_->commit();
 }
 
 void Brewfather::shortName(const char * batch_name, const char * recipe_name, char * out, size_t n)

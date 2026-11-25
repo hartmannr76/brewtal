@@ -57,12 +57,40 @@ typedef enum {
     BREW_BF_UNREACHABLE,
 } brew_bf_account_t;
 
+#define BREW_BF_BATCHES_MAX 8
+#define BREW_BF_STEPS_MAX 8   /* = BREW_STEPS_MAX, the schedule's size */
+
+typedef enum {
+    BREW_BF_PREVIEW_NONE = 0,
+    BREW_BF_PREVIEW_LOADING,
+    BREW_BF_PREVIEW_READY,
+    BREW_BF_PREVIEW_FAILED,
+} brew_bf_preview_t;
+
+/** A Brewfather fermentation step, ready to show. */
+typedef struct {
+    const char * type;     /* "Primary" */
+    float temp_f;
+    int ramp_h;            /* 0 = a jump */
+    int hold_h;
+} brew_bf_step_t;
+
 typedef struct {
     brew_bf_account_t account;
     bool logging;          /* a Custom Stream id is saved */
     bool attached;         /* readings land on a batch... */
     const char * batch;    /* ...this one: "#18 Pale Ale" */
     int last_log_min;      /* minutes since Brewfather last recorded a reading, -1 unknown */
+    /* import (Profile › Brewfather) */
+    int nbatches;
+    const char * batches[BREW_BF_BATCHES_MAX];   /* the Fermenting batches: "#18 Pale Ale" */
+    brew_bf_preview_t preview;   /* the batch picked from them */
+    const char * preview_label;
+    int preview_total;     /* steps in Brewfather (only the first BREW_BF_STEPS_MAX are imported) */
+    int preview_n;
+    brew_bf_step_t preview_steps[BREW_BF_STEPS_MAX];
+    int today_day;         /* the batch's day today (1 = its first), -1: no start date */
+    int today_step;        /* the step running today (0-based), -1: none (not started / past the last) */
 } brew_bf_t;
 
 /** Controller settings the user can change from Settings › Heat / Cool. */
@@ -126,8 +154,12 @@ typedef struct {
     void (*on_step)(int i, float temp_f, int ramp_h, int hold_h, void * user);
     /** User added or removed a step: the schedule now has `n`. */
     void (*on_step_count)(int n, void * user);
-    /** User picked Check now in Settings › Brewfather. */
+    /** User picked Check now in Settings › Brewfather (or Refresh in Profile › Brewfather). */
     void (*on_bf_check)(void * user);
+    /** User picked Fermenting batch `i` in Profile › Brewfather: fetch it for a preview. */
+    void (*on_bf_pick)(int i, void * user);
+    /** User picked Run this profile: import the previewed batch into the schedule. */
+    void (*on_bf_run)(void * user);
     void * user;
 } brew_ui_cbs_t;
 

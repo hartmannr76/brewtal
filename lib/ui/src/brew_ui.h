@@ -71,7 +71,7 @@ void brew_ui_set_history(const float * temps_f, int n, int ms_per_sample);
 void brew_ui_push_history(float temp_f);
 /** The display's WiFi status (strings are copied). Starting setup brings up its screens. */
 void brew_ui_set_wifi(const brew_wifi_t * wifi);
-/** Brewfather's state for Settings › Brewfather. */
+/** Brewfather's state: Settings › Brewfather, and Profile › Brewfather's batches and preview. */
 void brew_ui_set_brewfather(const brew_bf_t * bf);
 /** The controller's heat/cool settings: differences and temperatures in F, delays in seconds. */
 void brew_ui_set_schedule(const brew_schedule_t * s);

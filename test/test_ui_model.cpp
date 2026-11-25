@@ -11,6 +11,7 @@ namespace {
 struct Calls {
     int setpoints = 0, modes = 0, units = 0, day_resets = 0, wifi_setups = 0, wifi_cancels = 0, wifi_forgets = 0, tunings = 0;
     int profiles = 0, steps = 0, counts = 0, last_count = 0, last_step = -1;
+    int bf_checks = 0, bf_picks = 0, bf_runs = 0, bf_pick = -1;
     brew_profile_t profile = BREW_PROFILE_CONSTANT;
     brew_step_t step = {};
     brew_tuning_t tuning = BREW_TUNE_N;
@@ -42,6 +43,12 @@ brew_ui_cbs_t cbs_for(Calls & c)
         k.celsius = c;
     };
     cbs.on_reset_day = [](void * u) { static_cast<Calls *>(u)->day_resets++; };
+    cbs.on_bf_check = [](void * u) { static_cast<Calls *>(u)->bf_checks++; };
+    cbs.on_bf_pick = [](int i, void * u) {
+        static_cast<Calls *>(u)->bf_picks++;
+        static_cast<Calls *>(u)->bf_pick = i;
+    };
+    cbs.on_bf_run = [](void * u) { static_cast<Calls *>(u)->bf_runs++; };
     cbs.on_wifi_setup = [](void * u) { static_cast<Calls *>(u)->wifi_setups++; };
     cbs.on_wifi_cancel = [](void * u) { static_cast<Calls *>(u)->wifi_cancels++; };
     cbs.on_wifi_forget = [](void * u) { static_cast<Calls *>(u)->wifi_forgets++; };
@@ -587,7 +594,7 @@ TEST(ui_model_heat_and_cool_editors_save_through_the_callback)
     CHECK_NEAR(m.crash_default_f, 35.6, 0.01);
 }
 
-TEST(ui_model_profile_list_and_brewfather_stub)
+TEST(ui_model_profile_list_and_brewfather_import)
 {
     Calls c;
     brew_model_t m;
@@ -615,9 +622,83 @@ TEST(ui_model_profile_list_and_brewfather_stub)
     CHECK(std::string(brew_model_list_title(&m)) == "BREWFATHER");
     char note[64];
     brew_model_list_note(&m, note, sizeof(note));
-    CHECK(std::string(note) == "Coming soon. Needs WiFi.");
+    CHECK(std::string(note) == "Set up in Settings \xC2\xBB Brewfather");
+    CHECK_EQ(brew_model_list_count(&m), 1);      // just Previous
     brew_model_press(&m);                        // Previous
     CHECK(m.list == BREW_LIST_PROFILE && m.list_idx == 2);
+
+    /* connected, two Fermenting batches */
+    brew_bf_t bf = {};
+    bf.account = BREW_BF_CONNECTED;
+    bf.last_log_min = -1;
+    bf.nbatches = 2;
+    bf.batches[0] = "#18 Pale Ale";
+    bf.batches[1] = "#19 Lager";
+    bf.today_day = bf.today_step = -1;
+    brew_model_set_brewfather(&m, &bf);
+    CHECK(row(m, 2) == "Brewfather = 2 batches");
+    brew_model_press(&m);
+    CHECK(row(m, 0) == "#18 Pale Ale" && row(m, 1) == "#19 Lager" && row(m, 2) == "Refresh");
+    brew_model_list_note(&m, note, sizeof(note));
+    CHECK(std::string(note) == "Fermenting in Brewfather");
+    go(m, "Refresh");
+    brew_model_press(&m);
+    CHECK_EQ(c.bf_checks, 1);
+
+    /* pick one: loading (never the last batch's steps), then its preview */
+    go(m, "#19 Lager");
+    brew_model_press(&m);
+    CHECK(c.bf_picks == 1 && c.bf_pick == 1);
+    CHECK(m.list == BREW_LIST_BF_PREVIEW);
+    brew_model_list_note(&m, note, sizeof(note));
+    CHECK(std::string(note) == "Loading #19 Lager...");
+    CHECK_EQ(brew_model_list_count(&m), 1);
+    bf.preview = BREW_BF_PREVIEW_READY;
+    bf.preview_label = "#19 Lager";
+    bf.preview_total = 2;
+    bf.preview_n = 2;
+    bf.preview_steps[0] = { "Primary", 50.0f, 0, 14 * 24 };
+    bf.preview_steps[1] = { "Conditioning", 34.0f, 48, 21 * 24 };
+    bf.today_day = 3;
+    bf.today_step = 0;
+    brew_model_set_brewfather(&m, &bf);
+    CHECK(row(m, 0) == "1 \xC2\xB7 50.0\xC2\xB0" "F = 14 d");
+    CHECK(row(m, 1) == "2 \xC2\xB7 34.0\xC2\xB0" "F = ramp 2 d, 21 d");
+    brew_list_item_t st;
+    brew_model_list_item(&m, 0, &st);
+    CHECK(st.mark == BREW_MARK_ACTIVE);         // today's step
+    CHECK(row(m, 2) == "Run this profile");
+    brew_model_list_note(&m, note, sizeof(note));
+    CHECK(std::string(note) == "Day 3 today \xC2\xB7 step 1 of 2");
+    go(m, "Run this");
+    brew_model_press(&m);
+    CHECK_EQ(c.bf_runs, 1);
+    CHECK(m.view == BREW_VIEW_HOME);
+
+    /* more than 8 steps: the notice, and OK imports */
+    bf.preview_total = 11;
+    brew_model_set_brewfather(&m, &bf);
+    brew_model_press(&m);
+    go(m, "Settings");
+    brew_model_press(&m);
+    go(m, "Profile");
+    brew_model_press(&m);
+    go(m, "Brewfather");
+    brew_model_press(&m);
+    go(m, "#19 Lager");
+    brew_model_press(&m);
+    brew_model_set_brewfather(&m, &bf);
+    go(m, "Run this");
+    brew_model_press(&m);
+    CHECK(m.list == BREW_LIST_BF_NOTICE);
+    CHECK_EQ(c.bf_runs, 1);
+    brew_model_list_note(&m, note, sizeof(note));
+    CHECK(std::string(note) == "Only the first 8 steps are imported");
+    CHECK_EQ(brew_model_list_count(&m), 1);      // OK only
+    CHECK(row(m, 0) == "OK");
+    brew_model_press(&m);
+    CHECK_EQ(c.bf_runs, 2);
+    CHECK(m.view == BREW_VIEW_HOME);
 }
 
 TEST(ui_model_schedule_lists_editors_and_home_text)

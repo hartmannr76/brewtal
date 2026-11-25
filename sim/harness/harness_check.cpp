@@ -335,6 +335,26 @@ int main()
     check(bf.find("\"last_post_http\":200") != std::string::npos, "the post was accepted");
     drain_log();
 
+    std::printf("brewfather: import #18's profile with the knob (Menu > Settings > Profile > Brewfather)\n");
+    auto pick = [](int detents) {   // turn to a row, press it
+        if(detents) bd_turn(detents);
+        run_ms(400);
+        bd_click();
+        run_ms(500);
+    };
+    pick(0);          // home -> menu
+    pick(3);          // Settings
+    pick(4);          // Profile
+    pick(2);          // Brewfather
+    pick(0);          // #18 Pale Ale: fetched for a preview
+    run_ms(1500);
+    pick(2);          // Run this profile (after its two steps)
+    run_ms(1500);
+    check(sfield("state", "batch") == "Pale Ale", "the dial shows the batch: Pale Ale");
+    check(field("state", "day") == 4, "Day 4: fermentation started 3 days ago in Brewfather");
+    check(std::abs(f(field("state", "sp")) - 66.0) < 0.05, "Primary's 66 F is the target");
+    drain_log();
+
     std::printf("%s (%d failure%s)\n", g_fail ? "FAILED" : "PASSED", g_fail, g_fail == 1 ? "" : "s");
     return g_fail ? 1 : 0;
 }

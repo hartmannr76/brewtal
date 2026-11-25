@@ -28,7 +28,9 @@ void brew_model_init(brew_model_t * m, const brew_ui_cbs_t * cbs)
     m->cool_delay_s = 180;
     m->crash_default_f = 34.0f;
     m->sched.nsteps = 0;
-    m->bf_last_log_min = -1;   /* empty until the user builds one */
+    m->bf_last_log_min = -1;
+    m->bf_today_day = -1;
+    m->bf_today_step = -1;   /* empty until the user builds one */
 }
 
 void brew_model_free(brew_model_t * m)
@@ -217,7 +219,7 @@ float brew_model_hist_val(const brew_model_t * m, int i) { return i < m->hist_n 
 enum {
     ACT_NONE, ACT_FERMENT, ACT_CRASH, ACT_PAUSE, ACT_OPEN, ACT_BACK, ACT_UNITS, ACT_WIFI_SETUP, ACT_WIFI_FORGET,
     ACT_EDIT, ACT_CONSTANT, ACT_RESET_DAY, ACT_STEP, ACT_ADD_STEP, ACT_USE_SCHEDULE, ACT_STOP_SCHEDULE,
-    ACT_REMOVE_STEP, ACT_BF_CHECK,
+    ACT_REMOVE_STEP, ACT_BF_CHECK, ACT_BF_PICK, ACT_BF_RUN, ACT_BF_RUN_OK,
 };
 
 static void fmt_temp_unit(const brew_model_t * m, char * buf, size_t n, float f)
@@ -281,6 +283,34 @@ static int build(const brew_model_t * m, brew_list_t l, brew_list_item_t * it)
             x = add(it, &n, "Brewfather", BREW_IC_BEER, ACT_OPEN, BREW_LIST_BF_ACCOUNT);
             snprintf(x->value, sizeof(x->value), "%s", bf_account_short(m->bf_account));
             break;
+        case BREW_LIST_BREWFATHER:
+            if(m->bf_account == BREW_BF_NOT_SET_UP) break;
+            for(int i = 0; i < m->bf_nbatches; i++) add(it, &n, m->bf_batches[i], BREW_IC_BEER, ACT_BF_PICK, (uint8_t)i);
+            add(it, &n, "Refresh", BREW_IC_NONE, ACT_BF_CHECK, 0);
+            break;
+        case BREW_LIST_BF_PREVIEW:
+            if(m->bf_preview != BREW_BF_PREVIEW_READY) break;
+            for(int i = 0; i < m->bf_preview_n; i++) {   /* as the Schedule list shows steps: "2 · 53.0°F  ramp 1 d, 14 d" */
+                const brew_step_t * st = &m->bf_preview_steps[i];
+                char lbl[32], h[16], r[16];
+                snprintf(lbl, sizeof(lbl), "%d \xC2\xB7 ", i + 1);
+                fmt_temp_unit(m, lbl + strlen(lbl), sizeof(lbl) - strlen(lbl), st->temp_f);
+                x = add(it, &n, lbl, BREW_IC_NONE, ACT_NONE, 0);
+                x->mark = i == m->bf_today_step ? BREW_MARK_ACTIVE : BREW_MARK_NONE;
+                fmt_dur(h, sizeof(h), st->hold_h);
+                if(st->ramp_h > 0) {
+                    fmt_dur(r, sizeof(r), st->ramp_h);
+                    snprintf(x->value, sizeof(x->value), "ramp %s, %s", r, h);
+                }
+                else {
+                    snprintf(x->value, sizeof(x->value), "%s", h);
+                }
+            }
+            add(it, &n, "Run this profile", BREW_IC_PLAY, ACT_BF_RUN, 0);
+            break;
+        case BREW_LIST_BF_NOTICE:
+            add(it, &n, "OK", BREW_IC_NONE, ACT_BF_RUN_OK, 0);
+            return n;   /* no Previous: OK is the only way on */
         case BREW_LIST_BF_ACCOUNT:
             x = add(it, &n, "Account", BREW_IC_NONE, ACT_NONE, 0);
             snprintf(x->value, sizeof(x->value), "%s", bf_account_short(m->bf_account));
@@ -327,7 +357,9 @@ static int build(const brew_model_t * m, brew_list_t l, brew_list_item_t * it)
             x->mark = m->sched.profile == BREW_PROFILE_CONSTANT ? BREW_MARK_CHOSEN : BREW_MARK_NONE;
             x = add(it, &n, "Schedule", BREW_IC_NONE, ACT_OPEN, BREW_LIST_SCHEDULE);
             x->mark = m->sched.profile == BREW_PROFILE_SCHEDULE ? BREW_MARK_CHOSEN : BREW_MARK_NONE;
-            add(it, &n, "Brewfather", BREW_IC_NONE, ACT_OPEN, BREW_LIST_BREWFATHER);
+            x = add(it, &n, "Brewfather", BREW_IC_NONE, ACT_OPEN, BREW_LIST_BREWFATHER);
+            if(m->bf_account == BREW_BF_CONNECTED && m->bf_nbatches > 0)
+                snprintf(x->value, sizeof(x->value), "%d batch%s", m->bf_nbatches, m->bf_nbatches == 1 ? "" : "es");
             x = add(it, &n, "Restart day count", BREW_IC_CALENDAR, ACT_RESET_DAY, 0);
             snprintf(x->value, sizeof(x->value), "Day %d", m->day);
             break;
@@ -366,7 +398,6 @@ static int build(const brew_model_t * m, brew_list_t l, brew_list_item_t * it)
             add(it, &n, "Remove step", BREW_IC_NONE, ACT_REMOVE_STEP, 0);
             break;
         }
-        case BREW_LIST_BREWFATHER:
         case BREW_LIST_N:
             break;
     }
@@ -387,6 +418,8 @@ static void parent(const brew_model_t * m, brew_list_t l, brew_list_t * pl, int 
         case BREW_LIST_PROFILE:    *pl = BREW_LIST_SETTINGS; *pi = 4; break;
         case BREW_LIST_BREWFATHER: *pl = BREW_LIST_PROFILE; *pi = 2; break;
         case BREW_LIST_BF_ACCOUNT: *pl = BREW_LIST_SETTINGS; *pi = 5; break;
+        case BREW_LIST_BF_PREVIEW: *pl = BREW_LIST_BREWFATHER; *pi = m->bf_pick; break;
+        case BREW_LIST_BF_NOTICE:  *pl = BREW_LIST_BF_PREVIEW; *pi = 0; break;
         default:                   *pl = BREW_LIST_N; *pi = 0; break;   /* home */
     }
 }
@@ -411,7 +444,7 @@ void brew_model_list_item(const brew_model_t * m, int i, brew_list_item_t * out)
 const char * brew_model_list_title(const brew_model_t * m)
 {
     static const char * const t[BREW_LIST_N] = { "", "SETTINGS", "WIFI", "HEAT", "COOL", "PROFILE", "BREWFATHER", "SCHEDULE", "",
-                                                 "BREWFATHER" };
+                                                 "BREWFATHER", "IMPORT", "" };
     static char step[16];   /* the UI runs in one task */
     if(m->list == BREW_LIST_STEP) {
         snprintf(step, sizeof(step), "STEP %d", m->step_sel + 1);
@@ -433,7 +466,21 @@ void brew_model_list_note(const brew_model_t * m, char * buf, size_t n)
                 default:                  snprintf(buf, n, "Setting up"); break;
             }
             break;
-        case BREW_LIST_BREWFATHER: snprintf(buf, n, "Coming soon. Needs WiFi."); break;
+        case BREW_LIST_BREWFATHER:
+            if(m->bf_account == BREW_BF_NOT_SET_UP) snprintf(buf, n, "Set up in Settings \xC2\xBB Brewfather");
+            else if(m->bf_nbatches > 0) snprintf(buf, n, "Fermenting in Brewfather");
+            else if(m->bf_account == BREW_BF_CONNECTED) snprintf(buf, n, "No Fermenting batches in Brewfather");
+            else if(m->bf_account == BREW_BF_CHECKING) snprintf(buf, n, "Checking Brewfather...");
+            else snprintf(buf, n, "Can't reach Brewfather");
+            break;
+        case BREW_LIST_BF_PREVIEW:
+            if(m->bf_preview == BREW_BF_PREVIEW_LOADING) snprintf(buf, n, "Loading %s...", m->bf_preview_label);
+            else if(m->bf_preview != BREW_BF_PREVIEW_READY) snprintf(buf, n, "Couldn't load this batch");
+            else if(m->bf_today_day < 1) snprintf(buf, n, "%s \xC2\xB7 starts when you run it", m->bf_preview_label);
+            else if(m->bf_today_step >= 0) snprintf(buf, n, "Day %d today \xC2\xB7 step %d of %d", m->bf_today_day, m->bf_today_step + 1, m->bf_preview_n);
+            else snprintf(buf, n, "Day %d today \xC2\xB7 past the last step", m->bf_today_day);
+            break;
+        case BREW_LIST_BF_NOTICE: snprintf(buf, n, "Only the first %d steps are imported", BREW_STEPS_MAX); break;
         case BREW_LIST_BF_ACCOUNT:
             if(m->wifi_phase != BREW_WIFI_CONNECTED || !m->wifi_address[0]) snprintf(buf, n, "Needs WiFi");
             else snprintf(buf, n, "Set up on your phone:\n%s/brewfather", m->wifi_address);
@@ -610,6 +657,9 @@ const char * brew_model_press_hint(const brew_model_t * m)
                 case ACT_WIFI_SETUP:  return "Set up";
                 case ACT_WIFI_FORGET: return "Forget";
                 case ACT_BF_CHECK:    return "Check";
+                case ACT_BF_PICK:     return "Open";
+                case ACT_BF_RUN:      return "Run";
+                case ACT_BF_RUN_OK:   return "OK";
                 case ACT_EDIT:        return "Edit";
                 case ACT_CONSTANT:    return "Use";
                 case ACT_STEP:        return "Edit";
@@ -724,6 +774,20 @@ uint32_t brew_model_set_brewfather(brew_model_t * m, const brew_bf_t * b)
     m->bf_attached = b->attached;
     snprintf(m->bf_batch, sizeof(m->bf_batch), "%s", b->batch ? b->batch : "");
     m->bf_last_log_min = b->last_log_min;
+    m->bf_nbatches = b->nbatches < 0 ? 0 : (b->nbatches > BREW_BF_BATCHES_MAX ? BREW_BF_BATCHES_MAX : b->nbatches);
+    for(int i = 0; i < m->bf_nbatches; i++) snprintf(m->bf_batches[i], sizeof(m->bf_batches[i]), "%s", b->batches[i] ? b->batches[i] : "");
+    m->bf_preview = b->preview;
+    snprintf(m->bf_preview_label, sizeof(m->bf_preview_label), "%s", b->preview_label ? b->preview_label : "");
+    m->bf_preview_total = b->preview_total;
+    m->bf_preview_n = b->preview_n < 0 ? 0 : (b->preview_n > BREW_STEPS_MAX ? BREW_STEPS_MAX : b->preview_n);
+    for(int i = 0; i < m->bf_preview_n; i++) {
+        m->bf_preview_steps[i].temp_f = b->preview_steps[i].temp_f;
+        m->bf_preview_steps[i].ramp_h = b->preview_steps[i].ramp_h;
+        m->bf_preview_steps[i].hold_h = b->preview_steps[i].hold_h;
+        snprintf(m->bf_preview_types[i], sizeof(m->bf_preview_types[i]), "%s", b->preview_steps[i].type ? b->preview_steps[i].type : "");
+    }
+    m->bf_today_day = b->today_day;
+    m->bf_today_step = b->today_step;
     return BREW_CH_REFRESH;
 }
 
@@ -992,6 +1056,18 @@ static uint32_t press_item(brew_model_t * m, const brew_list_item_t * it)
         case ACT_BF_CHECK:
             if(m->cbs.on_bf_check) m->cbs.on_bf_check(m->cbs.user);
             return BREW_CH_REFRESH;
+        case ACT_BF_PICK:
+            m->bf_pick = it->arg;
+            m->bf_preview = BREW_BF_PREVIEW_LOADING;   /* until it arrives: never the last batch's steps */
+            snprintf(m->bf_preview_label, sizeof(m->bf_preview_label), "%s", m->bf_batches[it->arg]);
+            if(m->cbs.on_bf_pick) m->cbs.on_bf_pick(it->arg, m->cbs.user);
+            return open_list(m, BREW_LIST_BF_PREVIEW, 0);
+        case ACT_BF_RUN:
+            if(m->bf_preview_total > BREW_STEPS_MAX) return open_list(m, BREW_LIST_BF_NOTICE, 0);
+            /* fall through */
+        case ACT_BF_RUN_OK:
+            if(m->cbs.on_bf_run) m->cbs.on_bf_run(m->cbs.user);
+            return set_view(m, BREW_VIEW_HOME);
         case ACT_EDIT:
             return open_edit(m, (brew_edit_t)it->arg);
         case ACT_CONSTANT:
