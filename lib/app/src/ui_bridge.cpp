@@ -3,6 +3,7 @@
 #include "brew_ui.h"
 
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 
 namespace brew::app {
@@ -35,6 +36,7 @@ static void cb_tuning(brew_tuning_t t, float v, void * u) { UiBridge::onTuningTh
 static void cb_profile(brew_profile_t p, void * u) { UiBridge::onProfileThunk(static_cast<int>(p), u); }
 static void cb_step(int i, float t, int r, int h, void * u) { UiBridge::onStepThunk(i, t, r, h, u); }
 static void cb_step_count(int n, void * u) { UiBridge::onStepCountThunk(n, u); }
+static void cb_bf_check(void * u) { UiBridge::onBfCheckThunk(u); }
 }
 
 void UiBridge::create(lv_obj_t * screen, const brew_layout * layout)
@@ -51,6 +53,7 @@ void UiBridge::create(lv_obj_t * screen, const brew_layout * layout)
     cbs.on_profile = cb_profile;
     cbs.on_step = cb_step;
     cbs.on_step_count = cb_step_count;
+    cbs.on_bf_check = cb_bf_check;
     cbs.user = this;
     brew_ui_create_with_layout(screen, &cbs, layout);
     port_.send(Command::requestSync());
@@ -136,6 +139,12 @@ void UiBridge::onStepThunk(int i, float temp_f, int ramp_h, int hold_h, void * u
                                                                static_cast<uint16_t>(hold_h)));
 }
 
+void UiBridge::onBfCheckThunk(void * user)
+{
+    auto * self = static_cast<UiBridge *>(user);
+    if(self->bf_) self->bf_->checkNow(self->now_);
+}
+
 void UiBridge::onStepCountThunk(int n, void * user)
 {
     static_cast<UiBridge *>(user)->port_.send(Command::setStepCount(static_cast<uint8_t>(n)));
@@ -153,6 +162,36 @@ void UiBridge::poll(uint32_t now_ms)
     if(port_.pollSettings(st)) apply(st);
     pushWifi();
     sendClock();
+    tickBrewfather();
+}
+
+void UiBridge::tickBrewfather()
+{
+    if(!bf_) return;
+    const bool online = wifi_ && wifi_->status().phase == net::SetupPhase::Connected;
+    const int64_t unix_ms = clock_ && clock_->valid() ? clock_->unixSeconds() * 1000 : 0;
+    bf_->tick(now_, online, unix_ms);
+    const net::BrewfatherStatus & s = bf_->status();
+    brew_bf_t u = {};
+    switch(s.account) {
+        case net::BfAccount::NotSetUp:    u.account = BREW_BF_NOT_SET_UP; break;
+        case net::BfAccount::Checking:    u.account = BREW_BF_CHECKING; break;
+        case net::BfAccount::Connected:   u.account = BREW_BF_CONNECTED; break;
+        case net::BfAccount::Rejected:    u.account = BREW_BF_REJECTED; break;
+        case net::BfAccount::Unreachable: u.account = BREW_BF_UNREACHABLE; break;
+    }
+    u.logging = s.stream_set;
+    u.attached = s.attached;
+    u.batch = s.batch;
+    const int64_t age = bf_->lastLogAgeS();
+    u.last_log_min = age < 0 ? -1 : static_cast<int>(age / 60);
+    if(bf_pushed_ && u.account == bf_shown_.account && u.logging == bf_shown_.logging && u.attached == bf_shown_.attached &&
+       u.last_log_min == bf_shown_.last_log_min && std::strcmp(s.batch, bf_batch_shown_) == 0)
+        return;
+    bf_shown_ = u;
+    std::snprintf(bf_batch_shown_, sizeof(bf_batch_shown_), "%s", s.batch);
+    bf_pushed_ = true;
+    brew_ui_set_brewfather(&u);
 }
 
 void UiBridge::sendClock()
@@ -171,7 +210,8 @@ void UiBridge::pushWifi()
     const net::SetupStatus & w = wifi_->status();
     net::SetupStatus & v = wifi_shown_;
     if(wifi_pushed_ && w.phase == v.phase && w.error == v.error && std::strcmp(w.ssid, v.ssid) == 0 &&
-       std::strcmp(w.ap_ssid, v.ap_ssid) == 0 && std::strcmp(w.ap_password, v.ap_password) == 0)
+       std::strcmp(w.ap_ssid, v.ap_ssid) == 0 && std::strcmp(w.ap_password, v.ap_password) == 0 &&
+       std::strcmp(w.address, v.address) == 0)
         return;   // the countdown and phone count aren't shown: no redraw for them
     v = w;
     wifi_pushed_ = true;
@@ -193,6 +233,7 @@ void UiBridge::pushWifi()
     u.ssid = w.ssid;
     u.ap_ssid = w.ap_ssid;
     u.ap_password = w.ap_password;
+    u.address = w.address;
     brew_ui_set_wifi(&u);
 }
 
@@ -255,6 +296,10 @@ void UiBridge::apply(const State & s)
         v.mode = s.mode;
         v.paused = s.paused;
         brew_ui_set_mode(to_ui(s.mode), s.paused);
+    }
+    if(bf_) {   /* the latest reading, for the next 15-minute post */
+        const char * st = s.paused ? "off" : s.action == Action::Heating ? "heating" : s.action == Action::Cooling ? "cooling" : "idle";
+        bf_->setReading(s.temp_valid, s.temp_c, s.setpoint_c[static_cast<int>(s.mode)], st);
     }
     if(s.temp_valid) {
         const float tf = c_to_f(s.temp_c);

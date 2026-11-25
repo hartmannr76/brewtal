@@ -47,14 +47,15 @@ typedef enum { BREW_VIEW_HOME, BREW_VIEW_LIST, BREW_VIEW_EDIT, BREW_VIEW_WIFI } 
 
 typedef enum {
     BREW_LIST_MENU,        /* Ferment, Cold crash, Pause, Settings, Previous */
-    BREW_LIST_SETTINGS,    /* Units, WiFi, Heat, Cool, Profile, Previous */
+    BREW_LIST_SETTINGS,    /* Units, WiFi, Heat, Cool, Profile, Brewfather, Previous */
     BREW_LIST_WIFI,
     BREW_LIST_HEAT,
     BREW_LIST_COOL,
     BREW_LIST_PROFILE,
-    BREW_LIST_BREWFATHER,  /* a stub for now */
+    BREW_LIST_BREWFATHER,  /* Profile › Brewfather (importing a profile): a stub for now */
     BREW_LIST_SCHEDULE,    /* the steps, Add step, Use / Stop */
     BREW_LIST_STEP,        /* one step: temperature, ramp, hold, Remove */
+    BREW_LIST_BF_ACCOUNT,  /* Settings › Brewfather: account, logging, Check now */
     BREW_LIST_N
 } brew_list_t;
 
@@ -155,6 +156,13 @@ typedef struct {
     char wifi_ssid[33];
     char wifi_ap_ssid[33];
     char wifi_ap_password[24];
+    char wifi_address[16];    /* this display on the joined network, for the phone page */
+
+    /* Brewfather (Settings › Brewfather) */
+    brew_bf_account_t bf_account;
+    bool bf_logging, bf_attached;
+    char bf_batch[64];
+    int bf_last_log_min;
 
     /* controller settings (Settings › Heat / Cool) */
     float heat_diff_f;        /* a difference, F */
@@ -208,6 +216,7 @@ uint32_t brew_model_push_history(brew_model_t * m, float temp_f);
 /** The WiFi status. Setup starting opens the WiFi view; setup ending closes it; a connection
  *  made from it shows "Connected" for BREW_WIFI_DONE_MS. */
 uint32_t brew_model_set_wifi(brew_model_t * m, const brew_wifi_t * w);
+uint32_t brew_model_set_brewfather(brew_model_t * m, const brew_bf_t * b);
 
 /* ---- input -> model ---- */
 /** Positive = clockwise / up / warmer. One call per detent or button press, or a sum. */

@@ -164,6 +164,8 @@ private:
     /* display side: WiFi */
     SimWifi wifi_{ ui_ms_ };
     SimWallClock clock_{ sim_ms_, wifi_ };
+    SimHttpClient http_client_{ ui_ms_, wifi_, clock_ };   // a fake Brewfather behind it
+    std::unique_ptr<net::Brewfather> brewfather_;
     std::unique_ptr<net::WifiSetup> wifi_setup_;
     std::unique_ptr<net::SetupPortal> portal_;
     net::SetupPhase last_wifi_phase_ = net::SetupPhase::Off;

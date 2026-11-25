@@ -312,6 +312,29 @@ int main()
     check(sfield("wifi", "phase") == "connected" && field("wifi", "ap") == 0, "skipping keeps the saved network");
     drain_log();
 
+    std::printf("brewfather: credentials from the page, account check, a post every 15 min, the batch found\n");
+    check(bd_http("GET", "/api/brewfather", "") == 200 && std::string(bd_http_body()).find("\"account\":\"not_set_up\"") != std::string::npos,
+          "not set up at first");
+    bd_http("POST", "/api/brewfather", "user=uid&key=wrong&stream=S1");
+    run_ms(2000);
+    bd_http("GET", "/api/brewfather", "");
+    check(std::string(bd_http_body()).find("\"account\":\"rejected\"") != std::string::npos, "a wrong key is refused");
+    bd_http("POST", "/api/brewfather", "key=secret");
+    run_ms(2000);
+    bd_http("GET", "/api/brewfather", "");
+    std::string bf = bd_http_body();
+    check(bf.find("\"account\":\"connected\"") != std::string::npos, "the right key connects");
+    check(bf.find("\"attached\":false") != std::string::npos, "nothing posted yet, so not on a batch");
+    check(bf.find("secret") == std::string::npos && bf.find("\"uid\"") == std::string::npos, "credentials never sent back");
+    run_ms(25000);        // the first post, 20 s after the credentials
+    run_ms(95000);        // and the check 90 s after it
+    bd_http("GET", "/api/brewfather", "");
+    bf = bd_http_body();
+    check(bf.find("\"attached\":true") != std::string::npos && bf.find("\"batch\":\"#18 Pale Ale\"") != std::string::npos,
+          "readings land on #18 Pale Ale");
+    check(bf.find("\"last_post_http\":200") != std::string::npos, "the post was accepted");
+    drain_log();
+
     std::printf("%s (%d failure%s)\n", g_fail ? "FAILED" : "PASSED", g_fail, g_fail == 1 ? "" : "s");
     return g_fail ? 1 : 0;
 }

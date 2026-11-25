@@ -45,7 +45,25 @@ typedef struct {
     const char * ssid;           /* the network joined, being tried, or saved */
     const char * ap_ssid;        /* the setup network ("BrewDial-4F2A")... */
     const char * ap_password;    /* ...and its password ("malt-7391") */
+    const char * address;        /* this display on the joined network ("192.168.1.129"), or "" */
 } brew_wifi_t;
+
+/** Brewfather, as Settings › Brewfather shows it (lib/network Brewfather's status). */
+typedef enum {
+    BREW_BF_NOT_SET_UP = 0,
+    BREW_BF_CHECKING,
+    BREW_BF_CONNECTED,
+    BREW_BF_REJECTED,      /* the user id / API key wasn't accepted */
+    BREW_BF_UNREACHABLE,
+} brew_bf_account_t;
+
+typedef struct {
+    brew_bf_account_t account;
+    bool logging;          /* a Custom Stream id is saved */
+    bool attached;         /* readings land on a batch... */
+    const char * batch;    /* ...this one: "#18 Pale Ale" */
+    int last_log_min;      /* minutes since Brewfather last recorded a reading, -1 unknown */
+} brew_bf_t;
 
 /** Controller settings the user can change from Settings › Heat / Cool. */
 typedef enum {
@@ -108,6 +126,8 @@ typedef struct {
     void (*on_step)(int i, float temp_f, int ramp_h, int hold_h, void * user);
     /** User added or removed a step: the schedule now has `n`. */
     void (*on_step_count)(int n, void * user);
+    /** User picked Check now in Settings › Brewfather. */
+    void (*on_bf_check)(void * user);
     void * user;
 } brew_ui_cbs_t;
 

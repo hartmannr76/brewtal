@@ -88,6 +88,7 @@ void brew_ui_set_history(const float * t, int n, int ms_per_sample)
 }
 void brew_ui_push_history(float f) { apply(brew_model_push_history(&S.m, f)); }
 void brew_ui_set_wifi(const brew_wifi_t * w) { if(w) apply(brew_model_set_wifi(&S.m, w)); }
+void brew_ui_set_brewfather(const brew_bf_t * b) { if(b) apply(brew_model_set_brewfather(&S.m, b)); }
 void brew_ui_set_schedule(const brew_schedule_t * s) { if(s) apply(brew_model_set_schedule(&S.m, s)); }
 void brew_ui_set_tuning(float heat_diff_f, float cool_diff_f, int heat_delay_s, int cool_delay_s, float crash_default_f)
 {

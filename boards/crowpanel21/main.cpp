@@ -12,10 +12,12 @@
 
 #include "brew/app/runtime.h"
 #include "brew/controller.h"
+#include "brew/drivers/esp32/http_client.h"
 #include "brew/drivers/esp32/http_server.h"
 #include "brew/drivers/esp32/sntp_clock.h"
 #include "brew/drivers/esp32/udp_responder.h"
 #include "brew/drivers/esp32/wifi.h"
+#include "brew/network/brewfather.h"
 #include "brew/network/captive_dns.h"
 #include "esp_log.h"
 #include "brew/network/setup_portal.h"
@@ -100,6 +102,8 @@ NvsSettingsStore wifiSettings("brew_wifi");   // the display's own settings name
 net::WifiSetup wifiSetup(wifi, &wifiSettings, net::WifiSetup::Config{});
 net::SetupPortal portal(wifiSetup);
 EspHttpServer http;
+EspHttpClient httpClient;   // Brewfather (TLS memory in PSRAM)
+net::Brewfather brewfather(httpClient, &wifiSettings);
 /* The setup network's DNS: every name is the device, so phones find the setup page. */
 size_t answerDns(void *, const uint8_t * in, size_t n, const uint8_t src[4], uint8_t * out, size_t cap)
 {
@@ -223,12 +227,14 @@ void setup()
     d.wifi = &wifiSetup;
     d.portal = &portal;
     d.http = &http;
+    d.brewfather = &brewfather;
     d.clock = &wallClock;
 #if BREW_BENCH
     d.ui_started = benchUiStarted;   // boards/bench/bench_hooks.cpp
     d.ui_loop = benchUiLoop;
 #endif
     wifiSettings.begin();
+    if(!httpClient.begin()) Serial.println("HTTP client failed to start (no Brewfather)");
     app::startDisplay(d, uiPort);
     dns.begin();     // after startDisplay: it brought up the network stack
     wallClock.begin();

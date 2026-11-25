@@ -163,6 +163,11 @@ void Harness::start(uint32_t ui_now)
     wifi_setup_->begin(ui_now);
     bridge_->attachWifi(wifi_setup_.get());
     bridge_->attachClock(&clock_);
+    /* Brewfather: not set up until the page (bd_http POST /api/brewfather) gives it credentials */
+    brewfather_ = std::make_unique<net::Brewfather>(http_client_, &settings_);
+    brewfather_->begin(wifi_setup_->status().ap_ssid, ui_now);
+    portal_->attachBrewfather(brewfather_.get());
+    bridge_->attachBrewfather(brewfather_.get());
     watchWifi();
 
     started_ = true;

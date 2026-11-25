@@ -27,7 +27,8 @@ void brew_model_init(brew_model_t * m, const brew_ui_cbs_t * cbs)
     m->heat_delay_s = 180;
     m->cool_delay_s = 180;
     m->crash_default_f = 34.0f;
-    m->sched.nsteps = 0;   /* empty until the user builds one */
+    m->sched.nsteps = 0;
+    m->bf_last_log_min = -1;   /* empty until the user builds one */
 }
 
 void brew_model_free(brew_model_t * m)
@@ -216,7 +217,7 @@ float brew_model_hist_val(const brew_model_t * m, int i) { return i < m->hist_n 
 enum {
     ACT_NONE, ACT_FERMENT, ACT_CRASH, ACT_PAUSE, ACT_OPEN, ACT_BACK, ACT_UNITS, ACT_WIFI_SETUP, ACT_WIFI_FORGET,
     ACT_EDIT, ACT_CONSTANT, ACT_RESET_DAY, ACT_STEP, ACT_ADD_STEP, ACT_USE_SCHEDULE, ACT_STOP_SCHEDULE,
-    ACT_REMOVE_STEP,
+    ACT_REMOVE_STEP, ACT_BF_CHECK,
 };
 
 static void fmt_temp_unit(const brew_model_t * m, char * buf, size_t n, float f)
@@ -227,6 +228,17 @@ static void fmt_temp_unit(const brew_model_t * m, char * buf, size_t n, float f)
 static void fmt_diff_unit(const brew_model_t * m, char * buf, size_t n, float d_f)
 {
     snprintf(buf, n, "%.1f%s", (double)(m->celsius ? d_f * 5.0f / 9.0f : d_f), brew_model_unit(m));
+}
+
+static const char * bf_account_short(brew_bf_account_t a)
+{
+    switch(a) {
+        case BREW_BF_CHECKING:    return "checking";
+        case BREW_BF_CONNECTED:   return "connected";
+        case BREW_BF_REJECTED:    return "key refused";
+        case BREW_BF_UNREACHABLE: return "offline";
+        default:                  return "not set up";
+    }
 }
 
 static brew_list_item_t * add(brew_list_item_t * it, int * n, const char * label, brew_icon_t icon, uint8_t act, uint8_t arg)
@@ -266,6 +278,26 @@ static int build(const brew_model_t * m, brew_list_t l, brew_list_item_t * it)
             add(it, &n, "Cool", BREW_IC_SNOWFLAKE, ACT_OPEN, BREW_LIST_COOL);
             x = add(it, &n, "Profile", BREW_IC_PROFILE, ACT_OPEN, BREW_LIST_PROFILE);
             snprintf(x->value, sizeof(x->value), "%s", m->sched.profile == BREW_PROFILE_SCHEDULE ? "Schedule" : "Constant");
+            x = add(it, &n, "Brewfather", BREW_IC_BEER, ACT_OPEN, BREW_LIST_BF_ACCOUNT);
+            snprintf(x->value, sizeof(x->value), "%s", bf_account_short(m->bf_account));
+            break;
+        case BREW_LIST_BF_ACCOUNT:
+            x = add(it, &n, "Account", BREW_IC_NONE, ACT_NONE, 0);
+            snprintf(x->value, sizeof(x->value), "%s", bf_account_short(m->bf_account));
+            x = add(it, &n, "Logging", BREW_IC_NONE, ACT_NONE, 0);
+            if(!m->bf_logging) snprintf(x->value, sizeof(x->value), "off");
+            else if(m->bf_attached) snprintf(x->value, sizeof(x->value), "%.18s%s", m->bf_batch, strlen(m->bf_batch) > 18 ? "..." : "");
+            else if(m->bf_account == BREW_BF_CONNECTED) snprintf(x->value, sizeof(x->value), "not attached");
+            else snprintf(x->value, sizeof(x->value), "on");
+            if(m->bf_last_log_min >= 0) {
+                x = add(it, &n, "Last reading", BREW_IC_NONE, ACT_NONE, 0);
+                const int mi = m->bf_last_log_min;
+                if(mi < 2) snprintf(x->value, sizeof(x->value), "just now");
+                else if(mi < 90) snprintf(x->value, sizeof(x->value), "%d min ago", mi);
+                else if(mi < 48 * 60) snprintf(x->value, sizeof(x->value), "%d h ago", (mi + 30) / 60);
+                else snprintf(x->value, sizeof(x->value), "%d days ago", (mi + 720) / 1440);
+            }
+            if(m->bf_account != BREW_BF_NOT_SET_UP) add(it, &n, "Check now", BREW_IC_NONE, ACT_BF_CHECK, 0);
             break;
         case BREW_LIST_WIFI:
             if(m->wifi_phase == BREW_WIFI_CONNECTED || m->wifi_phase == BREW_WIFI_OFFLINE) {
@@ -354,6 +386,7 @@ static void parent(const brew_model_t * m, brew_list_t l, brew_list_t * pl, int 
         case BREW_LIST_COOL:       *pl = BREW_LIST_SETTINGS; *pi = 3; break;
         case BREW_LIST_PROFILE:    *pl = BREW_LIST_SETTINGS; *pi = 4; break;
         case BREW_LIST_BREWFATHER: *pl = BREW_LIST_PROFILE; *pi = 2; break;
+        case BREW_LIST_BF_ACCOUNT: *pl = BREW_LIST_SETTINGS; *pi = 5; break;
         default:                   *pl = BREW_LIST_N; *pi = 0; break;   /* home */
     }
 }
@@ -377,7 +410,8 @@ void brew_model_list_item(const brew_model_t * m, int i, brew_list_item_t * out)
 
 const char * brew_model_list_title(const brew_model_t * m)
 {
-    static const char * const t[BREW_LIST_N] = { "", "SETTINGS", "WIFI", "HEAT", "COOL", "PROFILE", "BREWFATHER", "SCHEDULE", "" };
+    static const char * const t[BREW_LIST_N] = { "", "SETTINGS", "WIFI", "HEAT", "COOL", "PROFILE", "BREWFATHER", "SCHEDULE", "",
+                                                 "BREWFATHER" };
     static char step[16];   /* the UI runs in one task */
     if(m->list == BREW_LIST_STEP) {
         snprintf(step, sizeof(step), "STEP %d", m->step_sel + 1);
@@ -400,6 +434,10 @@ void brew_model_list_note(const brew_model_t * m, char * buf, size_t n)
             }
             break;
         case BREW_LIST_BREWFATHER: snprintf(buf, n, "Coming soon. Needs WiFi."); break;
+        case BREW_LIST_BF_ACCOUNT:
+            if(m->wifi_phase != BREW_WIFI_CONNECTED || !m->wifi_address[0]) snprintf(buf, n, "Needs WiFi");
+            else snprintf(buf, n, "Set up on your phone:\n%s/brewfather", m->wifi_address);
+            break;
         case BREW_LIST_SCHEDULE: {
             const brew_schedule_t * s = &m->sched;
             int h = 0;
@@ -571,6 +609,7 @@ const char * brew_model_press_hint(const brew_model_t * m)
                 case ACT_UNITS:       return "Switch";
                 case ACT_WIFI_SETUP:  return "Set up";
                 case ACT_WIFI_FORGET: return "Forget";
+                case ACT_BF_CHECK:    return "Check";
                 case ACT_EDIT:        return "Edit";
                 case ACT_CONSTANT:    return "Use";
                 case ACT_STEP:        return "Edit";
@@ -678,6 +717,16 @@ void brew_model_wifi_text(const brew_model_t * m, brew_wifi_text_t * t)
     }
 }
 
+uint32_t brew_model_set_brewfather(brew_model_t * m, const brew_bf_t * b)
+{
+    m->bf_account = b->account;
+    m->bf_logging = b->logging;
+    m->bf_attached = b->attached;
+    snprintf(m->bf_batch, sizeof(m->bf_batch), "%s", b->batch ? b->batch : "");
+    m->bf_last_log_min = b->last_log_min;
+    return BREW_CH_REFRESH;
+}
+
 uint32_t brew_model_set_wifi(brew_model_t * m, const brew_wifi_t * w)
 {
     const brew_wifi_phase_t was = m->wifi_phase;
@@ -687,6 +736,7 @@ uint32_t brew_model_set_wifi(brew_model_t * m, const brew_wifi_t * w)
     snprintf(m->wifi_ssid, sizeof(m->wifi_ssid), "%s", w->ssid ? w->ssid : "");
     snprintf(m->wifi_ap_ssid, sizeof(m->wifi_ap_ssid), "%s", w->ap_ssid ? w->ap_ssid : "");
     snprintf(m->wifi_ap_password, sizeof(m->wifi_ap_password), "%s", w->ap_password ? w->ap_password : "");
+    snprintf(m->wifi_address, sizeof(m->wifi_address), "%s", w->address ? w->address : "");
     const bool open = setup_phase(w->phase);
 
     uint32_t ch = BREW_CH_REFRESH;
@@ -939,6 +989,9 @@ static uint32_t press_item(brew_model_t * m, const brew_list_item_t * it)
         case ACT_WIFI_FORGET:
             if(m->cbs.on_wifi_forget) m->cbs.on_wifi_forget(m->cbs.user);
             return set_view(m, BREW_VIEW_HOME);
+        case ACT_BF_CHECK:
+            if(m->cbs.on_bf_check) m->cbs.on_bf_check(m->cbs.user);
+            return BREW_CH_REFRESH;
         case ACT_EDIT:
             return open_edit(m, (brew_edit_t)it->arg);
         case ACT_CONSTANT:

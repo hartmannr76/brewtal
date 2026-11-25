@@ -46,6 +46,10 @@ struct DisplayConfig {
     net::SetupPortal * portal = nullptr;
     hal::HttpServer *  http = nullptr;
     hal::WallClock *   clock = nullptr;   // internet time, passed on to the controller
+    /** Brewfather logging (needs wifi): named after the display's setup network
+     *  ("BrewDial-CB50" -> device "BrewDialCB50"), ticked by the UI task, its page added to
+     *  `portal`. Its HTTP client must have been begun. */
+    net::Brewfather *  brewfather = nullptr;
 
     /** Optional extra work in the UI task; normal builds leave these empty (the benchmark build,
      *  boards/bench/bench_hooks.cpp, uses them). ui_started runs once after the UI is built,

@@ -7,6 +7,7 @@
 
 #include "brew/fake_plant.h"
 #include "brew/drivers/interfaces/clock.h"
+#include "brew/drivers/interfaces/http.h"
 #include "brew/drivers/interfaces/input.h"
 #include "brew/drivers/interfaces/io.h"
 #include "brew/drivers/interfaces/platform.h"
@@ -20,6 +21,7 @@
 #include <deque>
 #include <map>
 #include <random>
+#include <cctype>
 #include <string>
 #include <vector>
 
@@ -398,6 +400,116 @@ private:
     hal::WifiLink link_ = hal::WifiLink::Down;
     std::string try_ssid_, try_pw_, joined_;
     uint32_t result_at_ = 0;
+};
+
+/**
+ * Brewfather for the harness, behind the dial's HTTP client: answers after a short delay (the
+ * device runs requests in the background too), and only while the simulated WiFi is up.
+ *   GET  api.brewfather.app/v2/batches...   one Fermenting batch, "#18 Pale Ale"; the dial's stream
+ *                                           device appears in it once it has posted (as if the
+ *                                           user attached it) while `attached` is on.
+ *                                           API key "wrong": 401.
+ *   POST log.brewfather.net/stream          200, counted in `posts`, body kept in `last_post`.
+ */
+class SimHttpClient final : public hal::HttpClient {
+public:
+    SimHttpClient(const uint32_t & now, SimWifi & wifi, hal::WallClock & clock) : now_(now), wifi_(wifi), clock_(clock) {}
+
+    bool attached = true;
+    int posts = 0;
+    std::string last_post;
+    uint32_t delay_ms = 600;
+
+    bool begin() override { return true; }
+    bool start(const hal::HttpClientRequest & r) override
+    {
+        if(busy_) return false;
+        busy_ = true;
+        done_at_ = now_ + delay_ms;
+        method_ = r.method ? r.method : "GET";
+        url_ = r.url ? r.url : "";
+        auth_ = r.authorization ? r.authorization : "";
+        body_.assign(r.body ? r.body : "", r.body ? r.body_len : 0);
+        return true;
+    }
+    bool poll(hal::HttpClientResult & out) override
+    {
+        if(!busy_ || static_cast<int32_t>(now_ - done_at_) < 0) return false;
+        busy_ = false;
+        answer();
+        out.status = status_;
+        out.body = resp_.c_str();
+        out.body_len = resp_.size();
+        return true;
+    }
+
+private:
+    static std::string unbase64(const std::string & s)
+    {
+        std::string out;
+        int val = 0, bits = -8;
+        for(char c : s) {
+            const char * k = std::strchr("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/", c);
+            if(!k || !c) break;
+            val = (val << 6) + static_cast<int>(k - "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/");
+            bits += 6;
+            if(bits >= 0) {
+                out.push_back(static_cast<char>((val >> bits) & 0xFF));
+                bits -= 8;
+            }
+        }
+        return out;
+    }
+    void answer()
+    {
+        resp_.clear();
+        if(wifi_.link() != hal::WifiLink::Up) {
+            status_ = -1;
+            return;
+        }
+        if(url_.find("log.brewfather.net/stream") != std::string::npos && method_ == "POST") {
+            posts++;
+            last_post = body_;
+            const size_t a = body_.find("\"name\":\"");
+            if(a != std::string::npos) {
+                const size_t b = body_.find('"', a + 8);
+                device_ = body_.substr(a + 8, b - a - 8);
+            }
+            last_log_ms_ = clock_.valid() ? clock_.unixSeconds() * 1000 : 0;
+            status_ = 200;
+            resp_ = "{ \"result\": \"OK\" }";
+            return;
+        }
+        if(url_.find("api.brewfather.app/v2/batches") != std::string::npos) {
+            const std::string cred = auth_.rfind("Basic ", 0) == 0 ? unbase64(auth_.substr(6)) : std::string();
+            const size_t colon = cred.find(':');
+            if(colon == std::string::npos || cred.substr(colon + 1) == "wrong") {
+                status_ = 401;
+                return;
+            }
+            std::string items;
+            if(attached && !device_.empty()) {
+                std::string key;
+                for(char c : device_) key.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
+                items = "{\"name\":\"" + device_ + "\",\"key\":\"" + key + "\",\"type\":\"stream\",\"lastLog\":" +
+                        std::to_string(last_log_ms_) + "}";
+            }
+            resp_ = "[{\"_id\":\"sim18\",\"batchNo\":18,\"name\":\"Batch\",\"recipe\":{\"name\":\"Pale Ale\"},"
+                    "\"status\":\"Fermenting\",\"devices\":{\"stream\":{\"enabled\":true,\"items\":[" + items + "]}}}]";
+            status_ = 200;
+            return;
+        }
+        status_ = 404;
+    }
+
+    const uint32_t & now_;
+    SimWifi & wifi_;
+    hal::WallClock & clock_;
+    bool busy_ = false;
+    uint32_t done_at_ = 0;
+    std::string method_, url_, auth_, body_, resp_, device_;
+    int status_ = 0;
+    int64_t last_log_ms_ = 0;
 };
 
 inline bool SimWallClock::valid()

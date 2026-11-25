@@ -11,6 +11,7 @@
 
 #include "brew/drivers/interfaces/clock.h"
 #include "brew/input.h"
+#include "brew/network/brewfather.h"
 #include "brew/network/wifi_setup.h"
 #include "brew/ports.h"
 
@@ -43,6 +44,10 @@ public:
     /** The display's internet time. Once it's valid, the controller gets it (SetClock) right
      *  away and every kClockEveryMs, so its day count runs on real time. */
     void attachClock(hal::WallClock * clock) { clock_ = clock; clock_sent_ = false; }
+
+    /** Brewfather logging: poll() ticks it (online = the WiFi is connected), each reading from
+     *  the controller is handed to it, and its status goes to Settings › Brewfather. */
+    void attachBrewfather(net::Brewfather * bf) { bf_ = bf; bf_pushed_ = false; }
     static constexpr uint32_t kClockEveryMs = 60000;
 
     /* brew_ui callback targets (called through extern "C" trampolines; `user` = this) */
@@ -57,6 +62,7 @@ public:
     static void onProfileThunk(int profile, void * user);
     static void onStepThunk(int i, float temp_f, int ramp_h, int hold_h, void * user);
     static void onStepCountThunk(int n, void * user);
+    static void onBfCheckThunk(void * user);
 
 private:
     struct Shown {
@@ -85,6 +91,7 @@ private:
 
     void pushWifi();
     void sendClock();
+    void tickBrewfather();
 
     UiPort & port_;
     Shown shown_;
@@ -93,6 +100,10 @@ private:
     net::SetupStatus wifi_shown_;
     bool wifi_pushed_ = false;
     hal::WallClock * clock_ = nullptr;
+    net::Brewfather * bf_ = nullptr;
+    bool bf_pushed_ = false;
+    brew_bf_t bf_shown_ = {};
+    char bf_batch_shown_[64] = { 0 };
     bool clock_sent_ = false;
     uint32_t clock_sent_ms_ = 0;
 };

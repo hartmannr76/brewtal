@@ -23,6 +23,12 @@ if (-not (Test-Path (Join-Path $build 'CMakeCache.txt'))) {
     emcmake cmake -S (Join-Path $root 'sim') -B $build @gen -DCMAKE_BUILD_TYPE=Release "-DBREW_DISP_SIZE=$Size" @extra
     if ($LASTEXITCODE) { throw 'configure failed' }
 }
+else {
+    # Configure again every time: it's quick, and sim/CMakeLists.txt globs sources, so new files
+    # (a new driver, a new generated page) would otherwise be left out until the cache is deleted.
+    cmake -S (Join-Path $root 'sim') -B $build | Out-Null
+    if ($LASTEXITCODE) { throw 'configure failed' }
+}
 cmake --build $build -j 8
 if ($LASTEXITCODE) { throw 'build failed' }
 

@@ -200,6 +200,11 @@ void startDisplay(const DisplayConfig & cfg, UiPort & port)
         d.bridge->attachWifi(cfg.wifi);
         d.bridge->attachClock(cfg.clock);
         if(cfg.http && !cfg.http->begin()) RT_LOG("E", "setup page server failed to start");
+        if(cfg.brewfather) {
+            cfg.brewfather->begin(cfg.wifi->status().ap_ssid, millis32());
+            d.bridge->attachBrewfather(cfg.brewfather);
+            if(cfg.portal) cfg.portal->attachBrewfather(cfg.brewfather);
+        }
         log_ram("WiFi + setup page server");
     }
 
