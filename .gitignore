@@ -55,3 +55,8 @@ Desktop.ini
 
 # Claude Code: per-user settings (CLAUDE.md, the project instructions, is shared)
 .claude/settings.local.json
+
+# ---------------------------------------------------------------- secrets
+# Local credentials (e.g. secrets/brewfather.env). Only the empty templates are tracked.
+secrets/*
+!secrets/*.example

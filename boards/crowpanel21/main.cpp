@@ -51,6 +51,9 @@ using namespace brew::drivers;
 void benchUiStarted(app::UiBridge & ui, lv_display_t * disp, net::WifiSetup * wifi);
 void benchUiLoop(uint32_t now_ms);
 #endif
+#if BREW_BF_SPIKE
+void bfSpikeStart();   // boards/bftest/bf_spike.cpp (env crowpanel21_bftest only)
+#endif
 
 namespace {
 
@@ -229,6 +232,9 @@ void setup()
     app::startDisplay(d, uiPort);
     dns.begin();     // after startDisplay: it brought up the network stack
     wallClock.begin();
+#if BREW_BF_SPIKE
+    bfSpikeStart();
+#endif
 
     Serial.println("BrewDial ready");
 }
