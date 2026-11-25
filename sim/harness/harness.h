@@ -59,21 +59,21 @@ public:
     void frame(uint32_t ui_now);
 
     /**
-     * Runs the UI benchmark (lib/app bench.h) to the end on a device-paced virtual clock: a frame
-     * that rendered takes its modelled CrowPanel time (bench_model.h) plus the firmware's 5 ms
-     * loop delay, so animations drop frames roughly as on the device. Returns the BENCH lines.
-     * Afterwards the page's clock is offset, so live frames carry on where the run ended.
+     * Display throttling (bench_model.h kThrottleProfiles): after a live frame renders, nothing
+     * runs (input waits, as in the firmware's UI task) until the profile's time for that frame
+     * has passed, so the page animates at that device's pace. Profile 0 = no throttling.
      */
-    std::string runBench();
+    void setThrottle(int profile);
+    int throttle() const { return throttle_; }
 
     /**
-     * CrowPanel speed for live frames: after a frame renders, nothing runs (input waits, as in
-     * the firmware's UI task) until its modelled device time (bench_model.h) has passed, so the
-     * page animates at the device's pace instead of the PC's.
+     * Runs the UI benchmark (lib/app bench.h) to the end at once, on a virtual clock paced by the
+     * current throttling profile: a frame takes the profile's time plus the firmware's 5 ms loop
+     * delay, so animations drop frames as they would. Returns the BENCH lines. Afterwards the
+     * page's clock is offset, so live frames carry on where the run ended.
      */
-    void setPaced(bool on) { paced_ = on; busy_until_ = 0; }
-    bool paced() const { return paced_; }
-    /** The benchmark live, at CrowPanel speed (~35 s); output grows a line per phase. */
+    std::string runBench();
+    /** The benchmark live (~33 s) under the current throttling; output grows a line per phase. */
     bool startBench();
     bool benchRunning() const { return live_bench_ != nullptr; }
     const std::string & benchOutput() const { return bench_out_; }
@@ -159,7 +159,7 @@ private:
     app::FrameMeter meter_;
     app::Bench * bench_ = nullptr;
     std::unique_ptr<app::Bench> live_bench_;
-    bool paced_ = false, paced_before_bench_ = false;
+    int throttle_ = 0;
     uint32_t busy_until_ = 0;            // paced: the device is still drawing until then
     std::string bench_out_;
     static void benchLog(const char * line);

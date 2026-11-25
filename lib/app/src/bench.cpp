@@ -81,9 +81,12 @@ void FrameMeter::onEvent(lv_event_t * e)
 /* ------------------------------------------------------------------ Bench */
 
 namespace {
-const char * const kName[] = { "warmup", "idle", "turn_up", "settle", "turn_down", "settle", "menu", "full_redraw" };
+const char * const kName[] = { "warmup", "idle", "turn_up", "settle", "turn_down", "settle", "spin", "settle",
+                               "menu", "full_redraw" };
 constexpr uint32_t kStepMs = 300;    // knob detents, like a steady hand
 constexpr int kSteps = 16;           // 8 F in half-degree steps
+constexpr uint32_t kSpinMs = 60;     // a quick flick: detents faster than frames
+constexpr int kSpinSteps = 24;       // 12 up, 12 back down
 }  // namespace
 
 Bench::Bench(UiBridge & ui, FrameMeter & meter, LogFn log, net::WifiSetup * wifi)
@@ -104,7 +107,7 @@ void Bench::begin(Phase p, uint32_t now)
 
 void Bench::finish(uint32_t now)
 {
-    const bool measured = phase_ != Warmup && phase_ != SettleUp && phase_ != SettleDown;
+    const bool measured = phase_ != Warmup && phase_ != SettleUp && phase_ != SettleDown && phase_ != SettleSpin;
     if(measured) {
         const uint32_t ms = now - t0_;
         char line[200];
@@ -145,8 +148,16 @@ void Bench::step(uint32_t now)
             }
             if(t >= kSteps * kStepMs) finish(now);
             break;
+        case Spin:
+            if(acts_ < kSpinSteps && t >= static_cast<uint32_t>(acts_) * kSpinMs) {
+                ui_.handle(InputEvent::rotate(acts_ < kSpinSteps / 2 ? 1 : -1));
+                acts_++;
+            }
+            if(t >= kSpinSteps * kSpinMs + 200) finish(now);
+            break;
         case SettleUp:
-        case SettleDown:   /* the adjusted target commits (BREW_COMMIT_MS) and the screen calms down */
+        case SettleDown:
+        case SettleSpin:   /* the adjusted target commits (BREW_COMMIT_MS) and the screen calms down */
             if(t >= 3500) finish(now);
             break;
         case Menu:   /* open, walk down to Previous, close: two view fades and four moves */

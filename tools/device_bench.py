@@ -15,7 +15,7 @@ bench/results.csv (date, commit, env, phase, metric, value) so the numbers can b
 time; commit that file with the change it measures.
 
 The host runs the same script without a device (sim/harness bench_check, a ctest, and the web
-harness's Benchmark card), estimating frame times from the rendered area with the model in
+harness's Performance card), estimating frame times from the rendered area with the model in
 sim/harness/bench_model.h. --fit prints new constants for it from this run.
 """
 import argparse

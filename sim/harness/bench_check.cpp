@@ -11,6 +11,8 @@
  * Increases need a deliberate --update-baseline in the same commit; improvements pass (and say
  * so, so the baseline can be tightened).
  */
+#include "bench_model.h"
+
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -26,6 +28,7 @@ extern "C" {
 void bd_start(double);
 void bd_frame(double);
 void bd_set_demo(int);
+void bd_set_throttle(int);
 const char * bd_bench_run();
 const char * bd_next_log();
 }
@@ -108,6 +111,7 @@ int main(int argc, char ** argv)
 
     bd_start(0);
     bd_set_demo(1);   /* the device bench is a demo build: same pill, same work */
+    bd_set_throttle(brew::sim::kThrottleCrowPanel);   /* the measured profile, whatever the page uses */
     bd_frame(16);
     const std::string text = bd_bench_run();
     while(*bd_next_log()) {}

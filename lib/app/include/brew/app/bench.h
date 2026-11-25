@@ -90,7 +90,8 @@ public:
     static constexpr uint32_t kWarmupMs = 4000;   // boot settles (backgrounds finish rendering)
 
 private:
-    enum Phase : int { Warmup, Idle, TurnUp, SettleUp, TurnDown, SettleDown, Menu, FullRedraw, kPhaseCount };
+    enum Phase : int { Warmup, Idle, TurnUp, SettleUp, TurnDown, SettleDown, Spin, SettleSpin, Menu, FullRedraw,
+                       kPhaseCount };
     void begin(Phase p, uint32_t now);
     void finish(uint32_t now);
 

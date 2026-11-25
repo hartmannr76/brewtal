@@ -117,4 +117,5 @@ Measure, don't guess: `tools/device_bench.py` (below) reports px repainted per f
   `bench/host_baseline.csv`; it fails on >5% more work. If the increase is intended, run
   `sim/build-msvc/Release/bench_check bench/host_baseline.csv --update-baseline` and commit the baseline with the
   change: never update it just to make the check pass. Its fps/ms are estimates (`sim/harness/bench_model.h`,
-  refit with `device_bench.py --fit`). The web harness's Benchmark card runs it too.
+  refit with `device_bench.py --fit`). The web harness's Performance card has the same profiles as a throttling
+  dropdown (applied live) and runs the benchmark under the selected one.

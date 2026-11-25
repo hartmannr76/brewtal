@@ -92,6 +92,12 @@ void kit_opa_exec(void * o, int32_t v) { lv_obj_set_style_opa((lv_obj_t *)o, (lv
 
 void kit_fade_to(lv_obj_t * o, lv_opa_t to, uint32_t ms)
 {
+    /* Called on every refresh. A fade already heading to `to` is left to finish: restarting it
+     * (from where it is, with the full duration) on each refresh meant that while refreshes came
+     * faster than frames (spinning the knob) it never got anywhere, and every frame repainted
+     * everything under the faded objects (the whole dial). */
+    const lv_anim_t * run = lv_anim_get(o, kit_opa_exec);
+    if(run && run->end_value == to) return;
     lv_anim_delete(o, kit_opa_exec);
     lv_opa_t from = lv_obj_get_style_opa(o, 0);
     if(to > 0 && lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN)) lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);

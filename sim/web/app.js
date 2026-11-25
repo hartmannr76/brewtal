@@ -44,7 +44,12 @@ createBrewDial().then((M) => {
     nextLog: () => M.UTF8ToString(M._bd_next_log()),
     benchRun: () => M.UTF8ToString(M._bd_bench_run()),
     benchStart: M._bd_bench_start, benchRunning: M._bd_bench_running,
-    benchOutput: () => M.UTF8ToString(M._bd_bench_output()), paced: M._bd_set_paced,
+    benchOutput: () => M.UTF8ToString(M._bd_bench_output()),
+    throttleCount: M._bd_throttle_count, throttle: M._bd_throttle, setThrottle: M._bd_set_throttle,
+    throttleId: (i) => M.UTF8ToString(M._bd_throttle_id(i)),
+    throttleName: (i) => M.UTF8ToString(M._bd_throttle_name(i)),
+    throttleNote: (i) => M.UTF8ToString(M._bd_throttle_note(i)),
+    throttleMeasured: (i) => M._bd_throttle_measured(i) === 1,
   };
 
   const N = api.size();
@@ -350,58 +355,69 @@ createBrewDial().then((M) => {
   for (const [name, p] of Object.entries(PRESETS)) {
     $('preset-' + name).onclick = () => { for (const id of SETUP) $(id).value = p[id]; applySetup(); };
   }
+  /* ------------------------------------------------------------ Performance: throttling + benchmark */
+  const sel = $('throttle');
+  for (let i = 0; i < api.throttleCount(); i++) {
+    const o = document.createElement('option');
+    o.value = api.throttleId(i);
+    o.textContent = api.throttleName(i) + (i === 0 || api.throttleMeasured(i) ? '' : ' (estimate)');
+    sel.appendChild(o);
+  }
+  const setThrottle = (id) => {
+    let i = [...sel.options].findIndex((o) => o.value === id);
+    if (i < 0) i = 0;
+    sel.selectedIndex = i;
+    api.setThrottle(i);   // applies to the live dial at once
+    $('throttle-note').textContent = api.throttleNote(i);
+    try { localStorage.setItem('brewdial.throttle', sel.value); } catch (_) { /* private mode: not remembered */ }
+  };
+  sel.onchange = () => setThrottle(sel.value);
+  let savedThrottle = null;
+  try { savedThrottle = localStorage.getItem('brewdial.throttle'); } catch (_) { /* ignore */ }
+  setThrottle(qs.get('throttle') || savedThrottle || 'none');
+
   const benchTable = (text) => {
     const rows = [];
     for (const line of text.split('\n')) {
       const m = line.match(/BENCH phase=(\S+) (.*)/);
       if (!m) continue;
       const kv = Object.fromEntries(m[2].split(' ').map((p) => p.split('=')));
-      rows.push(`<tr><td>${m[1]}</td><td>${kv.fps}</td><td>${kv.avg_ms}</td>` +
+      const ms = Number(kv.avg_ms) > 0 ? kv.avg_ms : '–';   // no throttling: no device time to show
+      rows.push(`<tr><td>${m[1]}</td><td>${kv.fps}</td><td>${ms}</td>` +
                 `<td>${Number(kv.rendered_px_per_frame).toLocaleString()}</td>` +
                 `<td>${Number(kv.px_per_frame).toLocaleString()}</td></tr>`);
     }
     $('bench-table').querySelector('tbody').innerHTML = rows.join('');
     $('bench-table').hidden = rows.length === 0;
   };
-  const benchButtons = (on) => { $('bench-run').disabled = !on; $('bench-watch').disabled = !on; };
+  const benchStatus = (t) => { $('bench-status').textContent = t; $('bench-status').hidden = !t; };
+  const benchBusy = (busy) => { $('bench-run').disabled = busy; sel.disabled = busy; $('bench-instant').disabled = busy; };
   $('bench-run').onclick = () => {
-    benchButtons(false);
-    $('bench-run').textContent = 'Running…';
-    setTimeout(() => {   // let the button repaint first: the run blocks for a moment
-      const t0 = performance.now();
-      benchTable(api.benchRun());
-      $('bench-run').textContent = `Run instantly (took ${((performance.now() - t0) / 1000).toFixed(1)} s)`;
-      benchButtons(true);
-    }, 30);
-  };
-  $('bench-watch').onclick = () => {
-    if (!api.benchStart()) return;
-    benchButtons(false);
+    const profile = sel.options[sel.selectedIndex].textContent;
     benchTable('');
-    $('bench-watch').textContent = 'Watching… (~35 s)';
+    benchBusy(true);
+    if ($('bench-instant').checked) {
+      benchStatus(`Running under: ${profile}…`);
+      setTimeout(() => {   // let the page repaint first: the run blocks for a moment
+        const t0 = performance.now();
+        benchTable(api.benchRun());
+        benchStatus(`${profile}, instant (${((performance.now() - t0) / 1000).toFixed(1)} s)`);
+        benchBusy(false);
+      }, 30);
+      return;
+    }
+    if (!api.benchStart()) { benchBusy(false); return; }
+    benchStatus(`Playing under: ${profile}…`);
     document.querySelector('.stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const t0 = performance.now();
     const poll = setInterval(() => {
       benchTable(api.benchOutput());
       if (api.benchRunning()) return;
       clearInterval(poll);
-      $('bench-watch').textContent = 'Watch at CrowPanel speed';
-      benchButtons(true);
+      benchStatus(`${profile}, played (${((performance.now() - t0) / 1000).toFixed(0)} s)`);
+      benchBusy(false);
     }, 250);
   };
-
-  /* ------------------------------------------------------------ CrowPanel speed (bd_set_paced) */
-  const setPace = (p) => {
-    if (p !== 'crowpanel') p = 'pc';
-    api.paced(p === 'crowpanel' ? 1 : 0);
-    document.querySelectorAll('#pace button').forEach((b) => b.classList.toggle('on', b.dataset.pace === p));
-    syncThumb($('pace'));
-    try { localStorage.setItem('brewdial.pace', p); } catch (_) { /* private mode: not remembered */ }
-  };
-  segment('pace', 'pace', setPace);
-  let savedPace = null;
-  try { savedPace = localStorage.getItem('brewdial.pace'); } catch (_) { /* ignore */ }
-  setPace(qs.get('pace') || savedPace || 'pc');
-  requestAnimationFrame(() => syncThumb($('pace')));
   $('apply').onclick = applySetup;
   $('reboot').onclick = () => api.reboot();
   $('factory').onclick = () => { if (confirm('Wipe the simulated controller\'s saved settings and reboot it?')) api.factory(); };

@@ -4,6 +4,7 @@
  * exact same entry points.
  */
 #include "harness.h"
+#include "bench_model.h"
 
 #include <cstring>
 #include <string>
@@ -50,9 +51,15 @@ BD_API void bd_touch(int x, int y, int down) { H->touch(x, y, down != 0); }
 BD_API void bd_set_beer_c(float c) { H->setBeerC(c); }
 BD_API void bd_set_physics(int on) { H->setPhysics(on != 0); }
 BD_API void bd_set_demo(int on) { H->setDemo(on != 0); }
-/* CrowPanel speed for live frames (Harness::setPaced). */
-BD_API void bd_set_paced(int on) { H->setPaced(on != 0); }
-/* The benchmark live at CrowPanel speed: start it, then poll output and running. */
+/* Display throttling profiles (bench_model.h): list them, pick one (applies live at once). */
+BD_API int bd_throttle_count() { return brew::sim::kThrottleProfileCount; }
+BD_API const char * bd_throttle_id(int i) { return i >= 0 && i < brew::sim::kThrottleProfileCount ? brew::sim::kThrottleProfiles[i].id : ""; }
+BD_API const char * bd_throttle_name(int i) { return i >= 0 && i < brew::sim::kThrottleProfileCount ? brew::sim::kThrottleProfiles[i].name : ""; }
+BD_API const char * bd_throttle_note(int i) { return i >= 0 && i < brew::sim::kThrottleProfileCount ? brew::sim::kThrottleProfiles[i].note : ""; }
+BD_API int bd_throttle_measured(int i) { return i >= 0 && i < brew::sim::kThrottleProfileCount && brew::sim::kThrottleProfiles[i].measured ? 1 : 0; }
+BD_API void bd_set_throttle(int i) { H->setThrottle(i); }
+BD_API int bd_throttle() { return H->throttle(); }
+/* The benchmark live under the current throttling: start it, then poll output and running. */
 BD_API int bd_bench_start() { return H->startBench() ? 1 : 0; }
 BD_API int bd_bench_running() { return H->benchRunning() ? 1 : 0; }
 BD_API const char * bd_bench_output() { return H->benchOutput().c_str(); }

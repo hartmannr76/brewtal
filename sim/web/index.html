@@ -88,11 +88,7 @@
         <button data-style="hairline" class="on">Hairline</button>
         <button data-style="mist">Mist</button>
       </div>
-      <div class="seg" id="pace" role="group" aria-label="Speed"
-           title="CrowPanel speed: each frame takes as long as the CrowPanel would need to draw it (estimated)">
-        <button data-pace="pc" class="on">PC speed</button>
-        <button data-pace="crowpanel">CrowPanel speed</button>
-      </div>
+
       <span class="deck-round">
         <button id="ccw5" class="chip">−5</button>
         <button id="bounce" class="chip" title="One raw encoder count (half a detent): should do nothing">½ detent</button>
@@ -250,17 +246,23 @@
       <p class="readout" id="link-stats">–</p>
     </article>
 
-    <article class="card" id="c-bench">
-      <header class="card-h"><h2>Benchmark</h2><span class="card-sub">the device UI benchmark, CrowPanel-paced</span></header>
-      <button id="bench-run" class="btn">Run instantly</button>
-      <button id="bench-watch" class="btn primary">Watch at CrowPanel speed</button>
+    <article class="card" id="c-perf">
+      <header class="card-h"><h2>Performance</h2><span class="card-sub">display throttling and the UI benchmark</span></header>
+      <div class="field"><label for="throttle">Throttling</label>
+        <select id="throttle"></select></div>
+      <p class="readout" id="throttle-note">–</p>
+      <div class="bench-actions">
+        <button id="bench-run" class="btn primary">Run benchmark</button>
+        <label class="switch-row"><input type="checkbox" class="switch" id="bench-instant"> Instant (don't play it)</label>
+      </div>
+      <p class="readout" id="bench-status" hidden></p>
       <table class="bench" id="bench-table" hidden>
         <thead><tr><th>phase</th><th>fps</th><th>ms/frame</th><th>rendered px</th><th>invalidated px</th></tr></thead>
         <tbody></tbody>
       </table>
-      <p class="readout" id="bench-note">Same script as <code>tools/device_bench.py</code>: knob up/down, menu, full
-        redraw. Pixel counts per frame are exact; fps and ms are CrowPanel estimates from them. "Run instantly" jumps
-        the dial about a minute ahead; "Watch" plays it live (~35 s) at the CrowPanel's pace.</p>
+      <p class="readout">The same script as <code>tools/device_bench.py</code> (idle, knob up and down, menu, full
+        redraw), under the selected throttling. Pixel counts per frame are exact; fps and ms come from the profile.
+        It plays on the dial (~33 s); "Instant" runs it at once and jumps the dial about a minute ahead.</p>
     </article>
 
     <article class="card wide" id="c-wifi">

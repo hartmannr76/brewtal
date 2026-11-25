@@ -143,7 +143,7 @@ void Harness::start(uint32_t ui_now)
     buf2_.assign(bytes, 0);
     lv_display_t * disp = lvgl_.begin(panel_, buf1_.data(), buf2_.data(), bytes, 16);
     meter_.attach(disp, nullptr);
-    meter_.setCostModel({ kBenchBaseUs, kBenchUsPerPx });   /* frame times: the CrowPanel's, estimated */
+    setThrottle(throttle_);   /* frame times come from the throttling profile's model */
     lvgl_.addTouch();
 
     /* Controller first, so the UI's sync request has someone to answer it. */
@@ -208,15 +208,24 @@ void Harness::buildController()
 void Harness::frame(uint32_t ui_now)
 {
     ui_now += clock_offset_;
-    if(paced_ && static_cast<int32_t>(ui_now - busy_until_) < 0) return;   /* still "drawing" */
+    const bool paced = throttle_ != kThrottleNone;
+    if(paced && static_cast<int32_t>(ui_now - busy_until_) < 0) return;   /* the device is still drawing */
     const uint32_t frames = meter_.frames();
     frameAt(ui_now);
-    if(paced_ && meter_.frames() != frames) busy_until_ = ui_ms_ + (meter_.lastFrameUs() + 999) / 1000;
+    if(paced && meter_.frames() != frames) busy_until_ = ui_ms_ + (meter_.lastFrameUs() + 999) / 1000;
     if(live_bench_ && live_bench_->done()) {
         bench_ = nullptr;
         live_bench_.reset();
-        setPaced(paced_before_bench_);
     }
+}
+
+void Harness::setThrottle(int profile)
+{
+    if(profile < 0 || profile >= kThrottleProfileCount) profile = kThrottleNone;
+    throttle_ = profile;
+    busy_until_ = 0;
+    const ThrottleProfile & p = kThrottleProfiles[profile];
+    meter_.setCostModel({ p.base_us, p.us_per_px });
 }
 
 bool Harness::startBench()
@@ -225,8 +234,6 @@ bool Harness::startBench()
     bench_out_.clear();
     live_bench_ = std::make_unique<app::Bench>(*bridge_, meter_, benchLog, wifi_setup_.get());
     bench_ = live_bench_.get();
-    paced_before_bench_ = paced_;
-    setPaced(true);   /* the point of watching it */
     return true;
 }
 
