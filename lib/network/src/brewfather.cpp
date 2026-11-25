@@ -125,6 +125,38 @@ void Brewfather::forget()
 
 void Brewfather::checkNow(uint32_t now) { check_at_ = now; }
 
+void Brewfather::fetchBatch(int i, uint32_t now)
+{
+    (void)now;
+    BfPreview & p = st_.preview;
+    p = BfPreview{};
+    if(i < 0 || i >= st_.nbatches || !haveAccount()) {
+        p.state = BfPreview::State::Failed;
+        st_.rev++;
+        return;
+    }
+    copy(p.id, sizeof(p.id), st_.batches[i].id);
+    copy(p.label, sizeof(p.label), st_.batches[i].label);
+    p.state = BfPreview::State::Loading;
+    fetch_due_ = true;
+    st_.rev++;
+}
+
+void Brewfather::shortName(const char * batch_name, const char * recipe_name, char * out, size_t n)
+{
+    if(!out || n == 0) return;
+    const char * s = batch_name && batch_name[0] && std::strcmp(batch_name, "Batch") != 0 ? batch_name : recipe_name;
+    if(!s) s = "";
+    if(std::strncmp(s, "(Modified) ", 11) == 0) s += 11;
+    size_t k = 0;
+    while(s[k] && k + 1 < n) k++;
+    if(s[k])   /* cut short: don't leave half a UTF-8 character, nor a trailing space */
+        while(k > 0 && (static_cast<unsigned char>(s[k]) & 0xC0) == 0x80) k--;
+    while(k > 0 && s[k - 1] == ' ') k--;
+    std::memcpy(out, s, k);
+    out[k] = '\0';
+}
+
 void Brewfather::setReading(bool valid, float temp_c, float target_c, const char * state)
 {
     reading_valid_ = valid;
@@ -149,31 +181,77 @@ void Brewfather::tick(uint32_t now, bool online, int64_t unix_ms)
         const Pending done = pending_;
         pending_ = Pending::None;
         if(done == Pending::Check) finishCheck(r, now);
+        else if(done == Pending::Fetch) finishFetch(r);
         else finishPost(r, now);
         return;
     }
     if(!online) return;
-    if(haveAccount() && reached(now, check_at_)) startCheck(now);
+    if(fetch_due_ && haveAccount()) {   /* the user is waiting on this one */
+        char url[sizeof(url_)];
+        std::snprintf(url, sizeof(url), "%s/v2/batches/%s", cfg_.api, st_.preview.id);
+        if(startGet(url)) {
+            pending_ = Pending::Fetch;
+            fetch_due_ = false;
+        }
+    }
+    else if(haveAccount() && reached(now, check_at_)) startCheck(now);
     else if(stream_[0] && reading_valid_ && reached(now, post_at_)) startPost(now);
 }
 
-void Brewfather::startCheck(uint32_t now)
+bool Brewfather::startGet(const char * url)
 {
     char cred[sizeof(user_) + sizeof(key_) + 1];
     std::snprintf(cred, sizeof(cred), "%s:%s", user_, key_);
     char b64[sizeof(auth_) - 8];
-    if(!base64(cred, std::strlen(cred), b64, sizeof(b64))) {
-        st_.account = BfAccount::Rejected;   // can't even be sent: far too long to be real
-        check_at_ = now + cfg_.check_every_ms;
-        return;
-    }
+    if(!base64(cred, std::strlen(cred), b64, sizeof(b64))) return false;
     std::snprintf(auth_, sizeof(auth_), "Basic %s", b64);
-    std::snprintf(url_, sizeof(url_), "%s/v2/batches?status=Fermenting&include=devices&limit=50", cfg_.api);
+    copy(url_, sizeof(url_), url);
     hal::HttpClientRequest req;
     req.method = "GET";
     req.url = url_;
     req.authorization = auth_;
-    if(http_.start(req)) pending_ = Pending::Check;
+    return http_.start(req);
+}
+
+void Brewfather::finishFetch(const hal::HttpClientResult & r)
+{
+    BfPreview & p = st_.preview;
+    st_.rev++;
+    if(p.state != BfPreview::State::Loading) return;   // a newer pick, or forgotten
+    st_.http = r.status;
+    const json::Value b = r.status == 200 ? json::parse(r.body, r.body_len) : json::Value{};
+    const json::Value steps = json::get(json::get(json::get(b, "recipe"), "fermentation"), "steps");
+    if(!json::isArray(steps)) {
+        p.state = BfPreview::State::Failed;
+        return;
+    }
+    char batch_name[48] = { 0 }, recipe_name[48] = { 0 };
+    json::string(json::get(b, "name"), batch_name, sizeof(batch_name));
+    json::string(json::get(json::get(b, "recipe"), "name"), recipe_name, sizeof(recipe_name));
+    shortName(batch_name, recipe_name, p.name, sizeof(p.name));
+    p.total_steps = static_cast<int>(json::size(steps));
+    p.nsteps = 0;
+    for(int i = 0; i < p.total_steps && p.nsteps < BfPreview::kMaxSteps; i++) {
+        const json::Value s = json::at(steps, static_cast<size_t>(i));
+        BfStep & o = p.steps[p.nsteps++];
+        json::string(json::get(s, "type"), o.type, sizeof(o.type));
+        o.temp_c = static_cast<float>(json::number(json::get(s, "stepTemp"), 20.0));
+        /* days -> whole hours (ramp null = a jump) */
+        const double ramp = json::number(json::get(s, "ramp"), 0.0) * 24.0, hold = json::number(json::get(s, "stepTime"), 0.0) * 24.0;
+        o.ramp_h = static_cast<uint16_t>(ramp <= 0 ? 0 : ramp > 65535 ? 65535 : ramp + 0.5);
+        o.hold_h = static_cast<uint16_t>(hold <= 0 ? 0 : hold > 65535 ? 65535 : hold + 0.5);
+    }
+    p.start_unix_ms = static_cast<int64_t>(json::number(json::get(b, "fermentationStartDate"), 0.0));
+    p.modified_unix_ms = static_cast<int64_t>(json::number(json::get(b, "_timestamp_ms"), 0.0));
+    p.state = p.nsteps > 0 ? BfPreview::State::Ready : BfPreview::State::Failed;
+}
+
+void Brewfather::startCheck(uint32_t now)
+{
+    char url[sizeof(url_)];
+    std::snprintf(url, sizeof(url), "%s/v2/batches?status=Fermenting&include=devices&limit=50", cfg_.api);
+    if(startGet(url)) pending_ = Pending::Check;   // else the client is busy: next tick
+    (void)now;
 }
 
 void Brewfather::finishCheck(const hal::HttpClientResult & r, uint32_t now)
@@ -197,6 +275,22 @@ void Brewfather::finishCheck(const hal::HttpClientResult & r, uint32_t now)
     st_.attached = false;
     st_.batch[0] = '\0';
     const json::Value list = json::parse(r.body, r.body_len);
+    /* the Fermenting batches, for Profile › Brewfather */
+    st_.nbatches = 0;
+    for(size_t i = 0, n = json::size(list); i < n && st_.nbatches < BrewfatherStatus::kMaxBatches; i++) {
+        const json::Value b = json::at(list, i);
+        BfBatch & o = st_.batches[st_.nbatches];
+        if(!json::string(json::get(b, "_id"), o.id, sizeof(o.id)) || !o.id[0]) continue;
+        char batch_name[48] = { 0 }, recipe_name[48] = { 0 }, name[40];
+        json::string(json::get(b, "name"), batch_name, sizeof(batch_name));
+        json::string(json::get(json::get(b, "recipe"), "name"), recipe_name, sizeof(recipe_name));
+        shortName(batch_name, recipe_name, name, sizeof(name));
+        const json::Value no = json::get(b, "batchNo");
+        if(json::isNumber(no)) std::snprintf(o.label, sizeof(o.label), "#%d %s", static_cast<int>(json::number(no)), name);
+        else copy(o.label, sizeof(o.label), name);
+        st_.nbatches++;
+    }
+    st_.rev++;
     for(size_t i = 0, n = json::size(list); i < n && !st_.attached; i++) {
         const json::Value b = json::at(list, i);
         const json::Value items = json::get(json::get(json::get(b, "devices"), "stream"), "items");
@@ -204,9 +298,10 @@ void Brewfather::finishCheck(const hal::HttpClientResult & r, uint32_t now)
             const json::Value dev = json::at(items, j);
             if(!json::equals(json::get(dev, "key"), key_upper_)) continue;
             st_.attached = true;
-            char name[48];
-            if(!json::string(json::get(json::get(b, "recipe"), "name"), name, sizeof(name)) || !name[0])
-                json::string(json::get(b, "name"), name, sizeof(name));
+            char batch_name[48] = { 0 }, recipe_name[48] = { 0 }, name[48];
+            json::string(json::get(b, "name"), batch_name, sizeof(batch_name));
+            json::string(json::get(json::get(b, "recipe"), "name"), recipe_name, sizeof(recipe_name));
+            shortName(batch_name, recipe_name, name, sizeof(name));
             const json::Value no = json::get(b, "batchNo");
             if(json::isNumber(no)) std::snprintf(st_.batch, sizeof(st_.batch), "#%d %s", static_cast<int>(json::number(no)), name);
             else copy(st_.batch, sizeof(st_.batch), name);

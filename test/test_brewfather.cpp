@@ -240,3 +240,87 @@ TEST(brewfather_remembers_and_forgets)
     run(again, http, now, 60u * 60u * 1000u);
     CHECK(http.reqs.empty());
 }
+
+TEST(brewfather_short_names)
+{
+    char b[16];
+    Brewfather::shortName("Batch", "(Modified) GBB Gluten-free Pale Ale", b, sizeof(b));
+    CHECK(std::string(b) == "GBB Gluten-free");          // 15 bytes, no trailing space
+    Brewfather::shortName("B\xC3\xA4rktoberfest", "GF M\xC3\xA4rzen", b, sizeof(b));
+    CHECK(std::string(b) == "B\xC3\xA4rktoberfest");     // the batch's own name wins
+    Brewfather::shortName("", "Pale Ale", b, sizeof(b));
+    CHECK(std::string(b) == "Pale Ale");
+    Brewfather::shortName("Batch", "12345678901234\xC3\xA4", b, sizeof(b));
+    CHECK(std::string(b) == "12345678901234");           // never half a character
+}
+
+TEST(brewfather_fetches_a_batch_for_import)
+{
+    FakeHttp http;
+    Store store;
+    Brewfather bf(http, &store);
+    uint32_t now = 1000;
+    bf.begin("BrewDialCB50", now);
+    bf.fetchBatch(0, now);
+    CHECK(bf.status().preview.state == BfPreview::State::Failed);   // nothing listed yet
+    bf.setCredentials("uid", "secret", nullptr, now);
+    run(bf, http, now, 100);
+    http.respond(200,
+                 "[{\"_id\":\"ZEo\",\"batchNo\":18,\"name\":\"Batch\",\"recipe\":{\"name\":\"(Modified) GBB Gluten-free Pale Ale\"},"
+                 "\"status\":\"Fermenting\"},{\"_id\":\"k3J\",\"batchNo\":19,\"name\":\"B\u00e4rktoberfest\",\"recipe\":{\"name\":\"x\"}}]");
+    run(bf, http, now, 100);
+    CHECK_EQ(bf.status().nbatches, 2);
+    CHECK(std::string(bf.status().batches[0].label) == "#18 GBB Gluten-free Pale Ale");
+    CHECK(std::string(bf.status().batches[1].label) == "#19 B\xC3\xA4rktoberfest");
+    CHECK(std::string(bf.status().batches[0].id) == "ZEo");
+
+    const uint32_t rev = bf.status().rev;
+    bf.fetchBatch(0, now);
+    CHECK(bf.status().preview.state == BfPreview::State::Loading);
+    CHECK(bf.status().rev != rev);
+    run(bf, http, now, 100);
+    CHECK(http.reqs.back().url == "https://api.brewfather.app/v2/batches/ZEo");
+    CHECK(http.reqs.back().auth == "Basic dWlkOnNlY3JldA==");
+    /* trimmed from the real batch: Primary 20 C 7 days, then a 1-day ramp to 11.67 C held 14 days */
+    http.respond(200,
+                 "{\"_id\":\"ZEo\",\"name\":\"Batch\",\"batchNo\":18,\"fermentationStartDate\":1795582800000,"
+                 "\"recipe\":{\"name\":\"(Modified) GBB Gluten-free Pale Ale\",\"fermentation\":{\"name\":\"Imported\",\"steps\":["
+                 "{\"stepTime\":7,\"stepTemp\":20,\"displayStepTemp\":68,\"type\":\"Primary\",\"ramp\":null,\"actualTime\":1795582800000},"
+                 "{\"ramp\":1,\"type\":\"Conditioning\",\"stepTemp\":11.666667,\"stepTime\":14,\"displayStepTemp\":53}]}},"
+                 "\"status\":\"Fermenting\",\"_timestamp_ms\":1795627483611}");
+    run(bf, http, now, 100);
+    const BfPreview & p = bf.status().preview;
+    CHECK(p.state == BfPreview::State::Ready);
+    CHECK(std::string(p.label) == "#18 GBB Gluten-free Pale Ale");
+    CHECK(std::string(p.name) == "GBB Gluten-free");
+    CHECK_EQ(p.total_steps, 2);
+    CHECK_EQ(p.nsteps, 2);
+    CHECK(std::string(p.steps[0].type) == "Primary");
+    CHECK_NEAR(p.steps[0].temp_c, 20.0, 1e-4);
+    CHECK_EQ(p.steps[0].ramp_h, 0);
+    CHECK_EQ(p.steps[0].hold_h, 168);
+    CHECK_NEAR(p.steps[1].temp_c, 11.666667, 1e-4);
+    CHECK_EQ(p.steps[1].ramp_h, 24);
+    CHECK_EQ(p.steps[1].hold_h, 336);
+    CHECK(p.start_unix_ms == 1795582800000LL);
+    CHECK(p.modified_unix_ms == 1795627483611LL);
+
+    /* a long profile: the first 8 steps, and how many there were */
+    bf.fetchBatch(1, now);
+    run(bf, http, now, 100);
+    std::string steps;
+    for(int i = 0; i < 10; i++) steps += std::string(i ? "," : "") + "{\"type\":\"Primary\",\"stepTemp\":" + std::to_string(10 + i) + ",\"stepTime\":1}";
+    http.respond(200, "{\"name\":\"x\",\"recipe\":{\"fermentation\":{\"steps\":[" + steps + "]}}}");
+    run(bf, http, now, 100);
+    CHECK(bf.status().preview.state == BfPreview::State::Ready);
+    CHECK_EQ(bf.status().preview.total_steps, 10);
+    CHECK_EQ(bf.status().preview.nsteps, 8);
+    CHECK_NEAR(bf.status().preview.steps[7].temp_c, 17.0, 1e-4);
+
+    /* gone in Brewfather */
+    bf.fetchBatch(0, now);
+    run(bf, http, now, 100);
+    http.respond(404);
+    run(bf, http, now, 100);
+    CHECK(bf.status().preview.state == BfPreview::State::Failed);
+}

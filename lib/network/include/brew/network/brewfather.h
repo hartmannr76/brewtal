@@ -9,6 +9,10 @@
  *   Logging        POST https://log.brewfather.net/stream?id=<id> every 15 min (Brewfather
  *                  ignores a device posting more often), then a check to see it land.
  *
+ *   Import         the check above lists the Fermenting batches; fetchBatch() gets one whole
+ *                  (GET /v2/batches/<id>) and turns its fermentation steps into a preview the
+ *                  display shows, then sends to the controller.
+ *
  * Credentials are typed key/value settings (bf_user, bf_key, bf_stream) and are never shown:
  * status() says only whether each is set.
  */
@@ -30,6 +34,33 @@ enum class BfAccount : uint8_t {
     Unreachable,   // no answer, or a server error: tried again later
 };
 
+/** A Fermenting batch, as listed. */
+struct BfBatch {
+    char id[40] = { 0 };
+    char label[48] = { 0 };   // "#18 Pale Ale"
+};
+
+/** One fermentation step, converted: ramp to temp_c over ramp_h hours (0 = jump), hold hold_h. */
+struct BfStep {
+    char type[16] = { 0 };    // "Primary", "Conditioning", ...
+    float temp_c = 0.0f;
+    uint16_t ramp_h = 0, hold_h = 0;
+};
+
+/** A batch fetched for import. */
+struct BfPreview {
+    static constexpr int kMaxSteps = 8;      // what the controller's schedule holds
+    enum class State : uint8_t { None, Loading, Ready, Failed } state = State::None;
+    char id[40] = { 0 };
+    char label[48] = { 0 };   // "#18 Pale Ale"
+    char name[16] = { 0 };    // short, for the dial's home screen: "Pale Ale"
+    int total_steps = 0;      // in Brewfather (only the first kMaxSteps are kept)
+    int nsteps = 0;
+    BfStep steps[kMaxSteps];
+    int64_t start_unix_ms = 0;     // fermentationStartDate (0: not set)
+    int64_t modified_unix_ms = 0;  // _timestamp_ms: the batch's last change
+};
+
 struct BrewfatherStatus {
     BfAccount account = BfAccount::NotSetUp;
     int http = 0;                  // the API's last status (negative: no response)
@@ -42,6 +73,12 @@ struct BrewfatherStatus {
     /* our side of logging */
     uint32_t last_post_ms = 0;     // when we last posted (0: not yet)
     int last_post_http = 0;
+    /* import */
+    static constexpr int kMaxBatches = 8;
+    int nbatches = 0;
+    BfBatch batches[kMaxBatches];   // the Fermenting batches, from the last check
+    BfPreview preview;
+    uint32_t rev = 0;               // bumped whenever the batches or the preview change
 };
 
 class Brewfather {
@@ -68,6 +105,12 @@ public:
     void forget();
     /** Check the account and attachment at the next tick. */
     void checkNow(uint32_t now_ms);
+    /** Fetch batch `i` of status().batches for import (status().preview shows how it goes). */
+    void fetchBatch(int i, uint32_t now_ms);
+
+    /** Brewfather's names, cut for the dial: the batch's name, or the recipe's when the batch is
+     *  just "Batch", without Brewfather's "(Modified) " prefix; at most n-1 bytes, whole characters. */
+    static void shortName(const char * batch_name, const char * recipe_name, char * out, size_t n);
 
     /** The latest reading, posted at the next 15-minute slot. `state`: "heating", "cooling", "idle". */
     void setReading(bool valid, float temp_c, float target_c, const char * state);
@@ -85,12 +128,14 @@ public:
     static bool base64(const char * in, size_t len, char * out, size_t n);
 
 private:
-    enum class Pending : uint8_t { None, Check, Post };
+    enum class Pending : uint8_t { None, Check, Post, Fetch };
     bool haveAccount() const { return user_[0] && key_[0]; }
     void startCheck(uint32_t now);
     void startPost(uint32_t now);
     void finishCheck(const hal::HttpClientResult & r, uint32_t now);
     void finishPost(const hal::HttpClientResult & r, uint32_t now);
+    void finishFetch(const hal::HttpClientResult & r);
+    bool startGet(const char * url);
     void save();
 
     hal::HttpClient & http_;
@@ -102,12 +147,13 @@ private:
     Pending pending_ = Pending::None;
     int64_t unix_ms_ = 0;
     uint32_t check_at_ = 0, post_at_ = 0;
-    bool check_due_ = false, post_due_ = false;
+    bool fetch_due_ = false;
     bool reading_valid_ = false;
     float temp_c_ = 0.0f, target_c_ = 0.0f;
     char state_[12] = { 0 };
     /* request buffers (the client copies them; kept here so start() sees stable memory) */
-    char url_[256] = { 0 }, auth_[192] = { 0 }, body_[256] = { 0 };
+    /* "Basic " + base64 of the longest user:key (63 + 1 + 95 bytes -> 212) fits */
+    char url_[256] = { 0 }, auth_[256] = { 0 }, body_[256] = { 0 };
 };
 
 const char * accountName(BfAccount a);
