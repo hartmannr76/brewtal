@@ -1,5 +1,6 @@
 /* WiFi setup (lib/network): the setup flow against a scripted radio, and the setup page's
  * HTTP handler. */
+#include "brew/network/brewfather.h"
 #include "brew/network/setup_portal.h"
 #include "brew/network/wifi_setup.h"
 #include "minitest.h"
@@ -326,6 +327,53 @@ TEST(portal_connect_decodes_the_form_and_reports_progress)
     CHECK(s.status().phase == SetupPhase::Off);
     get(p, "POST", "/api/connect", "ssid=A&password=12345678", 800, &status);   // setup closed now
     CHECK_EQ(status, 400);
+}
+
+TEST(portal_brewfather_page_saves_without_echoing_secrets)
+{
+    struct NullHttp final : hal::HttpClient {
+        bool begin() override { return true; }
+        bool start(const hal::HttpClientRequest &) override { return true; }
+        bool poll(hal::HttpClientResult &) override { return false; }
+    } http;
+    FakeWifi w;
+    WifiSetup s(w, nullptr, WifiSetup::Config{});
+    s.begin(0);
+    MemStore store;
+    Brewfather bf(http, &store);
+    bf.begin("BrewDialCB50", 0);
+    SetupPortal p(s);
+
+    int status = 0;
+    get(p, "GET", "/brewfather", "", 0, &status);
+    CHECK_EQ(status, 302);                       // not attached yet: the setup page's redirect
+    p.attachBrewfather(&bf);
+    std::string page = get(p, "GET", "/brewfather", "", 0, &status);
+    CHECK_EQ(status, 200);
+    CHECK(page.find("Custom Stream") != std::string::npos);
+
+    std::string j = get(p, "GET", "/api/brewfather");
+    CHECK(j.find("\"account\":\"not_set_up\"") != std::string::npos);
+    CHECK(j.find("\"device\":\"BrewDialCB50\"") != std::string::npos);
+    CHECK(j.find("\"last_post_age_s\":-1") != std::string::npos);
+    CHECK(j.back() == '}');
+
+    j = get(p, "POST", "/api/brewfather", "user=uid42&key=s%2Bcr%26t&stream=https%3A%2F%2Flog.brewfather.net%2Fstream%3Fid%3DL31X", 5);
+    CHECK(store.s["bf_user"] == "uid42");
+    CHECK(store.s["bf_key"] == "s+cr&t");        // form-decoded
+    CHECK(store.s["bf_stream"] == "L31X");
+    CHECK(j.find("\"account\":\"checking\"") != std::string::npos);
+    CHECK(j.find("\"key_set\":true") != std::string::npos);
+    CHECK(j.find("uid42") == std::string::npos && j.find("s+cr") == std::string::npos &&
+          j.find("L31X") == std::string::npos);   // never sent back
+
+    j = get(p, "POST", "/api/brewfather", "user=&key=&stream=", 6);   // empty fields keep what's saved
+    CHECK(store.s["bf_key"] == "s+cr&t");
+    get(p, "POST", "/api/brewfather/check", "", 7, &status);
+    CHECK_EQ(status, 200);
+    j = get(p, "POST", "/api/brewfather/forget", "", 8);
+    CHECK(j.find("\"account\":\"not_set_up\"") != std::string::npos);
+    CHECK(store.s["bf_key"].empty());
 }
 
 TEST(portal_form_field_edge_cases)

@@ -78,6 +78,8 @@ public:
     const BrewfatherStatus & status() const { return st_; }
     /** Seconds since Brewfather last recorded a reading from us, -1 if unknown. */
     int64_t lastLogAgeS(int64_t unix_ms) const;
+    /** The same, at the wall-clock time of the last tick. */
+    int64_t lastLogAgeS() const { return lastLogAgeS(unix_ms_); }
 
     /** Base64 (for the Basic auth header). Writes a terminated string; false if `n` is too small. */
     static bool base64(const char * in, size_t len, char * out, size_t n);
@@ -98,6 +100,7 @@ private:
     char user_[64] = { 0 }, key_[96] = { 0 }, stream_[64] = { 0 };
     char key_upper_[24] = { 0 };   // our device as Brewfather keys it: "BREWDIALCB50"
     Pending pending_ = Pending::None;
+    int64_t unix_ms_ = 0;
     uint32_t check_at_ = 0, post_at_ = 0;
     bool check_due_ = false, post_due_ = false;
     bool reading_valid_ = false;

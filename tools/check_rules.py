@@ -226,9 +226,9 @@ def check_generated(root, errors):
     sys.path.insert(0, os.path.join(root, "tools"))
     try:
         import gen_setup_page
-        if not gen_setup_page.is_current():
-            errors.append("generated: lib/network/src/setup_page.cpp is out of date with "
-                          "lib/network/web/setup.html: run  python tools/gen_setup_page.py")
+        for gen in gen_setup_page.stale():
+            errors.append("generated: %s is out of date with its page in lib/network/web: "
+                          "run  python tools/gen_setup_page.py" % gen)
     finally:
         sys.path.pop(0)
 

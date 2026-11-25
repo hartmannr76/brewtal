@@ -98,6 +98,55 @@ void SetupPortal::stateJson()
     put("]}");
 }
 
+void SetupPortal::brewfatherJson(uint32_t now)
+{
+    const BrewfatherStatus & b = bf_->status();
+    char num[160];
+    put("{\"account\":");
+    putEscaped(accountName(b.account));
+    std::snprintf(num, sizeof(num), ",\"http\":%d,\"user_set\":%s,\"key_set\":%s,\"stream_set\":%s,\"device\":", b.http,
+                  b.user_set ? "true" : "false", b.key_set ? "true" : "false", b.stream_set ? "true" : "false");
+    put(num);
+    putEscaped(b.device);
+    put(",\"attached\":");
+    put(b.attached ? "true" : "false");
+    put(",\"batch\":");
+    putEscaped(b.batch);
+    const long post_age = b.last_post_ms ? static_cast<long>((now - b.last_post_ms) / 1000u) : -1L;
+    std::snprintf(num, sizeof(num), ",\"last_log_age_s\":%ld,\"last_post_age_s\":%ld,\"last_post_http\":%d}",
+                  static_cast<long>(bf_->lastLogAgeS()), post_age, b.last_post_http);
+    put(num);
+}
+
+bool SetupPortal::handleBrewfather(const char * m, const char * p, const HttpRequest & req, uint32_t now, HttpResponse & res)
+{
+    if(is(m, "GET") && is(p, "/brewfather")) {
+        res.content_type = "text/html; charset=utf-8";
+        res.body = kBrewfatherPage;
+        res.body_len = kBrewfatherPageLen;
+        return true;
+    }
+    if(is(m, "POST") && is(p, "/api/brewfather")) {
+        char user[64], key[96], stream[200];
+        if(!formField(req.body, req.body_len, "user", user, sizeof(user))) user[0] = '\0';
+        if(!formField(req.body, req.body_len, "key", key, sizeof(key))) key[0] = '\0';
+        if(!formField(req.body, req.body_len, "stream", stream, sizeof(stream))) stream[0] = '\0';
+        bf_->setCredentials(user, key, stream, now);
+    }
+    else if(is(m, "POST") && is(p, "/api/brewfather/check")) {
+        bf_->checkNow(now);
+    }
+    else if(is(m, "POST") && is(p, "/api/brewfather/forget")) {
+        bf_->forget();
+    }
+    else if(!(is(m, "GET") && is(p, "/api/brewfather"))) {
+        return false;
+    }
+    brewfatherJson(now);
+    json(res, 200);
+    return true;
+}
+
 void SetupPortal::serve(hal::HttpServer & server, uint32_t now)
 {
     HttpRequest req;
@@ -152,6 +201,7 @@ void SetupPortal::handle(const HttpRequest & req, uint32_t now, HttpResponse & r
         json(res, 200);
         return;
     }
+    if(bf_ && handleBrewfather(m, p, req, now, res)) return;
     if(is(m, "GET")) {   // captive-portal probes and anything else: send them to the page
         res.status = 302;
         res.location = home_;

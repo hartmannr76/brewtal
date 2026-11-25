@@ -1,0 +1,160 @@
+<!doctype html>
+<!-- BrewDial Brewfather page: served by the device on the home network at /brewfather (no
+     external fonts or scripts, like the setup page). Embedded into firmware by
+     tools/gen_setup_page.py. Talks to /api/brewfather (GET status, POST credentials),
+     /api/brewfather/check and /api/brewfather/forget. Saved credentials are never sent back. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BrewDial · Brewfather</title>
+<style>
+:root {
+  --bg: #0b0e11; --well: #090c0f; --hair: rgba(255,255,255,.08); --hair-2: rgba(255,255,255,.14);
+  --text: #eef2f5; --text-2: #a9b3bd; --text-3: #8a96a2;
+  --hi: #7cd4ff; --hi-2: #5fb8ee; --warn: #ffb36b; --ok: #8fe3b0;
+  --f: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  background: radial-gradient(120% 60% at 50% 100%, rgba(48,112,176,.28), transparent 70%), var(--bg);
+  color: var(--text); font: 400 16px/1.45 var(--f); -webkit-font-smoothing: antialiased;
+  padding: max(20px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) 28px max(18px, env(safe-area-inset-left));
+}
+main { max-width: 440px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+.caps { font-size: 11px; font-weight: 600; letter-spacing: .22em; text-transform: uppercase; color: var(--text-3); }
+h1 { font-size: 26px; font-weight: 300; margin: 4px 0 0; line-height: 1.2; }
+p { margin: 0; color: var(--text-2); font-size: 15px; }
+.card { border: 1px solid var(--hair-2); border-radius: 14px; overflow: hidden; }
+.line { display: flex; justify-content: space-between; gap: 14px; padding: 12px 14px; border-top: 1px solid var(--hair); }
+.line:first-child { border-top: 0; }
+.line .k { color: var(--text-2); flex: none; }
+.line .v { text-align: right; min-width: 0; overflow-wrap: anywhere; }
+.ok { color: var(--ok); } .warn { color: var(--warn); } .muted { color: var(--text-3); }
+.hint { padding: 12px 14px; border-top: 1px solid var(--hair); font-size: 14px; color: var(--text-2); background: rgba(255,179,107,.06); }
+label.f { display: block; font-size: 13px; color: var(--text-2); margin: 0 0 6px; }
+.help { font-size: 13px; color: var(--text-3); margin: 6px 0 0; }
+.box { display: flex; border: 1px solid var(--hair-2); border-radius: 12px; background: var(--well); overflow: hidden; }
+.box input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text); font: 400 16px var(--f); padding: 13px 14px; }
+.box input::placeholder { color: var(--text-3); }
+.box input:focus { outline: none; }
+.box:focus-within { border-color: var(--hi-2); }
+.go { border: 0; border-radius: 12px; padding: 15px; font: 600 16px var(--f); color: #04121c; cursor: pointer;
+      background: linear-gradient(180deg, #9fe0ff, var(--hi-2)); }
+.go:disabled { opacity: .4; cursor: default; }
+.row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.link { border: 0; background: none; color: var(--text-2); font: 500 14px var(--f); padding: 6px 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.msg { font-size: 14.5px; }
+:focus-visible { outline: 2px solid var(--hi); outline-offset: 2px; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <div><div class="caps">BrewDial</div><h1>Brewfather</h1></div>
+
+  <div class="card" aria-live="polite">
+    <div class="line"><span class="k">Account</span><span class="v" id="acct">…</span></div>
+    <div class="line"><span class="k">Logging</span><span class="v" id="log">…</span></div>
+    <div class="line"><span class="k">Device name</span><span class="v" id="dev">…</span></div>
+    <div class="hint" id="attach" hidden>To log to a batch: in Brewfather, open the batch (status Fermenting) ›
+      Readings › Devices › <b>Attach</b> <span id="dev2"></span>. Brewfather needs Premium for this. The dial posts every
+      15 minutes; the device appears there after its first post.</div>
+  </div>
+
+  <form id="f" novalidate style="display:flex;flex-direction:column;gap:16px">
+    <div>
+      <label class="f" for="user">User ID</label>
+      <div class="box"><input id="user" name="user" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="63"></div>
+      <p class="help">Brewfather › Settings › API › User ID</p>
+    </div>
+    <div>
+      <label class="f" for="key">API key</label>
+      <div class="box"><input id="key" name="key" type="password" autocomplete="off" maxlength="95"></div>
+      <p class="help">Settings › API keys › Create API key, with the <b>Read batches</b> permission</p>
+    </div>
+    <div>
+      <label class="f" for="stream">Custom Stream ID or URL</label>
+      <div class="box"><input id="stream" name="stream" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="200"></div>
+      <p class="help">Settings › Power-ups › Custom Stream: paste the logging URL</p>
+    </div>
+    <p class="msg" id="msg" hidden></p>
+    <button class="go" id="save" type="submit">Save and check</button>
+  </form>
+
+  <div class="row">
+    <button type="button" class="link" id="check">Check now</button>
+    <button type="button" class="link" id="forget">Forget Brewfather</button>
+  </div>
+</main>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var s = null;
+
+  function ago(sec) {
+    if (sec < 0) return '';
+    if (sec < 90) return 'just now';
+    if (sec < 5400) return Math.round(sec / 60) + ' min ago';
+    if (sec < 172800) return Math.round(sec / 3600) + ' h ago';
+    return Math.round(sec / 86400) + ' days ago';
+  }
+  function set(el, text, cls) { el.textContent = text; el.className = 'v' + (cls ? ' ' + cls : ''); }
+
+  function render() {
+    if (!s) return;
+    var a = { not_set_up: ['Not set up', 'muted'], checking: ['Checking…', 'muted'], connected: ['Connected', 'ok'],
+              rejected: ['User ID or API key not accepted', 'warn'], unreachable: ['Can’t reach Brewfather (trying again)', 'warn'] }[s.account] || ['…', ''];
+    set($('acct'), a[0], a[1]);
+    var attachHint = false;
+    if (!s.stream_set) set($('log'), 'Add your Custom Stream ID', 'muted');
+    else if (s.attached) {
+      var when = ago(s.last_log_age_s);
+      set($('log'), 'To ' + s.batch + (when ? ' · last reading ' + when : ''), 'ok');
+    } else if (s.account === 'connected') { set($('log'), 'Not attached to a Fermenting batch yet', 'warn'); attachHint = true; }
+    else if (s.last_post_age_s >= 0) set($('log'), (s.last_post_http >= 200 && s.last_post_http < 300 ? 'Posted ' : 'Last post failed, ') + ago(s.last_post_age_s), '');
+    else set($('log'), 'Waiting for the first reading', 'muted');
+    set($('dev'), s.device, '');
+    $('dev2').textContent = s.device;
+    $('attach').hidden = !attachHint;
+    $('user').placeholder = s.user_set ? 'saved (leave empty to keep)' : '';
+    $('key').placeholder = s.key_set ? 'saved (leave empty to keep)' : '';
+    $('stream').placeholder = s.stream_set ? 'saved (leave empty to keep)' : '';
+    $('forget').hidden = !(s.user_set || s.key_set || s.stream_set);
+  }
+  function load() {
+    fetch('/api/brewfather', { cache: 'no-store' }).then(function (r) { return r.json(); })
+      .then(function (j) { s = j; render(); }).catch(function () {});
+  }
+  function post(path, data) {
+    return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: data ? new URLSearchParams(data).toString() : '' }).then(function (r) { return r.json(); });
+  }
+  function say(text, warn) { $('msg').textContent = text; $('msg').className = 'msg' + (warn ? ' warn' : ''); $('msg').hidden = !text; }
+
+  $('f').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var d = { user: $('user').value.trim(), key: $('key').value.trim(), stream: $('stream').value.trim() };
+    if (!d.user && !d.key && !d.stream) { say('Nothing to save: fill in at least one field.', true); return; }
+    $('save').disabled = true;
+    post('/api/brewfather', d).then(function (j) {
+      s = j; render();
+      $('user').value = ''; $('key').value = ''; $('stream').value = '';
+      say('Saved. Checking with Brewfather…', false);
+    }).catch(function () { say('Couldn’t reach the dial. Is your phone on the same WiFi?', true); })
+      .then(function () { $('save').disabled = false; });
+  });
+  $('check').addEventListener('click', function () { post('/api/brewfather/check').then(function (j) { s = j; render(); }); });
+  $('forget').addEventListener('click', function () {
+    if (!confirm('Forget the Brewfather user ID, API key and stream on this dial?')) return;
+    post('/api/brewfather/forget').then(function (j) { s = j; render(); say('Forgotten.', false); });
+  });
+
+  load();
+  setInterval(load, 3000);
+})();
+</script>
+</body>
+</html>

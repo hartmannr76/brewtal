@@ -142,7 +142,7 @@ int64_t Brewfather::lastLogAgeS(int64_t unix_ms) const
 
 void Brewfather::tick(uint32_t now, bool online, int64_t unix_ms)
 {
-    (void)unix_ms;
+    if(unix_ms > 0) unix_ms_ = unix_ms;
     if(pending_ != Pending::None) {   /* one request at a time: wait for its result */
         hal::HttpClientResult r;
         if(!http_.poll(r)) return;
