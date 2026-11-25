@@ -91,6 +91,9 @@ struct Command {
         SetStepCount = 9,  // value: how many schedule steps there are
         SetClock = 10,     // value: the time now, Unix seconds (as uint32), from the internet.
                            // The day count and schedule run on it from then on.
+        SetBatch = 11,     // value: when fermentation started, Unix seconds (as uint32); name: the
+                           // batch. Runs the schedule (already sent with SetStep / SetStepCount) as
+                           // if started then, and Day 1 is that day: an imported Brewfather batch.
     };
 
     Kind  kind = Kind::RequestSync;
@@ -102,6 +105,7 @@ struct Command {
     int32_t value = 0;
     uint8_t step = 0;
     uint16_t ramp_h = 0, hold_h = 0;
+    char name[State::kBatchLen] = { 0 };   // SetBatch
 
     static Command setSetpoint(Mode m, float c) { Command x; x.kind = Kind::SetSetpoint; x.mode = m; x.setpoint_c = c; return x; }
     static Command setMode(Mode m, bool p)      { Command x; x.kind = Kind::SetMode; x.mode = m; x.paused = p; return x; }
@@ -122,6 +126,20 @@ struct Command {
     }
     static Command setStepCount(uint8_t n)        { Command x; x.kind = Kind::SetStepCount; x.value = n; return x; }
     static Command setClock(uint32_t unix_s)      { Command x; x.kind = Kind::SetClock; x.value = static_cast<int32_t>(unix_s); return x; }
+    /** `name` is cut to 15 bytes, never mid-character. */
+    static Command setBatch(uint32_t start_unix_s, const char * name)
+    {
+        Command x;
+        x.kind = Kind::SetBatch;
+        x.value = static_cast<int32_t>(start_unix_s);
+        size_t n = 0;
+        while(name && name[n] && n < State::kBatchLen - 1) n++;
+        if(name && name[n])   /* cut short: don't leave half a UTF-8 character */
+            while(n > 0 && (static_cast<unsigned char>(name[n]) & 0xC0) == 0x80) n--;
+        for(size_t i = 0; i < n; i++) x.name[i] = name[i];
+        x.name[n] = '\0';
+        return x;
+    }
 };
 
 /**

@@ -78,7 +78,7 @@ private:
     /* One slot per independent setting: latest command wins within a slot. */
     enum Slot {
         kSpFerment, kSpCrash, kMode, kUnits, kTune0,
-        kProfile = kTune0 + kTuningCount, kStepCount, kStep0,
+        kProfile = kTune0 + kTuningCount, kStepCount, kBatch, kStep0,
         kSlots = kStep0 + Settings::kMaxSteps
     };
     struct Pending {

@@ -1,5 +1,7 @@
 #include "brew/link.h"
 
+#include <cstring>
+
 #include "brew/codec.h"
 
 namespace brew {
@@ -125,6 +127,7 @@ int RemoteControllerProxy::slotOf(const Command & c)
         case Command::Kind::SetTuning:   return kTune0 + static_cast<int>(c.tuning);
         case Command::Kind::SetProfile:  return kProfile;
         case Command::Kind::SetStepCount: return kStepCount;
+        case Command::Kind::SetBatch:    return kBatch;
         case Command::Kind::SetStep:     return c.step < Settings::kMaxSteps ? kStep0 + c.step : -1;
         default:                         return -1;   // RequestSync: answered by State itself
     }
@@ -139,6 +142,7 @@ bool RemoteControllerProxy::confirmed(const Command & c, const State & s)
         }
         case Command::Kind::SetMode:  return s.mode == c.mode && s.paused == c.paused;
         case Command::Kind::SetUnits: return s.celsius == c.celsius;
+        case Command::Kind::SetBatch: return std::strncmp(s.batch, c.name, State::kBatchLen) == 0;
         default:                      return true;
     }
 }
@@ -149,6 +153,7 @@ void RemoteControllerProxy::overlay(const Command & c, State & s)
         case Command::Kind::SetSetpoint: s.setpoint_c[c.mode == Mode::Crash ? 1 : 0] = c.setpoint_c; break;
         case Command::Kind::SetMode:     s.mode = c.mode; s.paused = c.paused; break;
         case Command::Kind::SetUnits:    s.celsius = c.celsius; break;
+        case Command::Kind::SetBatch:    std::memcpy(s.batch, c.name, State::kBatchLen); break;
         default: break;
     }
 }

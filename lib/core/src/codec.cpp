@@ -55,6 +55,9 @@ size_t encode(const Command & c, uint16_t seq, uint8_t * buf, size_t max)
     w.u8(c.step);                                                   // #7
     w.u16(c.ramp_h);                                                // #8
     w.u16(c.hold_h);                                                // #9
+    const size_t nl = strnlen(c.name, State::kBatchLen - 1);        // #10
+    w.u8(static_cast<uint8_t>(nl));
+    w.bytes(reinterpret_cast<const uint8_t *>(c.name), nl);
     return w.size();
 }
 
@@ -140,7 +143,7 @@ DecodeResult decodeCommand(Reader & r, Command & c)
     c = Command{};
     const uint8_t kind = r.u8();
     if(kind < static_cast<uint8_t>(Command::Kind::SetSetpoint) ||
-       kind > static_cast<uint8_t>(Command::Kind::SetClock))
+       kind > static_cast<uint8_t>(Command::Kind::SetBatch))
         return DecodeResult::BadPayload;
     c.kind = static_cast<Command::Kind>(kind);
     const uint8_t mode = r.u8();
@@ -161,7 +164,7 @@ DecodeResult decodeCommand(Reader & r, Command & c)
         }
     }
     else if(c.kind == Command::Kind::SetTuning || c.kind == Command::Kind::SetProfile ||
-            c.kind == Command::Kind::SetStepCount || c.kind == Command::Kind::SetClock) {
+            c.kind == Command::Kind::SetStepCount || c.kind == Command::Kind::SetClock || c.kind == Command::Kind::SetBatch) {
         return DecodeResult::BadPayload;
     }
     if(r.has(5)) {   // #7..#9 (appended)
@@ -169,7 +172,16 @@ DecodeResult decodeCommand(Reader & r, Command & c)
         c.ramp_h = r.u16();
         c.hold_h = r.u16();
     }
-    else if(c.kind == Command::Kind::SetStep) {
+    else if(c.kind == Command::Kind::SetStep || c.kind == Command::Kind::SetBatch) {
+        return DecodeResult::BadPayload;
+    }
+    if(r.has(1)) {   // #10 (appended)
+        const uint8_t len = r.u8();
+        if(len > State::kBatchLen - 1 || !r.has(len)) return DecodeResult::BadPayload;
+        for(uint8_t i = 0; i < len; i++) c.name[i] = static_cast<char>(r.u8());
+        c.name[len] = '\0';
+    }
+    else if(c.kind == Command::Kind::SetBatch) {
         return DecodeResult::BadPayload;
     }
     return DecodeResult::Ok;

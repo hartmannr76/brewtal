@@ -105,7 +105,8 @@ TEST(codec_command_and_history_golden_v1)
     size_t n = codec::encode(Command::setSetpoint(Mode::Ferment, 18.5f), 1, b, sizeof(b));
     CHECK_EQ(hex(bytes(b, n)), std::string("010201000100" "3a07" "00"   /* v1 as deployed */
                                            "00" "00000000"             /* #5 tuning, #6 value (appended) */
-                                           "00" "0000" "0000"));       /* #7 step, #8 ramp_h, #9 hold_h */
+                                           "00" "0000" "0000"          /* #7 step, #8 ramp_h, #9 hold_h */
+                                           "00"));                     /* #10 name: empty (appended) */
     HistoryChunk h;
     h.reset = true;
     h.ms_per_sample = 30u * 60u * 1000u;
@@ -179,8 +180,21 @@ TEST(codec_round_trips)
     n = codec::encode(Command::startDayCount(), 4, b, sizeof(b));
     CHECK(codec::decode(b, n, m) == codec::DecodeResult::Ok);
     CHECK(m.command.kind == Command::Kind::StartDayCount);
-    b[4] = 11;  // a kind this version doesn't know is refused, not guessed at
+    b[4] = 12;  // a kind this version doesn't know is refused, not guessed at
     CHECK(codec::decode(b, n, m) == codec::DecodeResult::BadPayload);
+
+    /* SetBatch: start + name, cut to 15 bytes without splitting a character */
+    n = codec::encode(Command::setBatch(1795582800u, "B\xC3\xA4rktoberfest GF"), 6, b, sizeof(b));
+    CHECK(codec::decode(b, n, m) == codec::DecodeResult::Ok);
+    CHECK(m.command.kind == Command::Kind::SetBatch);
+    CHECK_EQ(static_cast<uint32_t>(m.command.value), 1795582800u);
+    CHECK(std::string(m.command.name) == "B\xC3\xA4rktoberfest ");   // 15 bytes: "ä" is two
+    CHECK(std::string(Command::setBatch(0, "12345678901234\xC3\xA4").name) == "12345678901234");   // never half an "ä"
+    CHECK(codec::decode(b, n - 1, m) == codec::DecodeResult::BadPayload);   // name cut short
+    /* an older display's command (no #10) still decodes, with no name */
+    n = codec::encode(Command::setUnits(true), 7, b, sizeof(b));
+    CHECK(codec::decode(b, n - 1, m) == codec::DecodeResult::Ok);
+    CHECK(m.command.name[0] == '\0');
 
     /* SetClock: Unix seconds, still right past 2038 (the i32 field carries a u32) */
     for(const uint32_t t : { 1795132800u, 0x80000010u }) {

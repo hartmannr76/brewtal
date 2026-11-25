@@ -11,6 +11,7 @@ namespace {
  * removing a setting never invalidates the others. Keep keys <= 15 chars (NVS limit). */
 constexpr const char * kKeySetpoint[kModeCount] = { "sp0_cc", "sp1_cc" };   // centi-degC
 constexpr const char * kKeyMode = "mode";
+constexpr const char * kKeyBatch = "batch";   // the batch's name (an imported Brewfather batch)
 constexpr const char * kKeyPaused = "paused";
 constexpr const char * kKeyCelsius = "celsius";
 constexpr const char * kKeyTuning[kTuningCount] = { "hdiff_cc", "cdiff_cc", "hdelay_s", "cdelay_s", "crash_cc" };
@@ -61,6 +62,8 @@ void Controller::begin(uint32_t now)
         if(store_->getI32(kKeyMode, v) && v >= 0 && v < kModeCount) st_.mode = static_cast<Mode>(v);
         if(store_->getI32(kKeyPaused, v)) st_.paused = v != 0;
         if(store_->getI32(kKeyCelsius, v)) st_.celsius = v != 0;
+        char name[State::kBatchLen];
+        if(store_->getStr(kKeyBatch, name, sizeof(name)) && name[0]) std::snprintf(st_.batch, sizeof(st_.batch), "%s", name);
         for(int i = 0; i < kTuningCount; i++)   // -1 (or out of range) = not set: keep Config's
             if(store_->getI32(kKeyTuning[i], v) && v >= 0) setTuning(static_cast<Tuning>(i), v);
         /* the schedule: steps as typed keys (sch_t0 / sch_r0 / sch_h0 ...), then where it is */
@@ -451,6 +454,35 @@ void Controller::handle(const Command & c, uint32_t now)
         case Command::Kind::SetClock:
             setClock(static_cast<uint32_t>(c.value), now);
             break;
+        case Command::Kind::SetBatch: {
+            /* An imported batch: its name, and the schedule (its steps already sent) running as if
+             * started when fermentation started, with Day 1 that day. Switching to the schedule here,
+             * not with a separate SetProfile, means a re-sent SetProfile can't restart it at "now". */
+            std::snprintf(st_.batch, sizeof(st_.batch), "%s", c.name[0] ? c.name : kManual);
+            if(store_) store_->setStr(kKeyBatch, st_.batch);
+            if(set_.nsteps > 0) {
+                advanceClock(now);
+                set_.profile = Profile::Schedule;
+                startSchedule();
+                const uint32_t start = static_cast<uint32_t>(c.value);
+                if(clk_unix_ && start <= clk_s_) {   /* without internet time there's no "then": it starts now */
+                    sched_start_s_ = start;
+                    day0_s_ = start;
+                    updateDay();
+                    if(store_) store_->setI32(kKeySchedStart, clockBits(sched_start_s_));
+                    saveClock();
+                }
+                if(store_) store_->setI32(kKeyProfile, static_cast<int32_t>(Profile::Schedule));
+                persist();
+            }
+            else if(store_) {
+                store_->commit();
+            }
+            evaluate(now);
+            publishSettings(now);
+            port_.publish(st_);
+            break;
+        }
         case Command::Kind::StartDayCount:
             advanceClock(now);
             day0_s_ = clk_s_;

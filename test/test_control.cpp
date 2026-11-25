@@ -280,6 +280,64 @@ TEST(controller_manual_day_count_survives_restarts_and_resets)
     CHECK_EQ(ctl3.clockS() - c0, 5u);
 }
 
+TEST(controller_imports_a_batch_that_started_days_ago)
+{
+    CapturePort port;
+    FakeSensor s;
+    s.set(20.0f);
+    DeadbandLaw law(0.3f * 5.0f / 9.0f);
+    FakeOut h, c;
+    OutputGuard guard(&h, &c, {});
+    MemStore store;
+    constexpr uint32_t kDay = 24u * 3600u;
+    constexpr uint32_t kNow = 1795600000u;
+
+    uint32_t now = 0;
+    Controller ctl(port, s, law, guard, &store, Controller::Config{});
+    ctl.begin(now);
+    port.in.push(Command::setClock(kNow));
+    ctl.tick(now += 20);
+    CHECK(std::string(port.last.batch) == "Manual");
+
+    /* Brewfather's profile: Primary 20 C for 7 days, then a 1-day ramp to 11.67 C held 14 days */
+    port.in.push(Command::setStep(0, 20.0f, 0, 7 * 24));
+    port.in.push(Command::setStep(1, 11.67f, 24, 14 * 24));
+    port.in.push(Command::setStepCount(2));
+    port.in.push(Command::setBatch(kNow - 3 * kDay, "Pale Ale"));
+    ctl.tick(now += 20);
+    run_s(ctl, now, 2);
+    CHECK(std::string(port.last.batch) == "Pale Ale");
+    CHECK(port.settings.profile == Profile::Schedule);
+    CHECK_EQ(port.settings.step, 0);
+    CHECK_EQ(port.last.day, static_cast<uint16_t>(4));         // started 3 days ago: Day 4
+    CHECK_NEAR(port.last.setpoint_c[0], 20.0, 1e-3);
+    CHECK_EQ(store.s["batch"], std::string("Pale Ale"));
+
+    /* a SetProfile(Schedule) arriving late (re-sent over the cable) doesn't restart it at "now" */
+    port.in.push(Command::setProfile(Profile::Schedule));
+    ctl.tick(now += 20);
+    run_s(ctl, now, 2);
+    CHECK_EQ(port.last.day, static_cast<uint16_t>(4));
+
+    /* imported again with a start 7.5 days back: half way through the ramp to 11.67 */
+    port.in.push(Command::setBatch(kNow - 7 * kDay - kDay / 2, "Pale Ale"));
+    ctl.tick(now += 20);
+    run_s(ctl, now, 2);
+    CHECK_EQ(port.settings.step, 1);
+    CHECK_NEAR(port.last.setpoint_c[0], (20.0 + 11.67) / 2.0, 0.05);
+
+    /* all of it survives a restart */
+    CapturePort port2;
+    uint32_t now2 = 0;
+    Controller ctl2(port2, s, law, guard, &store, Controller::Config{});
+    ctl2.begin(now2);
+    ctl2.tick(now2);
+    run_s(ctl2, now2, 2);
+    CHECK(std::string(port2.last.batch) == "Pale Ale");
+    CHECK(port2.settings.profile == Profile::Schedule);
+    CHECK_EQ(port2.last.day, static_cast<uint16_t>(8));
+}
+
 TEST(controller_day_count_switches_to_internet_time_and_counts_time_unplugged)
 {
     CapturePort port;

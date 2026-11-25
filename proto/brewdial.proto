@@ -48,16 +48,17 @@ message Settings {
 message Command {
   uint32 kind = 1;      // 1 set_setpoint, 2 set_mode, 3 set_units, 4 request_sync,
                         // 5 start_day_count, 6 set_tuning, 7 set_profile, 8 set_step,
-                        // 9 set_step_count, 10 set_clock
+                        // 9 set_step_count, 10 set_clock, 11 set_batch
   uint32 mode = 2;
   sint32 setpoint_cc = 3;
   uint32 flags = 4;     // bit0 paused, bit1 celsius
   uint32 tuning = 5;    // set_tuning: 0 heat_diff, 1 cool_diff, 2 heat_delay, 3 cool_delay, 4 crash_default
   sint32 value = 6;     // set_tuning: centi-degC or seconds; set_profile; set_step_count;
-                        // set_clock: Unix seconds (as uint32)
+                        // set_clock, set_batch: Unix seconds (as uint32)
   uint32 step = 7;      // set_step: which step (temperature in setpoint_cc)
   uint32 ramp_h = 8;    // set_step
   uint32 hold_h = 9;    // set_step
+  string name = 10;     // set_batch: the batch, <= 15 bytes UTF-8
 }
 
 // msg_type 3, controller -> display. A reset chunk starts a new series.
