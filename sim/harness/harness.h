@@ -66,6 +66,18 @@ public:
      */
     std::string runBench();
 
+    /**
+     * CrowPanel speed for live frames: after a frame renders, nothing runs (input waits, as in
+     * the firmware's UI task) until its modelled device time (bench_model.h) has passed, so the
+     * page animates at the device's pace instead of the PC's.
+     */
+    void setPaced(bool on) { paced_ = on; busy_until_ = 0; }
+    bool paced() const { return paced_; }
+    /** The benchmark live, at CrowPanel speed (~35 s); output grows a line per phase. */
+    bool startBench();
+    bool benchRunning() const { return live_bench_ != nullptr; }
+    const std::string & benchOutput() const { return bench_out_; }
+
     /* ---- display-side inputs ---- */
     void turn(int detents);          // whole detents (+ = clockwise)
     void encoderCounts(int counts);  // raw quadrature counts (try 1 to see bounce rejection)
@@ -146,6 +158,9 @@ private:
     void frameAt(uint32_t ui_now);
     app::FrameMeter meter_;
     app::Bench * bench_ = nullptr;
+    std::unique_ptr<app::Bench> live_bench_;
+    bool paced_ = false, paced_before_bench_ = false;
+    uint32_t busy_until_ = 0;            // paced: the device is still drawing until then
     std::string bench_out_;
     static void benchLog(const char * line);
     uint32_t sim_ms_ = 0;

@@ -43,6 +43,8 @@ createBrewDial().then((M) => {
     wifiSkip: M._bd_wifi_skip, wifiForget: M._bd_wifi_forget,
     nextLog: () => M.UTF8ToString(M._bd_next_log()),
     benchRun: () => M.UTF8ToString(M._bd_bench_run()),
+    benchStart: M._bd_bench_start, benchRunning: M._bd_bench_running,
+    benchOutput: () => M.UTF8ToString(M._bd_bench_output()), paced: M._bd_set_paced,
   };
 
   const N = api.size();
@@ -348,28 +350,58 @@ createBrewDial().then((M) => {
   for (const [name, p] of Object.entries(PRESETS)) {
     $('preset-' + name).onclick = () => { for (const id of SETUP) $(id).value = p[id]; applySetup(); };
   }
+  const benchTable = (text) => {
+    const rows = [];
+    for (const line of text.split('\n')) {
+      const m = line.match(/BENCH phase=(\S+) (.*)/);
+      if (!m) continue;
+      const kv = Object.fromEntries(m[2].split(' ').map((p) => p.split('=')));
+      rows.push(`<tr><td>${m[1]}</td><td>${kv.fps}</td><td>${kv.avg_ms}</td>` +
+                `<td>${Number(kv.rendered_px_per_frame).toLocaleString()}</td>` +
+                `<td>${Number(kv.px_per_frame).toLocaleString()}</td></tr>`);
+    }
+    $('bench-table').querySelector('tbody').innerHTML = rows.join('');
+    $('bench-table').hidden = rows.length === 0;
+  };
+  const benchButtons = (on) => { $('bench-run').disabled = !on; $('bench-watch').disabled = !on; };
   $('bench-run').onclick = () => {
-    const btn = $('bench-run');
-    btn.disabled = true;
-    btn.textContent = 'Running…';
+    benchButtons(false);
+    $('bench-run').textContent = 'Running…';
     setTimeout(() => {   // let the button repaint first: the run blocks for a moment
       const t0 = performance.now();
-      const text = api.benchRun();
-      const rows = [];
-      for (const line of text.split('\n')) {
-        const m = line.match(/BENCH phase=(\S+) (.*)/);
-        if (!m) continue;
-        const kv = Object.fromEntries(m[2].split(' ').map((p) => p.split('=')));
-        rows.push(`<tr><td>${m[1]}</td><td>${kv.fps}</td><td>${kv.avg_ms}</td>` +
-                  `<td>${Number(kv.rendered_px_per_frame).toLocaleString()}</td>` +
-                  `<td>${Number(kv.px_per_frame).toLocaleString()}</td></tr>`);
-      }
-      $('bench-table').querySelector('tbody').innerHTML = rows.join('');
-      $('bench-table').hidden = rows.length === 0;
-      btn.textContent = `Run again (took ${((performance.now() - t0) / 1000).toFixed(1)} s)`;
-      btn.disabled = false;
+      benchTable(api.benchRun());
+      $('bench-run').textContent = `Run instantly (took ${((performance.now() - t0) / 1000).toFixed(1)} s)`;
+      benchButtons(true);
     }, 30);
   };
+  $('bench-watch').onclick = () => {
+    if (!api.benchStart()) return;
+    benchButtons(false);
+    benchTable('');
+    $('bench-watch').textContent = 'Watching… (~35 s)';
+    document.querySelector('.stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const poll = setInterval(() => {
+      benchTable(api.benchOutput());
+      if (api.benchRunning()) return;
+      clearInterval(poll);
+      $('bench-watch').textContent = 'Watch at CrowPanel speed';
+      benchButtons(true);
+    }, 250);
+  };
+
+  /* ------------------------------------------------------------ CrowPanel speed (bd_set_paced) */
+  const setPace = (p) => {
+    if (p !== 'crowpanel') p = 'pc';
+    api.paced(p === 'crowpanel' ? 1 : 0);
+    document.querySelectorAll('#pace button').forEach((b) => b.classList.toggle('on', b.dataset.pace === p));
+    syncThumb($('pace'));
+    try { localStorage.setItem('brewdial.pace', p); } catch (_) { /* private mode: not remembered */ }
+  };
+  segment('pace', 'pace', setPace);
+  let savedPace = null;
+  try { savedPace = localStorage.getItem('brewdial.pace'); } catch (_) { /* ignore */ }
+  setPace(qs.get('pace') || savedPace || 'pc');
+  requestAnimationFrame(() => syncThumb($('pace')));
   $('apply').onclick = applySetup;
   $('reboot').onclick = () => api.reboot();
   $('factory').onclick = () => { if (confirm('Wipe the simulated controller\'s saved settings and reboot it?')) api.factory(); };

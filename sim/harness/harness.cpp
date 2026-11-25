@@ -205,7 +205,30 @@ void Harness::buildController()
 
 /* ------------------------------------------------------------------ time */
 
-void Harness::frame(uint32_t ui_now) { frameAt(ui_now + clock_offset_); }
+void Harness::frame(uint32_t ui_now)
+{
+    ui_now += clock_offset_;
+    if(paced_ && static_cast<int32_t>(ui_now - busy_until_) < 0) return;   /* still "drawing" */
+    const uint32_t frames = meter_.frames();
+    frameAt(ui_now);
+    if(paced_ && meter_.frames() != frames) busy_until_ = ui_ms_ + (meter_.lastFrameUs() + 999) / 1000;
+    if(live_bench_ && live_bench_->done()) {
+        bench_ = nullptr;
+        live_bench_.reset();
+        setPaced(paced_before_bench_);
+    }
+}
+
+bool Harness::startBench()
+{
+    if(!started_ || bench_) return false;
+    bench_out_.clear();
+    live_bench_ = std::make_unique<app::Bench>(*bridge_, meter_, benchLog, wifi_setup_.get());
+    bench_ = live_bench_.get();
+    paced_before_bench_ = paced_;
+    setPaced(true);   /* the point of watching it */
+    return true;
+}
 
 void Harness::frameAt(uint32_t ui_now)
 {
@@ -241,7 +264,7 @@ void Harness::benchLog(const char * line)
 
 std::string Harness::runBench()
 {
-    if(!started_) return "";
+    if(!started_ || bench_) return "";
     bench_out_.clear();
     app::Bench b(*bridge_, meter_, benchLog, wifi_setup_.get());
     bench_ = &b;
