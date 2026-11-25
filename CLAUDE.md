@@ -55,6 +55,22 @@ sim/harness sim/web     web test harness: real firmware on fake devices (sim_dev
 - UI behaviour (what a turn/press does, auto-commit, menu and settings lists, editors) lives in `brew_model.c`, never in a
   layout. A new screen shape is a new `brew_layout_t`; it must not change behaviour.
 
+## LVGL redraw cost
+
+Frame time is set by how much of the screen LVGL repaints, and a full repaint costs ~200 ms (~5 fps) on the
+CrowPanel. LVGL repaints the *whole box* of any object it thinks changed a lot, even for an instant mid-update:
+
+- Arcs: `lv_arc_set_angles()` moves the end first. Moving an arc backwards, the end passes the start for a
+  moment, the arc reads as a full circle and its whole box (the whole dial) is repainted. That made turning the
+  knob down 3-4x slower than up. Use `kit_arc_set_angles()`, which moves the leading edge first;
+  `check_rules.py` rejects `lv_arc_set_angles` elsewhere.
+- Setting a style, text or colour to the value it already has still repaints: use the `kit_set_*` helpers,
+  which skip unchanged values.
+- Fades and opacity animations repaint everything under the object every frame; keep them short and hide
+  objects that are fully transparent.
+
+Measure, don't guess: `tools/device_bench.py` (below) reports px repainted per frame for each phase.
+
 ## Wire format rules (keep the nanopb migration a one-file change)
 
 1. App code never touches the wire format. Only `lib/core/src/codec.cpp` turns domain types into

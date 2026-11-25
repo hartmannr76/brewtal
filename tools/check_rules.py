@@ -183,6 +183,29 @@ def check_schema(root, errors):
                     errors.append(f"schema: {msg} field #{num} in {w} is missing from brewdial.proto")
 
 
+# --------------------------------------------------------------------------- LVGL pitfalls
+# lv_arc_set_angles() moves the end first: moving an arc backwards, the end passes the start for
+# a moment, the arc looks like a full circle and LVGL repaints its whole box (the whole dial,
+# every knob step: 6-9 fps turning down vs 21+ up). kit_arc_set_angles() moves the leading edge
+# first. See CLAUDE.md, "LVGL redraw cost".
+LVGL_PITFALLS = [
+    (re.compile(r"\blv_arc_set_angles\s*\("), "lv_arc_set_angles() repaints the whole arc when it moves "
+     "backwards; use kit_arc_set_angles() (layout_kit.h)"),
+]
+LVGL_PITFALL_HOME = re.compile(r"^lib/ui/src/layout_kit\.c$")   # the helper itself
+
+
+def check_lvgl(root, path, text, errors):
+    r = rel(root, path)
+    if LVGL_PITFALL_HOME.search(r):
+        return
+    code = strip_comments(text)
+    for pat, why in LVGL_PITFALLS:
+        for m in pat.finditer(code):
+            line = code.count("\n", 0, m.start()) + 1
+            errors.append(f"{r}:{line}: lvgl: {why}")
+
+
 def run(root):
     errors = []
     for p in source_files(root):
@@ -190,6 +213,7 @@ def run(root):
             text = f.read()
         check_layers(root, p, text, errors)
         check_wire(root, p, text, errors)
+        check_lvgl(root, p, text, errors)
     check_schema(root, errors)
     check_generated(root, errors)
     return errors
