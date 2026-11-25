@@ -245,6 +245,18 @@
       <p class="readout" id="link-stats">–</p>
     </article>
 
+    <article class="card" id="c-bench">
+      <header class="card-h"><h2>Benchmark</h2><span class="card-sub">the device UI benchmark, CrowPanel-paced</span></header>
+      <button id="bench-run" class="btn">Run benchmark</button>
+      <table class="bench" id="bench-table" hidden>
+        <thead><tr><th>phase</th><th>fps</th><th>ms/frame</th><th>rendered px</th><th>invalidated px</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p class="readout" id="bench-note">Same script as <code>tools/device_bench.py</code>: knob up/down, menu, full
+        redraw. Pixel counts per frame are exact; fps and ms are CrowPanel estimates from them. The dial jumps
+        about a minute ahead.</p>
+    </article>
+
     <article class="card wide" id="c-wifi">
       <header class="card-h"><h2>WiFi setup</h2><span class="card-sub">the display's WiFi, on a fake radio and neighbourhood</span></header>
       <div class="wifi">

@@ -2,9 +2,10 @@
 
     %USERPROFILE%\\.platformio-pioarduino\\penv\\Scripts\\python.exe tools/device_bench.py COM5
     ... --no-flash            the board already runs the bench build: just reset and read
-    ... --check               exit 1 when a key number got >20% worse than the last run
+    ... --check               exit 1 when a key number got >15% worse than the last run
     ... --note "arc fix"      saved with the run
     ... --no-save             don't add the run to the history
+    ... --fit                 also fit the host cost model (sim/harness/bench_model.h) to this run
 
 The bench build (env crowpanel21_bench: the demo + lib/app bench.h) waits for boot to settle,
 then runs a fixed script through the same input path as the knob and logs one line per phase:
@@ -12,6 +13,10 @@ idle, 16 knob steps up, 16 down, the menu opened and closed, and the whole scree
 frame. Boot time and internal RAM come from the startup log. Every run is appended to
 bench/results.csv (date, commit, env, phase, metric, value) so the numbers can be followed over
 time; commit that file with the change it measures.
+
+The host runs the same script without a device (sim/harness bench_check, a ctest, and the web
+harness's Benchmark card), estimating frame times from the rendered area with the model in
+sim/harness/bench_model.h. --fit prints new constants for it from this run.
 """
 import argparse
 import csv
@@ -32,7 +37,7 @@ FIELDS = ['run_at', 'commit', 'dirty', 'env', 'note', 'phase', 'metric', 'value'
 
 # metric -> +1 higher is better, -1 lower is better. Only these can fail --check; the rest are shown.
 KEY = {'fps': +1, 'avg_ms': -1, 'display_ready_ms': -1, 'screens_ms': -1, 'internal_free_kb': +1}
-INFO = {'max_ms': -1, 'px_per_frame': -1, 'frames': +1, 'largest_block_kb': +1}
+INFO = {'max_ms': -1, 'px_per_frame': -1, 'rendered_px_per_frame': -1, 'frames': +1, 'largest_block_kb': +1}
 TOLERANCE = 0.15   # identical runs agree within ~3% (measured 2026-11-25)
 
 
@@ -93,6 +98,28 @@ def load_previous(env):
     return head, prev
 
 
+def fit(now):
+    """Frame time = base + per-pixel cost, fitted to (rendered px, avg ms) per phase, minimising
+    relative error so small frames count as much as big ones."""
+    pts = [(now[(p, 'rendered_px_per_frame')], now[(p, 'avg_ms')]) for (p, m) in now
+           if m == 'avg_ms' and (p, 'rendered_px_per_frame') in now and now[(p, 'avg_ms')] > 0]
+    if len(pts) < 2:
+        print('fit: needs rendered_px_per_frame and avg_ms for two or more phases')
+        return
+    sw = swx = swxx = swy = swxy = 0.0
+    for x, y in pts:
+        w = 1.0 / (y * y)
+        sw, swx, swxx, swy, swxy = sw + w, swx + w * x, swxx + w * x * x, swy + w * y, swxy + w * x * y
+    b = (sw * swxy - swx * swy) / (sw * swxx - swx * swx)
+    a = (swy - b * swx) / sw
+    print('\ncost model fit (paste into sim/harness/bench_model.h):')
+    print(f'constexpr double kBenchBaseUs = {a * 1000:.1f};')
+    print(f'constexpr double kBenchUsPerPx = {b * 1000:.4f};')
+    for x, y in pts:
+        e = a + b * x
+        print(f'  {x:>9.0f} px: measured {y:6.1f} ms, model {e:6.1f} ms ({(e - y) / y * 100:+.0f}%)')
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('port')
@@ -101,6 +128,7 @@ def main():
     ap.add_argument('--check', action='store_true')
     ap.add_argument('--no-save', action='store_true')
     ap.add_argument('--note', default='')
+    ap.add_argument('--fit', action='store_true')
     ap.add_argument('--timeout', type=float, default=120)
     a = ap.parse_args()
 
@@ -153,6 +181,8 @@ def main():
                 w.writerow({'run_at': run_at, 'commit': commit, 'dirty': dirty, 'env': a.env, 'note': a.note,
                             'phase': phase, 'metric': metric, 'value': v})
         print(f'\nsaved to {os.path.relpath(RESULTS, ROOT)}')
+    if a.fit:
+        fit(now)
     if worse:
         print(f'more than {TOLERANCE * 100:.0f}% worse than the last run: {", ".join(worse)}')
         if a.check:

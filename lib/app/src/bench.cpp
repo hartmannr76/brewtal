@@ -26,14 +26,26 @@ bool FrameMeter::add(FrameWindow * w)
     return false;
 }
 
+void FrameMeter::remove(FrameWindow * w)
+{
+    for(FrameWindow *& slot : win_)
+        if(slot == w) slot = nullptr;
+}
+
 void FrameMeter::onEvent(lv_event_t * e)
 {
     auto * m = static_cast<FrameMeter *>(lv_event_get_user_data(e));
     switch(lv_event_get_code(e)) {
         case LV_EVENT_REFR_START:
-            m->start_us_ = m->micros_();
+            m->start_us_ = m->micros_ ? m->micros_() : 0;
             m->rendered_ = false;
+            m->frame_px_ = 0;
             break;
+        case LV_EVENT_FLUSH_START: {
+            const auto * a = static_cast<const lv_area_t *>(lv_event_get_param(e));
+            if(a) m->frame_px_ += static_cast<uint64_t>(lv_area_get_width(a)) * static_cast<uint64_t>(lv_area_get_height(a));
+            break;
+        }
         case LV_EVENT_RENDER_START:
             m->rendered_ = true;
             break;
@@ -47,11 +59,16 @@ void FrameMeter::onEvent(lv_event_t * e)
         }
         case LV_EVENT_REFR_READY: {
             if(!m->rendered_) break;   // nothing was redrawn this cycle
-            const uint32_t us = static_cast<uint32_t>(m->micros_() - m->start_us_);
+            const uint32_t us = m->modelled_
+                                    ? static_cast<uint32_t>(m->model_.base_us + m->model_.us_per_px * static_cast<double>(m->frame_px_))
+                                    : static_cast<uint32_t>(m->micros_() - m->start_us_);
+            m->frames_++;
+            m->last_us_ = us;
             for(FrameWindow * w : m->win_) {
                 if(!w) continue;
                 w->frames++;
                 w->sum_us += us;
+                w->rendered_px += m->frame_px_;
                 if(us > w->max_us) w->max_us = us;
             }
             break;
@@ -69,10 +86,13 @@ constexpr uint32_t kStepMs = 300;    // knob detents, like a steady hand
 constexpr int kSteps = 16;           // 8 F in half-degree steps
 }  // namespace
 
-Bench::Bench(UiBridge & ui, FrameMeter & meter, LogFn log, net::WifiSetup * wifi) : ui_(ui), log_(log), wifi_(wifi)
+Bench::Bench(UiBridge & ui, FrameMeter & meter, LogFn log, net::WifiSetup * wifi)
+    : ui_(ui), meter_(meter), log_(log), wifi_(wifi)
 {
-    meter.add(&win_);
+    meter_.add(&win_);
 }
+
+Bench::~Bench() { meter_.remove(&win_); }
 
 void Bench::begin(Phase p, uint32_t now)
 {
@@ -87,12 +107,14 @@ void Bench::finish(uint32_t now)
     const bool measured = phase_ != Warmup && phase_ != SettleUp && phase_ != SettleDown;
     if(measured) {
         const uint32_t ms = now - t0_;
-        char line[160];
+        char line[200];
+        const uint32_t f = win_.frames;
         std::snprintf(line, sizeof(line),
-                      "BENCH phase=%s ms=%u frames=%u fps=%.1f avg_ms=%.1f max_ms=%.1f px_per_frame=%u", kName[phase_],
-                      static_cast<unsigned>(ms), static_cast<unsigned>(win_.frames),
-                      ms ? win_.frames * 1000.0 / ms : 0.0, win_.frames ? win_.sum_us / 1000.0 / win_.frames : 0.0,
-                      win_.max_us / 1000.0, static_cast<unsigned>(win_.frames ? win_.inv_px / win_.frames : 0));
+                      "BENCH phase=%s ms=%u frames=%u fps=%.1f avg_ms=%.1f max_ms=%.1f px_per_frame=%u "
+                      "rendered_px_per_frame=%u",
+                      kName[phase_], static_cast<unsigned>(ms), static_cast<unsigned>(f), ms ? f * 1000.0 / ms : 0.0,
+                      f ? win_.sum_us / 1000.0 / f : 0.0, win_.max_us / 1000.0,
+                      static_cast<unsigned>(f ? win_.inv_px / f : 0), static_cast<unsigned>(f ? win_.rendered_px / f : 0));
         log_(line);
     }
     begin(static_cast<Phase>(phase_ + 1), now);

@@ -112,3 +112,9 @@ Measure, don't guess: `tools/device_bench.py` (below) reports px repainted per f
   knob up/down, menu, full redraw; `lib/app/src/bench.cpp`), compares with the last run and appends to
   `bench/results.csv` (commit it with the change). `--check` fails on a >15% regression in fps, frame time,
   boot time or free RAM. Run it after UI, LVGL, display-driver or memory changes.
+- Without a device: ctest's `bench_check` runs the same benchmark on the host harness with a CrowPanel-paced
+  virtual clock and compares the work per frame (rendered/invalidated px, exact and repeatable) with
+  `bench/host_baseline.csv`; it fails on >5% more work. If the increase is intended, run
+  `sim/build-msvc/Release/bench_check bench/host_baseline.csv --update-baseline` and commit the baseline with the
+  change: never update it just to make the check pass. Its fps/ms are estimates (`sim/harness/bench_model.h`,
+  refit with `device_bench.py --fit`). The web harness's Benchmark card runs it too.

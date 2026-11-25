@@ -17,6 +17,7 @@
 #include "../sim_panel.h"
 
 #include "brew/app/lvgl_port.h"
+#include "brew/app/bench.h"
 #include "brew/app/ui_bridge.h"
 #include "brew/control.h"
 #include "brew/controller.h"
@@ -56,6 +57,14 @@ public:
     void start(uint32_t ui_now);
     /** Advance both sides to `ui_now` and render. Call once per animation frame. */
     void frame(uint32_t ui_now);
+
+    /**
+     * Runs the UI benchmark (lib/app bench.h) to the end on a device-paced virtual clock: a frame
+     * that rendered takes its modelled CrowPanel time (bench_model.h) plus the firmware's 5 ms
+     * loop delay, so animations drop frames roughly as on the device. Returns the BENCH lines.
+     * Afterwards the page's clock is offset, so live frames carry on where the run ended.
+     */
+    std::string runBench();
 
     /* ---- display-side inputs ---- */
     void turn(int detents);          // whole detents (+ = clockwise)
@@ -133,6 +142,12 @@ private:
 
     /* clocks */
     uint32_t ui_ms_ = 0;
+    uint32_t clock_offset_ = 0;          // added to the caller's clock (after a bench run)
+    void frameAt(uint32_t ui_now);
+    app::FrameMeter meter_;
+    app::Bench * bench_ = nullptr;
+    std::string bench_out_;
+    static void benchLog(const char * line);
     uint32_t sim_ms_ = 0;
     float sim_frac_ = 0.0f;
     float speed_ = 1.0f;
