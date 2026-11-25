@@ -43,6 +43,9 @@ struct DisplayConfig {
     net::SetupPortal * portal = nullptr;
     hal::HttpServer *  http = nullptr;
     hal::WallClock *   clock = nullptr;   // internet time, passed on to the controller
+
+    /** Run the scripted UI benchmark once after boot (brew/app/bench.h; tools/device_bench.py). */
+    bool bench = false;
 };
 
 /** Sets up LVGL + brew_ui on `cfg.panel`, then starts the input and UI tasks. */

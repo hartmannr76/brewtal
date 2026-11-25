@@ -213,6 +213,7 @@ void setup()
     d.portal = &portal;
     d.http = &http;
     d.clock = &wallClock;
+    d.bench = BREW_BENCH;
     wifiSettings.begin();
     app::startDisplay(d, uiPort);
     dns.begin();     // after startDisplay: it brought up the network stack

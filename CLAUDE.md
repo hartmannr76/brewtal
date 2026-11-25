@@ -92,3 +92,7 @@ sim/harness sim/web     web test harness: real firmware on fake devices (sim_dev
 - On the device: `pio run -e crowpanel21 -t upload --upload-port COMn`, then `tools/device_log.py COMn` (run
   with the pioarduino penv Python) resets the board and saves its serial log. Startup logs each stage with
   ms since boot and internal RAM left, so that's where to look for boot time and RAM headroom.
+- UI performance: `tools/device_bench.py COMn` flashes `crowpanel21_bench`, runs the scripted benchmark (idle,
+  knob up/down, menu, full redraw; `lib/app/src/bench.cpp`), compares with the last run and appends to
+  `bench/results.csv` (commit it with the change). `--check` fails on a >15% regression in fps, frame time,
+  boot time or free RAM. Run it after UI, LVGL, display-driver or memory changes.

@@ -15,6 +15,9 @@
 #ifndef BREW_DEMO
 #define BREW_DEMO 0              /* 1: simulated fermenter (FakePlant) instead of a probe: env crowpanel21_demo */
 #endif
+#ifndef BREW_BENCH
+#define BREW_BENCH 0             /* 1: run the UI benchmark after boot: env crowpanel21_bench */
+#endif
 #ifndef ENCODER_INVERT
 #define ENCODER_INVERT 0         /* 1 if turning clockwise lowers the target */
 #endif

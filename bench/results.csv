@@ -1,0 +1,59 @@
+run_at,commit,dirty,env,note,phase,metric,value
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",boot,display_ready_ms,2467
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",boot,internal_free_kb,45
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",boot,largest_block_kb,30
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",idle,frames,139.0
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",idle,fps,27.8
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",idle,avg_ms,9.8
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",idle,max_ms,26.9
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",idle,px_per_frame,3637.0
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",turn_up,frames,102.0
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",turn_up,fps,21.2
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",turn_up,avg_ms,29.8
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",turn_up,max_ms,219.1
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",turn_up,px_per_frame,97700.0
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",turn_down,frames,96.0
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",turn_down,fps,19.8
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",turn_down,avg_ms,28.7
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",turn_down,max_ms,205.6
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",turn_down,px_per_frame,99526.0
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",menu,frames,51.0
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",menu,fps,14.5
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",menu,avg_ms,39.2
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",menu,max_ms,237.8
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",menu,px_per_frame,401287.0
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",full_redraw,frames,12.0
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",full_redraw,fps,3.9
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",full_redraw,avg_ms,202.9
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",full_redraw,max_ms,228.3
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",full_redraw,px_per_frame,285762.0
+2026-11-25 07:43:29,e90eb0a,1,crowpanel21_bench,"first run (arc fix, boot speedup)",boot,screens_ms,282
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),boot,display_ready_ms,2490
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),boot,internal_free_kb,44
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),boot,largest_block_kb,30
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),idle,frames,139.0
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),idle,fps,27.8
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),idle,avg_ms,9.8
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),idle,max_ms,24.2
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),idle,px_per_frame,3600.0
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),turn_up,frames,104.0
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),turn_up,fps,21.7
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),turn_up,avg_ms,28.9
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),turn_up,max_ms,207.9
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),turn_up,px_per_frame,95620.0
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),turn_down,frames,96.0
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),turn_down,fps,19.9
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),turn_down,avg_ms,29.6
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),turn_down,max_ms,206.5
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),turn_down,px_per_frame,102490.0
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),menu,frames,50.0
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),menu,fps,14.2
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),menu,avg_ms,39.4
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),menu,max_ms,240.1
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),menu,px_per_frame,402966.0
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),full_redraw,frames,12.0
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),full_redraw,fps,3.9
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),full_redraw,avg_ms,204.5
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),full_redraw,max_ms,228.8
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),full_redraw,px_per_frame,266562.0
+2026-11-25 07:44:11,e90eb0a,1,crowpanel21_bench,repeat (noise check),boot,screens_ms,281
