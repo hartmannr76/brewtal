@@ -31,7 +31,8 @@ public:
         ScheduleStep steps[Settings::kMaxSteps] = {};
         /* The day count's clock: seconds the controller has been powered, saved every this many
          * seconds so it carries on after a power cut (an outage loses at most this much, plus
-         * the time unplugged). Becomes real time once there is WiFi/NTP. */
+         * the time unplugged). Once the display sends the time (SetClock, from the internet) it
+         * is Unix time instead, and time spent unplugged counts too. */
         uint32_t clock_save_s = 600;
     };
 
@@ -63,6 +64,8 @@ public:
     /** The day count's clock (seconds) and when Day 1 began on it. */
     uint32_t clockS() const { return clk_s_; }
     uint32_t dayStartS() const { return day0_s_; }
+    /** True once the clock is Unix time (a SetClock has arrived, now or before a restart). */
+    bool clockIsUnix() const { return clk_unix_; }
 
 private:
     void handle(const Command & c, uint32_t now_ms);
@@ -110,6 +113,8 @@ private:
     uint32_t clk_last_ms_ = 0;   // tick time the clock last advanced to
     uint32_t clk_saved_s_ = 0;   // clk_s_ as last saved
     uint32_t day0_s_ = 0;        // clk_s_ when Day 1 began
+    bool clk_unix_ = false;      // clk_s_ is Unix time (else seconds powered)
+    void setClock(uint32_t unix_s, uint32_t now_ms);
 };
 
 }  // namespace brew

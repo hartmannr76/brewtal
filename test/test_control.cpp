@@ -280,6 +280,90 @@ TEST(controller_manual_day_count_survives_restarts_and_resets)
     CHECK_EQ(ctl3.clockS() - c0, 5u);
 }
 
+TEST(controller_day_count_switches_to_internet_time_and_counts_time_unplugged)
+{
+    CapturePort port;
+    FakeSensor s;
+    s.set(f_to_c(66.0f));
+    DeadbandLaw law(0.3f * 5.0f / 9.0f);
+    FakeOut h, c;
+    OutputGuard guard(&h, &c, {});
+    MemStore store;
+    Controller::Config cfg;
+    cfg.clock_save_s = 600;
+    constexpr uint32_t kDay = 24u * 3600u;
+    constexpr uint32_t kUnix = 1795132800u;   // 2026-11-20 00:00 UTC
+
+    uint32_t now = 0;
+    Controller ctl(port, s, law, guard, &store, cfg);
+    ctl.begin(now);
+    /* a two-step schedule started before there was WiFi: 20 C for 2 days, then 22 C */
+    port.in.push(Command::setStep(0, 20.0f, 0, 48));
+    port.in.push(Command::setStep(1, 22.0f, 0, 48));
+    port.in.push(Command::setProfile(Profile::Schedule));
+    ctl.tick(now += 20);
+    run_s(ctl, now, kDay + 3600);                        // Day 2, an hour into it
+    CHECK_EQ(port.last.day, static_cast<uint16_t>(2));
+    CHECK(!ctl.clockIsUnix());
+
+    /* a time that isn't set yet (1970) changes nothing */
+    port.in.push(Command::setClock(5));
+    ctl.tick(now += 20);
+    CHECK(!ctl.clockIsUnix());
+
+    /* the first internet time: the clock becomes Unix time, and Day 1 and the schedule move
+     * with it, so the day, the step and the target stay as they were */
+    const uint32_t before = ctl.clockS();
+    port.in.push(Command::setClock(kUnix));
+    ctl.tick(now += 20);
+    CHECK(ctl.clockIsUnix());
+    CHECK_EQ(ctl.clockS(), kUnix);
+    CHECK_EQ(ctl.dayStartS(), kUnix - (before - 0u));     // Day 1 began `before` seconds ago
+    CHECK_EQ(port.last.day, static_cast<uint16_t>(2));
+    run_s(ctl, now, 2);
+    CHECK_EQ(port.settings.step, 0);
+    CHECK_NEAR(port.last.setpoint_c[0], 20.0, 1e-3);
+    CHECK_EQ(store.i["clk_unix"], 1);
+    CHECK_EQ(static_cast<uint32_t>(store.i["clk_s"]), kUnix);   // saved right away
+
+    /* small drift isn't written to flash; the regular save catches it */
+    const uint32_t saved = static_cast<uint32_t>(store.i["clk_s"]);
+    port.in.push(Command::setClock(ctl.clockS() + 3));
+    ctl.tick(now += 20);
+    CHECK_EQ(static_cast<uint32_t>(store.i["clk_s"]), saved);
+
+    /* unplugged for a day and a half: after the restart it counts from the saved clock until
+     * the time arrives, then catches up, and the schedule is on its second step */
+    const uint32_t unplugged_at = ctl.clockS();
+    CapturePort port2;
+    uint32_t now2 = 0;
+    Controller ctl2(port2, s, law, guard, &store, cfg);
+    ctl2.begin(now2);
+    ctl2.tick(now2);
+    CHECK(ctl2.clockIsUnix());
+    CHECK_EQ(port2.last.day, static_cast<uint16_t>(2));
+    port2.in.push(Command::setClock(unplugged_at + kDay + kDay / 2));
+    ctl2.tick(now2 += 20);
+    run_s(ctl2, now2, 2);
+    CHECK_EQ(port2.last.day, static_cast<uint16_t>(3));
+    CHECK_EQ(port2.settings.step, 1);
+    CHECK_NEAR(port2.last.setpoint_c[0], 22.0, 1e-3);
+
+    /* a clock that goes back before Day 1 doesn't make the day count wrap */
+    const uint32_t back = ctl2.dayStartS() - 100;
+    port2.in.push(Command::setClock(back));
+    ctl2.tick(now2 += 20);
+    CHECK_EQ(ctl2.dayStartS(), back);
+    run_s(ctl2, now2, 1);
+    CHECK_EQ(port2.last.day, static_cast<uint16_t>(1));
+
+    /* restarting the day count saves Unix time, and keeps it after a restart */
+    port2.in.push(Command::setClock(kUnix + 10 * kDay));
+    port2.in.push(Command::startDayCount());
+    ctl2.tick(now2 += 20);
+    CHECK_EQ(static_cast<uint32_t>(store.i["day0_s"]), kUnix + 10 * kDay);
+}
+
 TEST(controller_settings_change_the_law_and_guard_and_are_kept)
 {
     CapturePort port;

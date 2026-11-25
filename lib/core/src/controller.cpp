@@ -22,6 +22,11 @@ constexpr const char * kKeySchedOvr = "sch_ovr_cc";      // the override target,
 constexpr const char * kKeySchedOvrStep = "sch_ovr_step"; // ...and its step (-1 = none)
 constexpr const char * kKeyClock = "clk_s";      // day-count clock, seconds
 constexpr const char * kKeyDayStart = "day0_s";  // clock value when Day 1 began
+constexpr const char * kKeyClockUnix = "clk_unix"; // 1: the clock values are Unix time
+/* Clock values are saved as the bits of a uint32 in an i32 (Unix time passes 2^31 in 2038). */
+int32_t clockBits(uint32_t s) { return static_cast<int32_t>(s); }
+constexpr uint32_t kMinUnix = 1735689600u;   // 2025-01-01: anything earlier isn't a real time
+constexpr uint32_t kClockSaveJumpS = 60;     // a SetClock that moves the clock this far is saved
 /* Manual control: hold a target. (Fermentation profiles will name themselves here.) */
 constexpr const char * kManual = "Manual";
 constexpr uint32_t kDayS = 24u * 60u * 60u;
@@ -72,7 +77,7 @@ void Controller::begin(uint32_t now)
             }
         }
         if(store_->getI32(kKeyProfile, v) && v >= 0 && v < kProfileCount) set_.profile = static_cast<Profile>(v);
-        if(store_->getI32(kKeySchedStart, v) && v >= 0) sched_start_s_ = static_cast<uint32_t>(v);
+        if(store_->getI32(kKeySchedStart, v)) sched_start_s_ = static_cast<uint32_t>(v);
         if(store_->getI32(kKeySchedFrom, v)) sched_from_c_ = static_cast<float>(v) / 100.0f;
         int32_t os = -1;
         if(store_->getI32(kKeySchedOvrStep, os) && os >= 0 && store_->getI32(kKeySchedOvr, v)) {
@@ -80,8 +85,9 @@ void Controller::begin(uint32_t now)
             set_.step = static_cast<uint8_t>(os);
             override_c_ = static_cast<float>(v) / 100.0f;
         }
-        if(store_->getI32(kKeyClock, v) && v >= 0) clk_s_ = static_cast<uint32_t>(v);
-        if(store_->getI32(kKeyDayStart, v) && v >= 0 && static_cast<uint32_t>(v) <= clk_s_)
+        if(store_->getI32(kKeyClockUnix, v)) clk_unix_ = v == 1;
+        if(store_->getI32(kKeyClock, v)) clk_s_ = static_cast<uint32_t>(v);
+        if(store_->getI32(kKeyDayStart, v) && static_cast<uint32_t>(v) <= clk_s_)
             day0_s_ = static_cast<uint32_t>(v);
         else {   // first start (or a bad value): Day 1 begins now
             day0_s_ = clk_s_;
@@ -154,7 +160,7 @@ void Controller::startSchedule()
     set_.step = 0;
     set_.override_on = false;
     if(!store_) return;
-    store_->setI32(kKeySchedStart, static_cast<int32_t>(sched_start_s_ & 0x7FFFFFFFu));
+    store_->setI32(kKeySchedStart, clockBits(sched_start_s_));
     store_->setI32(kKeySchedFrom, static_cast<int32_t>(std::lround(sched_from_c_ * 100.0f)));
     store_->setI32(kKeySchedOvrStep, -1);
     store_->commit();
@@ -232,9 +238,40 @@ void Controller::saveClock()
 {
     clk_saved_s_ = clk_s_;
     if(!store_) return;
-    store_->setI32(kKeyClock, static_cast<int32_t>(clk_s_ & 0x7FFFFFFFu));
-    store_->setI32(kKeyDayStart, static_cast<int32_t>(day0_s_ & 0x7FFFFFFFu));
+    store_->setI32(kKeyClock, clockBits(clk_s_));
+    store_->setI32(kKeyDayStart, clockBits(day0_s_));
     store_->commit();
+}
+
+/* The time from the internet. The first one turns the clock from seconds powered into Unix
+ * time: Day 1's start and the schedule's start move by the same amount, so nothing visible
+ * changes. After that it catches the clock up (time spent unplugged, drift). */
+void Controller::setClock(uint32_t unix_s, uint32_t now)
+{
+    if(unix_s < kMinUnix) return;   // the sender's clock isn't set
+    advanceClock(now);
+    bool save = false;
+    if(!clk_unix_) {
+        const uint32_t shift = unix_s - clk_s_;
+        day0_s_ += shift;
+        sched_start_s_ += shift;
+        clk_unix_ = true;
+        save = true;
+    }
+    else {   /* the clock never runs back past Day 1 or the schedule's start */
+        if(unix_s < day0_s_) day0_s_ = unix_s, save = true;
+        if(unix_s < sched_start_s_) sched_start_s_ = unix_s, save = true;
+    }
+    const uint32_t jump = unix_s > clk_s_ ? unix_s - clk_s_ : clk_s_ - unix_s;
+    clk_s_ = unix_s;
+    clk_ms_ = 0;
+    updateDay();
+    if(!save && jump < kClockSaveJumpS) return;   // small drift: the regular save keeps it
+    if(store_) {
+        store_->setI32(kKeyClockUnix, 1);
+        store_->setI32(kKeySchedStart, clockBits(sched_start_s_));
+    }
+    saveClock();
 }
 
 void Controller::updateDay()
@@ -410,6 +447,9 @@ void Controller::handle(const Command & c, uint32_t now)
             publishSettings(now);
             break;
         }
+        case Command::Kind::SetClock:
+            setClock(static_cast<uint32_t>(c.value), now);
+            break;
         case Command::Kind::StartDayCount:
             advanceClock(now);
             day0_s_ = clk_s_;

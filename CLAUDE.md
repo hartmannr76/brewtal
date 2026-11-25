@@ -87,3 +87,6 @@ sim/harness sim/web     web test harness: real firmware on fake devices (sim_dev
 - Web harness: `powershell -File tools/web.ps1 -NoOpen`, then
   `node sim/harness/web_smoke.js sim/build-web-480/web/brew_web.js`.
 - Firmware: `pio run -e crowpanel21` (also `crowpanel21_display`, `controller_devkit`, `waveshare_knob18`).
+- On the device: `pio run -e crowpanel21 -t upload --upload-port COMn`, then `tools/device_log.py COMn` (run
+  with the pioarduino penv Python) resets the board and saves its serial log. Startup logs each stage with
+  ms since boot and internal RAM left, so that's where to look for boot time and RAM headroom.

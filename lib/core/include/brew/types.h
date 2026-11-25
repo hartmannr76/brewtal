@@ -88,6 +88,8 @@ struct Command {
         SetProfile = 7,    // value: Profile. Picking Schedule (from Constant) starts it at step 1
         SetStep = 8,       // step, setpoint_c, ramp_h, hold_h: set schedule step `step`
         SetStepCount = 9,  // value: how many schedule steps there are
+        SetClock = 10,     // value: the time now, Unix seconds (as uint32), from the internet.
+                           // The day count and schedule run on it from then on.
     };
 
     Kind  kind = Kind::RequestSync;
@@ -118,6 +120,7 @@ struct Command {
         return x;
     }
     static Command setStepCount(uint8_t n)        { Command x; x.kind = Kind::SetStepCount; x.value = n; return x; }
+    static Command setClock(uint32_t unix_s)      { Command x; x.kind = Kind::SetClock; x.value = static_cast<int32_t>(unix_s); return x; }
 };
 
 /**

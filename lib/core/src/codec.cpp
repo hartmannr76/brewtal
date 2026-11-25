@@ -140,7 +140,7 @@ DecodeResult decodeCommand(Reader & r, Command & c)
     c = Command{};
     const uint8_t kind = r.u8();
     if(kind < static_cast<uint8_t>(Command::Kind::SetSetpoint) ||
-       kind > static_cast<uint8_t>(Command::Kind::SetStepCount))
+       kind > static_cast<uint8_t>(Command::Kind::SetClock))
         return DecodeResult::BadPayload;
     c.kind = static_cast<Command::Kind>(kind);
     const uint8_t mode = r.u8();
@@ -161,7 +161,7 @@ DecodeResult decodeCommand(Reader & r, Command & c)
         }
     }
     else if(c.kind == Command::Kind::SetTuning || c.kind == Command::Kind::SetProfile ||
-            c.kind == Command::Kind::SetStepCount) {
+            c.kind == Command::Kind::SetStepCount || c.kind == Command::Kind::SetClock) {
         return DecodeResult::BadPayload;
     }
     if(r.has(5)) {   // #7..#9 (appended)

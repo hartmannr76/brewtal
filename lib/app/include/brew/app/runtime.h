@@ -14,6 +14,7 @@
 
 #include "brew/input.h"
 #include "brew/ports.h"
+#include "brew/drivers/interfaces/clock.h"
 #include "brew/drivers/interfaces/display.h"
 #include "brew/drivers/interfaces/input.h"
 #include "brew/drivers/interfaces/http.h"
@@ -41,6 +42,7 @@ struct DisplayConfig {
     net::WifiSetup *   wifi = nullptr;
     net::SetupPortal * portal = nullptr;
     hal::HttpServer *  http = nullptr;
+    hal::WallClock *   clock = nullptr;   // internet time, passed on to the controller
 };
 
 /** Sets up LVGL + brew_ui on `cfg.panel`, then starts the input and UI tasks. */

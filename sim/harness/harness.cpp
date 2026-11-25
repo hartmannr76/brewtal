@@ -53,6 +53,10 @@ public:
             case Command::Kind::RequestSync:
                 h_.log("UI -> controller: request full sync");
                 break;
+            case Command::Kind::SetClock:   /* every minute: only the first one is news */
+                if(!clock_logged_) h_.log("UI -> controller: internet time");
+                clock_logged_ = true;
+                break;
             case Command::Kind::StartDayCount:
                 h_.log("UI -> controller: day count starts over");
                 break;
@@ -84,6 +88,7 @@ public:
 private:
     UiPort & port() { return h_.split_ ? static_cast<UiPort &>(h_.remote_ctl_) : static_cast<UiPort &>(h_.bus_); }
     Harness & h_;
+    bool clock_logged_ = false;
 };
 
 /** Controller side's ControlPort: LocalBus or the remote proxy. */
@@ -157,6 +162,7 @@ void Harness::start(uint32_t ui_now)
     portal_ = std::make_unique<net::SetupPortal>(*wifi_setup_);
     wifi_setup_->begin(ui_now);
     bridge_->attachWifi(wifi_setup_.get());
+    bridge_->attachClock(&clock_);
     watchWifi();
 
     started_ = true;
@@ -490,7 +496,7 @@ std::string Harness::statusJson() const
         "\"plant\":{\"ambient_c\":%g,\"volume_l\":%g,\"loss_w_per_k\":%g,\"heat_w\":%g,\"cool_w\":%g,"
         "\"heat_lag_s\":%g,\"cool_lag_s\":%g,\"yeast_w\":%g,\"heat_power_w\":%.2f,\"cool_power_w\":%.2f},"
         "\"state\":{\"temp_c\":%.4f,\"valid\":%s,\"sp\":[%.4f,%.4f],\"mode\":%d,\"paused\":%s,\"action\":%d,"
-        "\"celsius\":%s,\"batch\":\"%s\",\"day\":%u},"
+        "\"celsius\":%s,\"batch\":\"%s\",\"day\":%u,\"clock_s\":%u,\"clock_unix\":%s},"
         "\"relays\":{\"heat\":{\"on\":%s,\"switches\":%u,\"on_ms\":%llu,\"in_state_ms\":%u,\"wait_ms\":%u},"
         "\"cool\":{\"on\":%s,\"switches\":%u,\"on_ms\":%llu,\"in_state_ms\":%u,\"wait_ms\":%u}},"
         "\"link\":{\"unplugged\":%s,\"drop\":%g,\"corrupt\":%g,\"bytes_to_ctl\":%llu,\"bytes_to_ui\":%llu,"
@@ -510,6 +516,7 @@ std::string Harness::statusJson() const
         static_cast<double>(plant_.coolPowerW()), num(s.temp_c), s.temp_valid ? "true" : "false",
         num(s.setpoint_c[0]), num(s.setpoint_c[1]), static_cast<int>(s.mode), s.paused ? "true" : "false",
         static_cast<int>(s.action), s.celsius ? "true" : "false", s.batch, static_cast<unsigned>(s.day),
+        static_cast<unsigned>(ctl_->clockS()), ctl_->clockIsUnix() ? "true" : "false",
         heat_.on() ? "true" : "false", static_cast<unsigned>(heat_.switches()),
         static_cast<unsigned long long>(heat_.onMs()), static_cast<unsigned>(heat_.inStateMs()),
         static_cast<unsigned>(heat_.on() ? 0u : guard_->blockedFor(Action::Heating, sim_ms_)),

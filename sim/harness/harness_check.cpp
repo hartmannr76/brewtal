@@ -141,6 +141,13 @@ int main()
     check(std::abs(f(field("state", "temp_c")) - 69.0) < 0.6, "beer held near 69 F");
     check(field("heat", "switches") >= 2, "heat relay cycled");
 
+    std::printf("internet time reached the controller\n");
+    check(field("state", "clock_unix") == 1, "day count runs on Unix time");
+    {
+        const double expect = 1795132800.0 + field(nullptr, "sim_ms") / 1000.0;   // SimWallClock
+        check(std::abs(field("state", "clock_s") - expect) < 65.0, "controller clock is the internet time (within a minute)");
+    }
+
     std::printf("probe disconnected\n");
     bd_set_fault(1);
     run_ms(2000);

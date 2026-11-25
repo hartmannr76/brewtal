@@ -179,8 +179,16 @@ TEST(codec_round_trips)
     n = codec::encode(Command::startDayCount(), 4, b, sizeof(b));
     CHECK(codec::decode(b, n, m) == codec::DecodeResult::Ok);
     CHECK(m.command.kind == Command::Kind::StartDayCount);
-    b[4] = 10;  // a kind this version doesn't know is refused, not guessed at
+    b[4] = 11;  // a kind this version doesn't know is refused, not guessed at
     CHECK(codec::decode(b, n, m) == codec::DecodeResult::BadPayload);
+
+    /* SetClock: Unix seconds, still right past 2038 (the i32 field carries a u32) */
+    for(const uint32_t t : { 1795132800u, 0x80000010u }) {
+        n = codec::encode(Command::setClock(t), 5, b, sizeof(b));
+        CHECK(codec::decode(b, n, m) == codec::DecodeResult::Ok);
+        CHECK(m.command.kind == Command::Kind::SetClock);
+        CHECK_EQ(static_cast<uint32_t>(m.command.value), t);
+    }
 }
 
 TEST(codec_rejects_bad_input_and_ignores_trailing_fields)

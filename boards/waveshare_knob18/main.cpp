@@ -113,6 +113,7 @@ void setup()
     d.wifi = &wifiSetup;
     d.portal = &portal;
     d.http = &http;
+    d.clock = &wallClock;
     wifiSettings.begin();
     app::startDisplay(d, bus);
     dns.begin();     // after startDisplay: it brought up the network stack

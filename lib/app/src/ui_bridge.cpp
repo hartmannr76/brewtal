@@ -152,6 +152,17 @@ void UiBridge::poll(uint32_t now_ms)
     Settings st;
     if(port_.pollSettings(st)) apply(st);
     pushWifi();
+    sendClock();
+}
+
+void UiBridge::sendClock()
+{
+    if(!clock_ || (clock_sent_ && now_ - clock_sent_ms_ < kClockEveryMs) || !clock_->valid()) return;
+    const int64_t t = clock_->unixSeconds();
+    if(t <= 0 || t > 0xFFFFFFFFll) return;
+    port_.send(Command::setClock(static_cast<uint32_t>(t)));
+    clock_sent_ = true;
+    clock_sent_ms_ = now_;
 }
 
 void UiBridge::pushWifi()

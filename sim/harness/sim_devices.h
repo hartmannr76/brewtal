@@ -6,6 +6,7 @@
 #pragma once
 
 #include "brew/fake_plant.h"
+#include "brew/drivers/interfaces/clock.h"
 #include "brew/drivers/interfaces/input.h"
 #include "brew/drivers/interfaces/io.h"
 #include "brew/drivers/interfaces/platform.h"
@@ -267,6 +268,27 @@ private:
  * WPA2). Turning the router off makes every network vanish and drops the link. When the setup
  * network closes, the phone on it falls off, as a real one would.
  */
+class SimWifi;
+
+/**
+ * Internet time for the harness: a fixed date (2026-11-20 00:00 UTC) plus simulated time, so
+ * fast-forwarding moves the date too. Like SNTP it becomes valid once the WiFi is up, and stays
+ * valid if it drops.
+ */
+class SimWallClock final : public hal::WallClock {
+public:
+    static constexpr int64_t kEpoch = 1795132800;
+    SimWallClock(const uint32_t & sim_ms, SimWifi & wifi) : ms_(sim_ms), wifi_(wifi) {}
+    bool begin() override { return true; }
+    bool valid() override;
+    int64_t unixSeconds() override { return kEpoch + ms_ / 1000; }
+
+private:
+    const uint32_t & ms_;
+    SimWifi & wifi_;
+    bool set_ = false;
+};
+
 class SimWifi final : public hal::Wifi {
 public:
     struct Net {
@@ -373,5 +395,11 @@ private:
     std::string try_ssid_, try_pw_, joined_;
     uint32_t result_at_ = 0;
 };
+
+inline bool SimWallClock::valid()
+{
+    if(wifi_.link() == hal::WifiLink::Up) set_ = true;
+    return set_;
+}
 
 }  // namespace brew::sim

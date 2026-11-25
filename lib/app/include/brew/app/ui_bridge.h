@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "brew/drivers/interfaces/clock.h"
 #include "brew/input.h"
 #include "brew/network/wifi_setup.h"
 #include "brew/ports.h"
@@ -38,6 +39,11 @@ public:
     /** The display's WiFi. Without one the UI's WiFi menu item says "unavailable". Same task:
      *  tick the WifiSetup in the loop that calls poll(). */
     void attachWifi(net::WifiSetup * wifi) { wifi_ = wifi; wifi_pushed_ = false; }
+
+    /** The display's internet time. Once it's valid, the controller gets it (SetClock) right
+     *  away and every kClockEveryMs, so its day count runs on real time. */
+    void attachClock(hal::WallClock * clock) { clock_ = clock; clock_sent_ = false; }
+    static constexpr uint32_t kClockEveryMs = 60000;
 
     /* brew_ui callback targets (called through extern "C" trampolines; `user` = this) */
     static void onSetpointThunk(int mode, float temp_f, void * user);
@@ -78,6 +84,7 @@ private:
     void applyHistory(const HistoryChunk & h);
 
     void pushWifi();
+    void sendClock();
 
     UiPort & port_;
     Shown shown_;
@@ -85,6 +92,9 @@ private:
     net::WifiSetup * wifi_ = nullptr;
     net::SetupStatus wifi_shown_;
     bool wifi_pushed_ = false;
+    hal::WallClock * clock_ = nullptr;
+    bool clock_sent_ = false;
+    uint32_t clock_sent_ms_ = 0;
 };
 
 }  // namespace brew::app

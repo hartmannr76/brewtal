@@ -56,6 +56,10 @@ public:
             case Command::Kind::SetTuning:
                 RT_LOG("I", "setting %d = %ld", static_cast<int>(c.tuning), static_cast<long>(c.value));
                 break;
+            case Command::Kind::SetClock:
+                if(!clock_logged_) RT_LOG("I", "sending the controller the time (%lu)", static_cast<unsigned long>(static_cast<uint32_t>(c.value)));
+                clock_logged_ = true;
+                break;
             case Command::Kind::RequestSync:
                 break;
         }
@@ -68,6 +72,7 @@ public:
 
 private:
     UiPort & in_;
+    bool clock_logged_ = false;
 };
 
 struct DisplayCtx {
@@ -191,6 +196,7 @@ void startDisplay(const DisplayConfig & cfg, UiPort & port)
     if(cfg.wifi) {
         cfg.wifi->begin(millis32());   // starts the radio; opens setup if nothing is saved
         d.bridge->attachWifi(cfg.wifi);
+        d.bridge->attachClock(cfg.clock);
         if(cfg.http && !cfg.http->begin()) RT_LOG("E", "setup page server failed to start");
         log_ram("WiFi + setup page server");
     }
