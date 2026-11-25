@@ -694,6 +694,26 @@ TEST(fake_plant_heat_balance)
     CHECK(q.actual() > t0);                       // ...and still warming the beer
 }
 
+TEST(controller_says_when_its_temperature_is_simulated)
+{
+    DeadbandLaw law(0.3f * 5.0f / 9.0f);
+    FakeOut h, c;
+    OutputGuard guard(&h, &c, {});
+
+    CapturePort port;
+    FakePlant plant({});
+    Controller demo(port, plant, law, guard, nullptr, Controller::Config{});
+    demo.tick(0);
+    CHECK(port.settings.simulated);
+
+    CapturePort port2;
+    FakeSensor probe;
+    probe.set(20.0f);
+    Controller real(port2, probe, law, guard, nullptr, Controller::Config{});
+    real.tick(0);
+    CHECK(!port2.settings.simulated);
+}
+
 TEST(local_bus_mailbox_latest_wins)
 {
     LocalBus bus;

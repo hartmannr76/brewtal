@@ -67,6 +67,7 @@ struct Settings {
     Profile  profile = Profile::Constant;
     uint8_t  step = 0;                     // the running step (Schedule), or kDone
     bool     override_on = false;          // the dial set the target until the next step
+    bool     simulated = false;            // the temperature comes from a simulated fermenter (demo)
     uint8_t  nsteps = 0;
     ScheduleStep steps[kMaxSteps];
 };

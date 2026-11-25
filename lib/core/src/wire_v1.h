@@ -43,7 +43,8 @@
  *   #5 crash_default_cc i16   where Cold crash starts
  *   #6 profile          u8    0 constant, 1 schedule              (#6..#12 appended together;
  *   #7 step             u8    running step, 255 = finished          missing: constant, no steps)
- *   #8 flags            u8    bit0 the dial overrides the step's target
+ *   #8 flags            u8    bit0 the dial overrides the step's target, bit1 simulated
+ *                             temperature (a demo build)
  *   #9 nsteps           u8    <= 8
  *   #10 step_temp_cc    i16 x nsteps
  *   #11 step_ramp_h     u16 x nsteps   hours to ramp there (0 = jump)

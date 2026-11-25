@@ -49,6 +49,7 @@ BD_API void bd_touch(int x, int y, int down) { H->touch(x, y, down != 0); }
 /* beer / probe */
 BD_API void bd_set_beer_c(float c) { H->setBeerC(c); }
 BD_API void bd_set_physics(int on) { H->setPhysics(on != 0); }
+BD_API void bd_set_demo(int on) { H->setDemo(on != 0); }
 /* the fermenter's physical setup; see FakePlant for what each term means */
 BD_API void bd_plant(float volume_l, float ambient_c, float loss_w_per_k, float heat_w, float cool_w, float heat_lag_s,
                      float cool_lag_s, float yeast_w)

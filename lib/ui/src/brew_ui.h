@@ -54,6 +54,10 @@ void brew_ui_set_setpoints(float ferment_f, float crash_f);
 void brew_ui_set_mode(brew_mode_t mode, bool paused);
 void brew_ui_set_units(bool celsius);
 void brew_ui_set_batch(const char * name, int day);
+/** The temperature is simulated (a demo build): the dial says DEMO. */
+void brew_ui_set_demo(bool demo);
+/** No valid temperature (no probe, or it stopped answering): the dial shows --.- and NO READING. */
+void brew_ui_set_no_reading(void);
 /** How the history graph is drawn (default BREW_GRAPH_HAIRLINE). */
 void brew_ui_set_graph_style(brew_graph_style_t style);
 brew_graph_style_t brew_ui_graph_style(void);

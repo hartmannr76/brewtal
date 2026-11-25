@@ -219,6 +219,7 @@ float Controller::scheduleTarget()
 void Controller::publishSettings(uint32_t now)
 {
     last_settings_ = now;
+    set_.simulated = sensor_.simulated();
     port_.publish(set_);
 }
 

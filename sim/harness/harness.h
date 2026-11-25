@@ -74,6 +74,7 @@ public:
     /* ---- beer / probe ---- */
     void setBeerC(float c);
     void setPhysics(bool on);
+    void setDemo(bool on) { probe_.demo = on; }
     /** The fermenter's physical setup (volume, insulation, element powers and lags, yeast heat).
      *  Takes effect immediately; the beer keeps its current temperature. */
     void setPlant(const FakePlant::Config & cfg);

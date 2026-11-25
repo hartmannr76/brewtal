@@ -70,7 +70,7 @@ size_t encode(const Settings & s, uint16_t seq, uint8_t * buf, size_t max)
     const uint8_t n = s.nsteps > Settings::kMaxSteps ? Settings::kMaxSteps : s.nsteps;
     w.u8(static_cast<uint8_t>(s.profile));                          // #6
     w.u8(s.step);                                                   // #7
-    w.u8(s.override_on ? 1u : 0u);                                  // #8
+    w.u8(static_cast<uint8_t>((s.override_on ? 1u : 0u) | (s.simulated ? 2u : 0u)));   // #8
     w.u8(n);                                                        // #9
     for(uint8_t i = 0; i < n; i++) w.i16(to_cc(s.steps[i].temp_c)); // #10
     for(uint8_t i = 0; i < n; i++) w.u16(s.steps[i].ramp_h);        // #11
@@ -189,7 +189,9 @@ DecodeResult decodeSettings(Reader & r, Settings & s)
         if(p >= kProfileCount) return DecodeResult::BadPayload;
         s.profile = static_cast<Profile>(p);
         s.step = r.u8();
-        s.override_on = r.u8() & 1u;
+        const uint8_t fl = r.u8();
+        s.override_on = fl & 1u;
+        s.simulated = fl & 2u;
         const uint8_t n = r.u8();
         if(n > Settings::kMaxSteps || !r.has(static_cast<size_t>(n) * 6)) return DecodeResult::BadPayload;
         s.nsteps = n;

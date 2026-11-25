@@ -17,7 +17,7 @@
 
 /* ---------------- settings + pins ---------------- */
 #ifndef BREW_DEMO
-#define BREW_DEMO 1          /* 1: simulated fermenter instead of a probe */
+#define BREW_DEMO 0          /* 1: simulated fermenter instead of a probe: env controller_devkit_demo */
 #endif
 #define PROBE_PIN       5    /* DS18B20 data (4.7 k pull-up to 3V3) */
 #define HEAT_RELAY_PIN  6

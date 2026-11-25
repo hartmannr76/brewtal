@@ -163,6 +163,7 @@ TEST(ui_model_menu_navigation_and_choices)
     brew_model_t m;
     brew_model_init(&m, nullptr);
     m.cbs = cbs_for(c);
+    brew_model_set_temp(&m, 66.0f);              // a probe reading (the status texts below assume one)
 
     uint32_t ch = brew_model_press(&m);          // home -> menu
     CHECK(m.view == BREW_VIEW_LIST && m.list == BREW_LIST_MENU);
@@ -214,6 +215,8 @@ TEST(ui_model_status_follows_the_action)
 {
     brew_model_t m;
     brew_model_init(&m, nullptr);
+    CHECK(status(m) == "No temperature reading");   // nothing from the probe yet
+    brew_model_set_temp(&m, 66.0f);
     CHECK(status(m) == "Holding at 66\xC2\xB0");
     CHECK(brew_model_vstate(&m) == BREW_VS_IDLE);
     brew_model_set_action(&m, BREW_ACTION_COOLING);
@@ -347,7 +350,35 @@ TEST(ui_model_pill_and_detail_texts)
     CHECK(pill() == "HOLDING");
     brew_model_set_pending(&m, BREW_ACTION_COOLING, 150);
     CHECK(pill() == "COOLING IN 3 MIN");
+    /* a demo build says so first, whatever the state */
+    CHECK(brew_model_set_demo(&m, true) != 0);
+    CHECK(pill() == "DEMO \xC2\xB7 COOLING IN 3 MIN");
     brew_model_set_pending(&m, BREW_ACTION_IDLE, 0);
+    CHECK(pill() == "DEMO \xC2\xB7 HOLDING");
+    CHECK(brew_model_set_demo(&m, true) == 0);   // unchanged: no redraw
+    brew_model_set_demo(&m, false);
+    CHECK(pill() == "HOLDING");
+    /* no reading (no probe, or it stopped answering): never a stale or made-up number */
+    auto big = [&]() { brew_model_temp_text(&m, b, sizeof(b)); return std::string(b); };
+    auto status = [&]() { brew_model_status_text(&m, b, sizeof(b)); return std::string(b); };
+    CHECK(big() == "68.0");
+    CHECK(brew_model_set_no_reading(&m) != 0);
+    CHECK(big() == "--.-");
+    CHECK(pill() == "NO READING");
+    CHECK(status() == "No temperature reading");
+    CHECK(brew_model_set_no_reading(&m) == 0);
+    brew_model_set_demo(&m, true);
+    CHECK(status() == "Demo \xC2\xB7 No temperature reading");
+    brew_model_set_demo(&m, false);
+    brew_model_set_temp(&m, 67.5f);
+    CHECK(big() == "67.5");
+    CHECK(pill() == "HOLDING");
+    {
+        brew_model_t fresh;   // before the first reading: no number at all, not the 66.0 default
+        brew_model_init(&fresh, nullptr);
+        brew_model_temp_text(&fresh, b, sizeof(b));
+        CHECK(std::string(b) == "--.-");
+    }
     brew_model_set_action(&m, BREW_ACTION_HEATING);
     CHECK(pill() == "HEATING");
     brew_model_set_mode(&m, BREW_MODE_CRASH, false);

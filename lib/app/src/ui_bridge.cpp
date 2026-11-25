@@ -199,6 +199,7 @@ void UiBridge::pushWifi()
 void UiBridge::apply(const Settings & s)
 {
     Shown & v = shown_;
+    brew_ui_set_demo(s.simulated);   /* no-op unless it changed */
     brew_schedule_t sc = {};
     sc.profile = s.profile == Profile::Schedule ? BREW_PROFILE_SCHEDULE : BREW_PROFILE_CONSTANT;
     sc.step = s.step == Settings::kDone ? BREW_STEP_DONE : s.step;
@@ -262,6 +263,10 @@ void UiBridge::apply(const State & s)
             v.temp_set = true;
             brew_ui_set_temp(tf);
         }
+    }
+    else if(all || v.temp_set) {   /* no probe, or it stopped answering: never show a stale number */
+        v.temp_set = false;
+        brew_ui_set_no_reading();
     }
     if(all || s.action != v.action) {
         v.action = s.action;

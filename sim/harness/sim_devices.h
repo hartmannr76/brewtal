@@ -115,6 +115,9 @@ public:
 
     hal::TempReading latest() const override { return last_; }
     const char * name() const override { return "sim-probe"; }
+    /* The bench plays a real probe; set this to see the dial as a demo build shows it. */
+    bool demo = false;
+    bool simulated() const override { return demo; }
 
     /** Put the beer at `c` (and keep it there while physics is off). */
     void setBeer(float c)

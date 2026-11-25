@@ -110,6 +110,7 @@ public:
     }
 
     const char * name() const override { return "fake-plant"; }
+    bool simulated() const override { return true; }
 
 private:
     static float lag(float p, float target, float tau_s, float dt)

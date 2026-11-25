@@ -13,7 +13,7 @@
 
 /* ---------------- settings (overridable with -D in platformio.ini) ---------------- */
 #ifndef BREW_DEMO
-#define BREW_DEMO 1              /* 1: simulated fermenter (FakePlant) instead of a probe */
+#define BREW_DEMO 0              /* 1: simulated fermenter (FakePlant) instead of a probe: env crowpanel21_demo */
 #endif
 #ifndef ENCODER_INVERT
 #define ENCODER_INVERT 0         /* 1 if turning clockwise lowers the target */
@@ -31,7 +31,7 @@
 #define ENCODER_A_PIN        42
 #define ENCODER_B_PIN        4
 #define BACKLIGHT_PIN        6
-#define PROBE_PIN            (-1)     /* TODO: DS18B20 data pin once wired (needs BREW_DEMO 0) */
+#define PROBE_PIN            (-1)     /* TODO: DS18B20 data pin once wired; -1 = no probe (shows no reading) */
 
 /* split topology (env crowpanel21_display): link to a controller board over UART.
  * TODO: confirm which header pins are free on your unit. */

@@ -483,11 +483,19 @@ TEST(codec_settings_carry_the_schedule)
     CHECK(n > 0 && n < 100);
     CHECK(codec::decode(b, n, m) == codec::DecodeResult::Ok);
     CHECK(m.settings.profile == Profile::Schedule && m.settings.step == 1 && m.settings.override_on);
+    CHECK(!m.settings.simulated);
     CHECK_EQ(m.settings.nsteps, 8);
     CHECK_NEAR(m.settings.steps[7].temp_c, 25.0, 1e-6);
     CHECK_EQ(m.settings.steps[7].ramp_h, 168);
     CHECK_EQ(m.settings.steps[3].hold_h, 72);
     CHECK(codec::decode(b, n - 1, m) == codec::DecodeResult::BadPayload);   // steps cut short
+
+    /* a demo build: bit1 of #8, next to the override */
+    st.simulated = true;
+    st.override_on = false;
+    n = codec::encode(st, 3, b, sizeof(b));
+    CHECK(codec::decode(b, n, m) == codec::DecodeResult::Ok);
+    CHECK(m.settings.simulated && !m.settings.override_on);
 
     n = codec::encode(Command::setStep(2, 20.5f, 24, 48), 2, b, sizeof(b));
     CHECK(codec::decode(b, n, m) == codec::DecodeResult::Ok);

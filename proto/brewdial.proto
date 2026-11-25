@@ -37,7 +37,7 @@ message Settings {
   sint32 crash_default_cc = 5;   // where Cold crash starts
   uint32 profile = 6;            // 0 constant, 1 schedule
   uint32 step = 7;               // the running step, 255 = finished
-  uint32 flags = 8;              // bit0 the dial overrides the step's target
+  uint32 flags = 8;              // bit0 the dial overrides the step's target, bit1 simulated (demo)
   uint32 nsteps = 9;             // <= 8
   repeated sint32 step_temp_cc = 10;
   repeated uint32 step_ramp_h = 11;   // hours to ramp to the step's temperature (0 = jump)

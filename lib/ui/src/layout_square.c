@@ -231,7 +231,7 @@ static void refresh(bool animate)
         kit_nv_set_color(&U.big, is_cool ? cool : white);
         brew_model_batch_text(M, s, sizeof(s));
         kit_set_text(U.sub_lbl, s);
-        brew_model_fmt_temp(M, t, sizeof(t), M->temp_f);
+        brew_model_temp_text(M, t, sizeof(t));
         kit_nv_set_unit(&U.big, brew_model_unit(M));
         kit_nv_set(&U.big, t, animate);
     }

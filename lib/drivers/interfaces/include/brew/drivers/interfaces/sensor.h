@@ -21,6 +21,8 @@ public:
     virtual void        update(uint32_t now_ms) = 0;   // start or collect a measurement
     virtual TempReading latest() const = 0;
     virtual const char * name() const = 0;
+    /** True for a simulated fermenter (demo builds): the display says so. */
+    virtual bool        simulated() const { return false; }
 };
 
 }  // namespace brew::hal

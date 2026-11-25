@@ -117,10 +117,22 @@ FakePlant plant({});
 hal::TempSensor & sensor = plant;
 hal::DigitalOut & heatOut = plant.heat(&relays.out(MCP_PIN_HEAT));   // LEDs still show the state
 hal::DigitalOut & coolOut = plant.cool(&relays.out(MCP_PIN_COOL));
+#elif PROBE_PIN < 0
+/* No probe wired yet: the controller sees no reading, keeps both outputs off, and the dial
+ * says the probe is missing. Set PROBE_PIN in board_config.h once it's wired. */
+class NoProbe final : public hal::TempSensor {
+public:
+    bool begin() override { return true; }
+    void update(uint32_t) override {}
+    hal::TempReading latest() const override { return {}; }
+    const char * name() const override { return "no-probe"; }
+} probe;
+hal::TempSensor & sensor = probe;
 #else
-static_assert(PROBE_PIN >= 0, "Set PROBE_PIN in board_config.h (or build with BREW_DEMO=1)");
 EspDs18b20 probe({ .pin = PROBE_PIN });
 hal::TempSensor & sensor = probe;
+#endif
+#if !BREW_DEMO
 hal::DigitalOut & heatOut = relays.out(MCP_PIN_HEAT);
 hal::DigitalOut & coolOut = relays.out(MCP_PIN_COOL);
 #endif

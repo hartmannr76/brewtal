@@ -72,8 +72,25 @@ bool brew_model_waiting(const brew_model_t * m)
     return !m->paused && m->action == BREW_ACTION_IDLE && m->wanted != BREW_ACTION_IDLE;
 }
 
+static void status_state_text(const brew_model_t * m, char * buf, size_t n);
+
 void brew_model_status_text(const brew_model_t * m, char * buf, size_t n)
 {
+    if(!m->demo) {
+        status_state_text(m, buf, n);
+        return;
+    }
+    char s[48];
+    status_state_text(m, s, sizeof(s));
+    snprintf(buf, n, "Demo \xC2\xB7 %s", s);
+}
+
+static void status_state_text(const brew_model_t * m, char * buf, size_t n)
+{
+    if(!m->temp_known && !m->paused) {
+        snprintf(buf, n, "No temperature reading");
+        return;
+    }
     const int tgt = (int)lroundf(brew_model_to_disp(m, m->sp_f[m->mode]));
     const brew_vstate_t vs = brew_model_vstate(m);
     if(brew_model_waiting(m) && (vs == BREW_VS_IDLE || vs == BREW_VS_CRASH)) {
@@ -99,10 +116,28 @@ void brew_model_batch_text(const brew_model_t * m, char * buf, size_t n)
     else snprintf(buf, n, "%s%sDay %d", m->batch, sep, m->day);
 }
 
+static void pill_state_text(const brew_model_t * m, char * buf, size_t n);
+
+/* The state pill. A demo build says so first, on every screen shape. */
 void brew_model_pill_text(const brew_model_t * m, char * buf, size_t n)
+{
+    if(!m->demo) {
+        pill_state_text(m, buf, n);
+        return;
+    }
+    char s[40];
+    pill_state_text(m, s, sizeof(s));
+    snprintf(buf, n, "DEMO \xC2\xB7 %s", s);
+}
+
+static void pill_state_text(const brew_model_t * m, char * buf, size_t n)
 {
     if(m->setting) {
         snprintf(buf, n, "SET TARGET");
+        return;
+    }
+    if(!m->temp_known && !m->paused) {   /* no probe, or it stopped answering: outputs are off */
+        snprintf(buf, n, "NO READING");
         return;
     }
     const brew_vstate_t vs = brew_model_vstate(m);
@@ -676,6 +711,20 @@ uint32_t brew_model_wifi_done(brew_model_t * m)
 
 /* ------------------------------------------------------------------ controller -> model */
 
+void brew_model_temp_text(const brew_model_t * m, char * buf, size_t n)
+{
+    if(m->setting) brew_model_fmt_temp(m, buf, n, m->draft_f);
+    else if(!m->temp_known) snprintf(buf, n, "--.-");   /* never a made-up number */
+    else brew_model_fmt_temp(m, buf, n, m->temp_f);
+}
+
+uint32_t brew_model_set_no_reading(brew_model_t * m)
+{
+    if(!m->temp_known) return 0;
+    m->temp_known = false;
+    return BREW_CH_TEMP | BREW_CH_REFRESH | BREW_CH_GRAPH;
+}
+
 uint32_t brew_model_set_temp(brew_model_t * m, float f)
 {
     const bool first = !m->temp_known;
@@ -727,6 +776,13 @@ uint32_t brew_model_set_graph_style(brew_model_t * m, brew_graph_style_t style)
     if(style == m->graph_style) return 0;
     m->graph_style = style;
     return BREW_CH_REFRESH | BREW_CH_GRAPH;
+}
+
+uint32_t brew_model_set_demo(brew_model_t * m, bool demo)
+{
+    if(m->demo == demo) return 0;
+    m->demo = demo;
+    return BREW_CH_REFRESH;
 }
 
 uint32_t brew_model_set_batch(brew_model_t * m, const char * name, int day)

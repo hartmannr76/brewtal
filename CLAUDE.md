@@ -86,7 +86,9 @@ sim/harness sim/web     web test harness: real firmware on fake devices (sim_dev
   (and `brew_sim <outdir>` to render the scripted session). `ctest` also runs `harness_check`.
 - Web harness: `powershell -File tools/web.ps1 -NoOpen`, then
   `node sim/harness/web_smoke.js sim/build-web-480/web/brew_web.js`.
-- Firmware: `pio run -e crowpanel21` (also `crowpanel21_display`, `controller_devkit`, `waveshare_knob18`).
+- Firmware: `pio run -e crowpanel21` (also `crowpanel21_demo`, `crowpanel21_display`, `controller_devkit`,
+  `controller_devkit_demo`, `waveshare_knob18`). `*_demo` = simulated fermenter instead of the probe; the dial
+  says DEMO. A real build with no `PROBE_PIN` runs with no reading (outputs off, dial shows NO READING).
 - On the device: `pio run -e crowpanel21 -t upload --upload-port COMn`, then `tools/device_log.py COMn` (run
   with the pioarduino penv Python) resets the board and saves its serial log. Startup logs each stage with
   ms since boot and internal RAM left, so that's where to look for boot time and RAM headroom.

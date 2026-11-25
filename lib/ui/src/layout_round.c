@@ -259,7 +259,7 @@ static void refresh(bool animate)
     kit_nv_set_unit(&U.big, brew_model_unit(M));
     brew_model_detail_text(M, s, sizeof(s));
     kit_set_text(U.sub_lbl, s);
-    brew_model_fmt_temp(M, t, sizeof(t), M->setting ? M->draft_f : M->temp_f);
+    brew_model_temp_text(M, t, sizeof(t));
     kit_nv_set(&U.big, t, animate);
 
     if(M->view == BREW_VIEW_LIST) update_menu_items();
