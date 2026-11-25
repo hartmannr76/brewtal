@@ -26,6 +26,23 @@ const uint32_t kit_base[BREW_VS_N] = { 0x3070b0, 0x3070b0, 0xff8f3a, 0x8c5ff2, 0
 
 bool kit_col_eq(lv_color_t a, lv_color_t b) { return a.red == b.red && a.green == b.green && a.blue == b.blue; }
 
+void kit_arc_set_angles(lv_obj_t * arc, lv_value_precise_t start, lv_value_precise_t end)
+{
+    if(start == lv_arc_get_angle_start(arc) && end == lv_arc_get_angle_end(arc)) return;
+    /* which way the end moves, the short way round */
+    lv_value_precise_t d = end - lv_arc_get_angle_end(arc);
+    while(d > 180) d -= 360;
+    while(d <= -180) d += 360;
+    if(d < 0) {   /* backwards: the start leads */
+        lv_arc_set_start_angle(arc, start);
+        lv_arc_set_end_angle(arc, end);
+    }
+    else {        /* forwards: the end leads (what lv_arc_set_angles does) */
+        lv_arc_set_end_angle(arc, end);
+        lv_arc_set_start_angle(arc, start);
+    }
+}
+
 void kit_set_text(lv_obj_t * l, const char * t)
 {
     const char * c = lv_label_get_text(l);

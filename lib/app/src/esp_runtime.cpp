@@ -102,6 +102,37 @@ void input_task(void *)
     }
 }
 
+/* Frame statistics for the heartbeat: frames drawn, and how long each took (render + flush). */
+struct FrameStats {
+    uint32_t frames = 0, sum_us = 0, max_us = 0;
+    int64_t start_us = 0;
+    bool rendered = false;
+};
+FrameStats s_fs;
+
+void frame_event_cb(lv_event_t * e)
+{
+    switch(lv_event_get_code(e)) {
+        case LV_EVENT_REFR_START:
+            s_fs.start_us = esp_timer_get_time();
+            s_fs.rendered = false;
+            break;
+        case LV_EVENT_RENDER_START:
+            s_fs.rendered = true;
+            break;
+        case LV_EVENT_REFR_READY:
+            if(s_fs.rendered) {
+                const uint32_t us = static_cast<uint32_t>(esp_timer_get_time() - s_fs.start_us);
+                s_fs.frames++;
+                s_fs.sum_us += us;
+                if(us > s_fs.max_us) s_fs.max_us = us;
+            }
+            break;
+        default:
+            break;
+    }
+}
+
 const char * phase_name(int p)
 {
     static const char * const n[] = { "off", "setup network up", "phone joined", "connecting", "connected", "offline" };
@@ -125,15 +156,20 @@ void ui_task(void *)
         loops++;
         if(millis32() - beat >= 5000) {   // heartbeat: if these stop, the UI task is stuck
             beat = millis32();
+            const unsigned avg_ms = s_fs.frames ? static_cast<unsigned>(s_fs.sum_us / s_fs.frames / 1000u) : 0u;
             if(d.cfg.wifi) {
                 const net::SetupStatus & w = d.cfg.wifi->status();
-                RT_LOG("I", "ui alive (%u loops, %u presses); wifi: %s, %d phone(s), ssid '%s'", static_cast<unsigned>(loops),
-                       static_cast<unsigned>(presses), phase_name(static_cast<int>(w.phase)), w.clients, w.ssid);
+                RT_LOG("I", "ui alive (%u loops, %u presses, %u frames: avg %u ms, max %u ms); wifi: %s, %d phone(s), ssid '%s'",
+                       static_cast<unsigned>(loops), static_cast<unsigned>(presses), static_cast<unsigned>(s_fs.frames), avg_ms,
+                       static_cast<unsigned>(s_fs.max_us / 1000u), phase_name(static_cast<int>(w.phase)), w.clients, w.ssid);
             }
             else {
-                RT_LOG("I", "ui alive (%u loops, %u presses)", static_cast<unsigned>(loops), static_cast<unsigned>(presses));
+                RT_LOG("I", "ui alive (%u loops, %u presses, %u frames: avg %u ms, max %u ms)", static_cast<unsigned>(loops),
+                       static_cast<unsigned>(presses), static_cast<unsigned>(s_fs.frames), avg_ms,
+                       static_cast<unsigned>(s_fs.max_us / 1000u));
             }
             loops = 0;
+            s_fs.frames = s_fs.sum_us = s_fs.max_us = 0;
         }
         const uint32_t now = millis32();
         if(d.cfg.wifi) d.cfg.wifi->tick(now);
@@ -185,7 +221,8 @@ void startDisplay(const DisplayConfig & cfg, UiPort & port)
     void * b1 = heap_caps_malloc(bytes, cfg.panel->drawBufferCaps());
     void * b2 = heap_caps_malloc(bytes, cfg.panel->drawBufferCaps());
     if(!b1 || !b2) fatal("draw buffer allocation failed");
-    d.lvgl.begin(*cfg.panel, b1, b2, bytes, cfg.refresh_ms);
+    lv_display_t * disp = d.lvgl.begin(*cfg.panel, b1, b2, bytes, cfg.refresh_ms);
+    lv_display_add_event_cb(disp, frame_event_cb, LV_EVENT_ALL, nullptr);
     if(cfg.touch) d.lvgl.addTouch();
     log_ram("panel + draw buffers");
 

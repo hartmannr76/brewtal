@@ -112,8 +112,8 @@ static void update_ring(void)
         brew_model_edit_text(M, &t);
         const float f = t.frac < 0.002f ? 0.002f : (t.frac > 1.0f ? 1.0f : t.frac);
         const lv_value_precise_t e0 = (lv_value_precise_t)A0, e1 = (lv_value_precise_t)norm_deg(A0 + SWEEP * f);
-        lv_arc_set_angles(U.arc, e0, e1);
-        lv_arc_set_angles(U.arc_glow, e0, e1);
+        kit_arc_set_angles(U.arc, e0, e1);
+        kit_arc_set_angles(U.arc_glow, e0, e1);
         return;
     }
     const float target = M->setting ? M->draft_f : M->sp_f[M->mode];
@@ -124,8 +124,8 @@ static void update_ring(void)
     const float lo = M->setting ? bt : (bn < bt ? bn : bt), hi_f = M->setting ? bt : (bn < bt ? bt : bn);
     const lv_value_precise_t a0 = (lv_value_precise_t)norm_deg(A0 + SWEEP * lo);
     const lv_value_precise_t a1 = (lv_value_precise_t)norm_deg(A0 + SWEEP * hi_f);
-    lv_arc_set_angles(U.arc, a0, a1);
-    lv_arc_set_angles(U.arc_glow, a0, a1);
+    kit_arc_set_angles(U.arc, a0, a1);
+    kit_arc_set_angles(U.arc_glow, a0, a1);
 
     const lv_color_t ac = lv_color_hex(kit_line[brew_model_vstate(M)]);
     if(!kit_col_eq(lv_obj_get_style_arc_color(U.arc, LV_PART_INDICATOR), ac)) {

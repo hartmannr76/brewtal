@@ -58,6 +58,10 @@ extern const uint32_t kit_base[BREW_VS_N];
  * LVGL invalidates (and re-renders) an object's whole area on every style/text set, even
  * when the value is unchanged, so refreshes only touch what actually changed. */
 bool kit_col_eq(lv_color_t a, lv_color_t b);
+/* lv_arc_set_angles() moves the end first: moving an arc backwards, the end passes the start
+ * for a moment, the arc looks like a full circle and LVGL redraws its whole box (the whole
+ * dial here, every knob step). This moves the leading edge first instead. */
+void kit_arc_set_angles(lv_obj_t * arc, lv_value_precise_t start, lv_value_precise_t end);
 void kit_set_text(lv_obj_t * l, const char * t);
 void kit_set_text_color(lv_obj_t * o, lv_color_t c);
 void kit_set_text_opa(lv_obj_t * o, lv_opa_t v);
