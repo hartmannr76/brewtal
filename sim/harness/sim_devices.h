@@ -386,6 +386,7 @@ public:
         }
         return link_;
     }
+    uint32_t stationAddress() override { return link() == hal::WifiLink::Up ? 0xC0A8012Au : 0u; }   // 192.168.1.42
 
 private:
     const uint32_t & now_;

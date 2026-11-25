@@ -40,6 +40,7 @@ public:
     bool connect(const char * ssid, const char * password) override;
     void disconnect() override;
     hal::WifiLink link() override { return static_cast<hal::WifiLink>(link_.load()); }
+    uint32_t stationAddress() override { return link() == hal::WifiLink::Up ? ip_.load() : 0u; }
 
     /* called from the ESP-IDF event task */
     void onEvent(const char * base, int32_t id, void * data);
@@ -52,6 +53,7 @@ private:
     std::atomic<int> clients_{ 0 };
     std::atomic<bool> scanning_{ false };
     std::atomic<uint8_t> link_{ static_cast<uint8_t>(hal::WifiLink::Down) };
+    std::atomic<uint32_t> ip_{ 0 };
 };
 
 }  // namespace brew::drivers

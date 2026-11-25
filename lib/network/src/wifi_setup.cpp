@@ -284,6 +284,11 @@ void WifiSetup::tick(uint32_t now)
     }
 
     st_.setup_left_ms = setupOpen() && !reached(now, setup_until_) ? setup_until_ - now : 0;
+    const uint32_t a = link == hal::WifiLink::Up ? wifi_.stationAddress() : 0u;
+    if(a) std::snprintf(st_.address, sizeof(st_.address), "%u.%u.%u.%u", static_cast<unsigned>(a >> 24),
+                        static_cast<unsigned>((a >> 16) & 0xFFu), static_cast<unsigned>((a >> 8) & 0xFFu),
+                        static_cast<unsigned>(a & 0xFFu));
+    else st_.address[0] = '\0';
 }
 
 }  // namespace brew::net

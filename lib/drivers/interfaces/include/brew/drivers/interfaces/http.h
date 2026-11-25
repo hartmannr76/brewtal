@@ -26,6 +26,37 @@ struct HttpResponse {
     const char * location = nullptr;   // for redirects
 };
 
+/**
+ * An outgoing HTTP(S) request (e.g. to Brewfather). The client runs it in the background, so the
+ * caller's task (the UI task) starts it and polls for the result instead of waiting: a request
+ * can take a couple of seconds.
+ */
+struct HttpClientRequest {
+    const char * method = "GET";
+    const char * url = "";
+    const char * authorization = nullptr;   // the Authorization header's value, e.g. "Basic ..."
+    const char * content_type = nullptr;
+    const char * body = "";
+    size_t body_len = 0;
+};
+
+struct HttpClientResult {
+    int status = 0;            // the HTTP status; negative: no response (network, DNS, TLS)
+    const char * body = "";    // valid until the next start()
+    size_t body_len = 0;
+    bool truncated = false;    // longer than the client keeps
+};
+
+class HttpClient {
+public:
+    virtual ~HttpClient() = default;
+    virtual bool begin() = 0;
+    /** Starts `req` (copied). False while the previous request hasn't been collected with poll(). */
+    virtual bool start(const HttpClientRequest & req) = 0;
+    /** True once the request has finished: `out` holds its result, and the client is free again. */
+    virtual bool poll(HttpClientResult & out) = 0;
+};
+
 class HttpServer {
 public:
     virtual ~HttpServer() = default;

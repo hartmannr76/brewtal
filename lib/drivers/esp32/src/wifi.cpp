@@ -249,10 +249,14 @@ void EspWifi::onEvent(const char * base, int32_t id, void * data)
         if(id == IP_EVENT_STA_GOT_IP) {
             link_ = static_cast<uint8_t>(hal::WifiLink::Up);
             const auto * e = static_cast<ip_event_got_ip_t *>(data);
+            ip_ = (static_cast<uint32_t>(esp_ip4_addr1(&e->ip_info.ip)) << 24) |
+                  (static_cast<uint32_t>(esp_ip4_addr2(&e->ip_info.ip)) << 16) |
+                  (static_cast<uint32_t>(esp_ip4_addr3(&e->ip_info.ip)) << 8) | esp_ip4_addr4(&e->ip_info.ip);
             BREW_LOGI(TAG, "online, address " IPSTR, IP2STR(&e->ip_info.ip));
         }
         else if(id == IP_EVENT_STA_LOST_IP) {
             link_ = static_cast<uint8_t>(hal::WifiLink::Down);
+            ip_ = 0;
         }
         else if(id == IP_EVENT_AP_STAIPASSIGNED) {
             const auto * e = static_cast<ip_event_ap_staipassigned_t *>(data);

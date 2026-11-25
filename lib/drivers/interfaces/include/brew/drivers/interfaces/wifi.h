@@ -50,6 +50,8 @@ public:
     virtual bool connect(const char * ssid, const char * password) = 0;   // starts; see link()
     virtual void disconnect() = 0;
     virtual WifiLink link() = 0;
+    /** The address on the joined network while link() is Up (a.b.c.d as a<<24|b<<16|c<<8|d), else 0. */
+    virtual uint32_t stationAddress() = 0;
 };
 
 }  // namespace brew::hal

@@ -47,6 +47,7 @@ struct SetupStatus {
     int  clients = 0;                      // phones on the setup network
     bool scanning = false;
     uint32_t setup_left_ms = 0;            // until setup closes by itself
+    char address[16] = { 0 };              // "192.168.1.129" on the joined network, else ""
 };
 
 class WifiSetup {

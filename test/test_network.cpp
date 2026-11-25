@@ -47,6 +47,7 @@ struct FakeWifi final : hal::Wifi {
     }
     void disconnect() override { link_ = hal::WifiLink::Down; disconnects++; }
     hal::WifiLink link() override { return link_; }
+    uint32_t stationAddress() override { return link_ == hal::WifiLink::Up ? 0xC0A80105u : 0u; }   // 192.168.1.5
 };
 
 struct MemStore final : hal::SettingsStore {
