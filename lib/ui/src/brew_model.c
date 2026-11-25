@@ -714,7 +714,7 @@ uint32_t brew_model_wifi_done(brew_model_t * m)
 void brew_model_temp_text(const brew_model_t * m, char * buf, size_t n)
 {
     if(m->setting) brew_model_fmt_temp(m, buf, n, m->draft_f);
-    else if(!m->temp_known) snprintf(buf, n, "--.-");   /* never a made-up number */
+    else if(!m->temp_known) snprintf(buf, n, "--");   /* never a made-up number */
     else brew_model_fmt_temp(m, buf, n, m->temp_f);
 }
 

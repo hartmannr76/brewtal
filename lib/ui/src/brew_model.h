@@ -193,7 +193,7 @@ uint32_t brew_model_set_units(brew_model_t * m, bool celsius);
 uint32_t brew_model_set_demo(brew_model_t * m, bool demo);
 /** The controller has no valid reading (no probe, or it stopped answering). */
 uint32_t brew_model_set_no_reading(brew_model_t * m);
-/** The big number: the draft while setting, "--.-" without a reading, else the temperature. */
+/** The big number: the draft while setting, "--" without a reading, else the temperature. */
 void brew_model_temp_text(const brew_model_t * m, char * buf, size_t n);
 uint32_t brew_model_set_batch(brew_model_t * m, const char * name, int day);
 /** Out-of-range styles fall back to BREW_GRAPH_HAIRLINE. Redraws the graph only if it changed. */

@@ -363,7 +363,7 @@ TEST(ui_model_pill_and_detail_texts)
     auto status = [&]() { brew_model_status_text(&m, b, sizeof(b)); return std::string(b); };
     CHECK(big() == "68.0");
     CHECK(brew_model_set_no_reading(&m) != 0);
-    CHECK(big() == "--.-");
+    CHECK(big() == "--");
     CHECK(pill() == "NO READING");
     CHECK(status() == "No temperature reading");
     CHECK(brew_model_set_no_reading(&m) == 0);
@@ -377,7 +377,7 @@ TEST(ui_model_pill_and_detail_texts)
         brew_model_t fresh;   // before the first reading: no number at all, not the 66.0 default
         brew_model_init(&fresh, nullptr);
         brew_model_temp_text(&fresh, b, sizeof(b));
-        CHECK(std::string(b) == "--.-");
+        CHECK(std::string(b) == "--");
     }
     brew_model_set_action(&m, BREW_ACTION_HEATING);
     CHECK(pill() == "HEATING");
