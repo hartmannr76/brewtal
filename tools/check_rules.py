@@ -23,15 +23,17 @@ DRIVERS = [r"^brew/drivers/(?!interfaces/)"]   # driver implementations (chips, 
 INTERFACES = [r"^brew/drivers/interfaces/"]
 NETWORK = [r"^brew/network/"]
 CORE = [r"^brew/[^/]+\.h$"]                   # brew/<x>.h
+BENCH = [r"^brew/bench/"]                     # the UI benchmark: bench builds and host tools only
 
 LAYERS = {
-    "lib/drivers/interfaces": PLATFORM + UI + APP + DRIVERS + CORE + NETWORK,
-    "lib/core":               PLATFORM + UI + APP + DRIVERS + NETWORK,
-    "lib/network":            PLATFORM + UI + APP + DRIVERS + CORE,
-    "lib/drivers/chips":      PLATFORM + UI + APP + CORE + NETWORK + [r"^brew/drivers/esp32/"],
-    "lib/drivers/esp32":      UI + APP + CORE + NETWORK + [r"^brew/drivers/chips/", r"^Arduino", r"^Wire\.h"],
-    "lib/app":                DRIVERS + [r"^Arduino", r"^Wire\.h"],
-    "lib/ui":                 APP + DRIVERS + CORE + INTERFACES + NETWORK + PLATFORM[:-1],
+    "lib/drivers/interfaces": PLATFORM + UI + APP + DRIVERS + CORE + NETWORK + BENCH,
+    "lib/core":               PLATFORM + UI + APP + DRIVERS + NETWORK + BENCH,
+    "lib/network":            PLATFORM + UI + APP + DRIVERS + CORE + BENCH,
+    "lib/drivers/chips":      PLATFORM + UI + APP + CORE + NETWORK + BENCH + [r"^brew/drivers/esp32/"],
+    "lib/drivers/esp32":      UI + APP + CORE + NETWORK + BENCH + [r"^brew/drivers/chips/", r"^Arduino", r"^Wire\.h"],
+    "lib/app":                DRIVERS + BENCH + [r"^Arduino", r"^Wire\.h"],
+    "lib/ui":                 APP + DRIVERS + CORE + INTERFACES + NETWORK + BENCH + PLATFORM[:-1],
+    "lib/bench":              PLATFORM + DRIVERS,   # portable: the board's bench_hooks.cpp brings the clock
 }
 # lib/ui may use esp_heap_caps.h for its PSRAM allocator (guarded by ESP_PLATFORM).
 LAYER_EXCEPTIONS = {("lib/ui", "esp_heap_caps.h")}

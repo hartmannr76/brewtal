@@ -17,7 +17,6 @@
 #include "../sim_panel.h"
 
 #include "brew/app/lvgl_port.h"
-#include "brew/app/bench.h"
 #include "brew/app/ui_bridge.h"
 #include "brew/control.h"
 #include "brew/controller.h"
@@ -58,25 +57,13 @@ public:
     /** Advance both sides to `ui_now` and render. Call once per animation frame. */
     void frame(uint32_t ui_now);
 
-    /**
-     * Display throttling (bench_model.h kThrottleProfiles): after a live frame renders, nothing
-     * runs (input waits, as in the firmware's UI task) until the profile's time for that frame
-     * has passed, so the page animates at that device's pace. Profile 0 = no throttling.
-     */
-    void setThrottle(int profile);
-    int throttle() const { return throttle_; }
-
-    /**
-     * Runs the UI benchmark (lib/app bench.h) to the end at once, on a virtual clock paced by the
-     * current throttling profile: a frame takes the profile's time plus the firmware's 5 ms loop
-     * delay, so animations drop frames as they would. Returns the BENCH lines. Afterwards the
-     * page's clock is offset, so live frames carry on where the run ended.
-     */
-    std::string runBench();
-    /** The benchmark live (~33 s) under the current throttling; output grows a line per phase. */
-    bool startBench();
-    bool benchRunning() const { return live_bench_ != nullptr; }
-    const std::string & benchOutput() const { return bench_out_; }
+    /* ---- for tools that drive the UI (bench_check): what the firmware's DisplayConfig UI hooks
+     *      see, and a hook run every frame just before LVGL, like DisplayConfig::ui_loop ---- */
+    app::UiBridge & bridge() { return *bridge_; }
+    net::WifiSetup * wifiSetup() { return wifi_setup_.get(); }
+    lv_display_t * display() { return lvgl_.display(); }
+    uint32_t uiMs() const { return ui_ms_; }
+    void setUiLoopHook(void (*fn)(void * ctx, uint32_t now_ms), void * ctx) { ui_loop_ = fn; ui_loop_ctx_ = ctx; }
 
     /* ---- display-side inputs ---- */
     void turn(int detents);          // whole detents (+ = clockwise)
@@ -154,15 +141,8 @@ private:
 
     /* clocks */
     uint32_t ui_ms_ = 0;
-    uint32_t clock_offset_ = 0;          // added to the caller's clock (after a bench run)
-    void frameAt(uint32_t ui_now);
-    app::FrameMeter meter_;
-    app::Bench * bench_ = nullptr;
-    std::unique_ptr<app::Bench> live_bench_;
-    int throttle_ = 0;
-    uint32_t busy_until_ = 0;            // paced: the device is still drawing until then
-    std::string bench_out_;
-    static void benchLog(const char * line);
+    void (*ui_loop_)(void *, uint32_t) = nullptr;
+    void * ui_loop_ctx_ = nullptr;
     uint32_t sim_ms_ = 0;
     float sim_frac_ = 0.0f;
     float speed_ = 1.0f;

@@ -21,8 +21,11 @@
 #include "brew/drivers/interfaces/io.h"
 #include "brew/network/setup_portal.h"
 #include "brew/network/wifi_setup.h"
+#include "lvgl.h"
 
 namespace brew::app {
+
+class UiBridge;
 
 struct DisplayConfig {
     hal::DisplayPanel * panel = nullptr;      // required
@@ -44,8 +47,11 @@ struct DisplayConfig {
     hal::HttpServer *  http = nullptr;
     hal::WallClock *   clock = nullptr;   // internet time, passed on to the controller
 
-    /** Run the scripted UI benchmark once after boot (brew/app/bench.h; tools/device_bench.py). */
-    bool bench = false;
+    /** Optional extra work in the UI task; normal builds leave these empty (the benchmark build,
+     *  boards/bench/bench_hooks.cpp, uses them). ui_started runs once after the UI is built,
+     *  ui_loop every loop iteration just before LVGL runs. */
+    void (*ui_started)(UiBridge & ui, lv_display_t * disp, net::WifiSetup * wifi) = nullptr;
+    void (*ui_loop)(uint32_t now_ms) = nullptr;
 };
 
 /** Sets up LVGL + brew_ui on `cfg.panel`, then starts the input and UI tasks. */

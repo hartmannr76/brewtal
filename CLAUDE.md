@@ -33,6 +33,9 @@ lib/network             WiFi setup: WifiSetup (setup network -> phone -> connect
                         interfaces. Runs on the display board.
 lib/fonts/<size>        generated fonts (tools/gen_fonts.sh); an env lists exactly one.
 lib/app                 UiBridge (brew_ui <-> UiPort), LvglPort, ESP display runtime. Never includes drivers.
+lib/bench               the UI benchmark (FrameMeter, Bench script). Only bench builds (crowpanel21_bench, via
+                        boards/bench/bench_hooks.cpp and DisplayConfig's ui_started/ui_loop hooks) and host
+                        tools (bench_check) use it; check_rules.py keeps every other library from including it.
                         Folders carry no brew_ prefix; each library.json names it brewdial-<...>, and
                         platformio.ini envs list libraries by that name.
 boards/<name>/          composition roots: the ONLY place pins, part numbers, addresses and driver choices
@@ -109,7 +112,7 @@ Measure, don't guess: `tools/device_bench.py` (below) reports px repainted per f
   with the pioarduino penv Python) resets the board and saves its serial log. Startup logs each stage with
   ms since boot and internal RAM left, so that's where to look for boot time and RAM headroom.
 - UI performance: `tools/device_bench.py COMn` flashes `crowpanel21_bench`, runs the scripted benchmark (idle,
-  knob up/down, menu, full redraw; `lib/app/src/bench.cpp`), compares with the last run and appends to
+  knob up/down, fast spin, menu, full redraw; `lib/bench`), compares with the last run and appends to
   `bench/results.csv` (commit it with the change). `--check` fails on a >15% regression in fps, frame time,
   boot time or free RAM. Run it after UI, LVGL, display-driver or memory changes.
 - Without a device: ctest's `bench_check` runs the same benchmark on the host harness with a CrowPanel-paced
@@ -117,5 +120,4 @@ Measure, don't guess: `tools/device_bench.py` (below) reports px repainted per f
   `bench/host_baseline.csv`; it fails on >5% more work. If the increase is intended, run
   `sim/build-msvc/Release/bench_check bench/host_baseline.csv --update-baseline` and commit the baseline with the
   change: never update it just to make the check pass. Its fps/ms are estimates (`sim/harness/bench_model.h`,
-  refit with `device_bench.py --fit`). The web harness's Performance card has the same profiles as a throttling
-  dropdown (applied live) and runs the benchmark under the selected one.
+  refit with `device_bench.py --fit`). Benchmark code stays out of production firmware and the web harness.

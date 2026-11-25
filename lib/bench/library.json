@@ -1,0 +1,11 @@
+{
+  "name": "brewdial-bench",
+  "version": "1.0.0",
+  "description": "BrewDial UI benchmark (FrameMeter, Bench). Bench builds and host tools only.",
+  "frameworks": "*",
+  "platforms": "*",
+  "build": {
+    "includeDir": "include",
+    "srcDir": "src"
+  }
+}

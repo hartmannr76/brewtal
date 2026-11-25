@@ -1,5 +1,7 @@
 /**
- * Frame statistics and the on-device UI benchmark.
+ * Frame statistics and the UI benchmark. Only in bench builds (env crowpanel21_bench, wired by
+ * boards/bench/bench_hooks.cpp through DisplayConfig's UI hooks) and host tools (bench_check);
+ * normal firmware never compiles it (check_rules.py: no library may include brew/bench/).
  *
  * FrameMeter listens to LVGL's display events and adds every drawn frame (render + flush time,
  * area invalidated, area actually rendered) to the windows registered with it, so several
@@ -27,10 +29,11 @@
 namespace brew::net {
 class WifiSetup;
 }
-
 namespace brew::app {
-
 class UiBridge;
+}
+
+namespace brew::bench {
 
 struct FrameWindow {
     uint32_t frames = 0;
@@ -78,7 +81,7 @@ class Bench {
 public:
     using LogFn = void (*)(const char * line);
 
-    Bench(UiBridge & ui, FrameMeter & meter, LogFn log, net::WifiSetup * wifi = nullptr);
+    Bench(app::UiBridge & ui, FrameMeter & meter, LogFn log, net::WifiSetup * wifi = nullptr);
     ~Bench();
     Bench(const Bench &) = delete;
     Bench & operator=(const Bench &) = delete;
@@ -95,7 +98,7 @@ private:
     void begin(Phase p, uint32_t now);
     void finish(uint32_t now);
 
-    UiBridge & ui_;
+    app::UiBridge & ui_;
     FrameMeter & meter_;
     LogFn log_;
     net::WifiSetup * wifi_;
@@ -105,4 +108,4 @@ private:
     int acts_ = 0;        // scripted actions done in this phase
 };
 
-}  // namespace brew::app
+}  // namespace brew::bench

@@ -1,4 +1,4 @@
-#include "brew/app/bench.h"
+#include "brew/bench/bench.h"
 
 #include "brew/app/ui_bridge.h"
 #include "brew/input.h"
@@ -6,7 +6,7 @@
 
 #include <cstdio>
 
-namespace brew::app {
+namespace brew::bench {
 
 /* ------------------------------------------------------------------ FrameMeter */
 
@@ -89,7 +89,7 @@ constexpr uint32_t kSpinMs = 60;     // a quick flick: detents faster than frame
 constexpr int kSpinSteps = 24;       // 12 up, 12 back down
 }  // namespace
 
-Bench::Bench(UiBridge & ui, FrameMeter & meter, LogFn log, net::WifiSetup * wifi)
+Bench::Bench(app::UiBridge & ui, FrameMeter & meter, LogFn log, net::WifiSetup * wifi)
     : ui_(ui), meter_(meter), log_(log), wifi_(wifi)
 {
     meter_.add(&win_);
@@ -184,4 +184,4 @@ void Bench::step(uint32_t now)
     }
 }
 
-}  // namespace brew::app
+}  // namespace brew::bench

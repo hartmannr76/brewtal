@@ -44,6 +44,14 @@
 using namespace brew;
 using namespace brew::drivers;
 
+#if BREW_BENCH
+/* The UI benchmark (boards/bench/bench_hooks.cpp, compiled only in env crowpanel21_bench). Only
+ * declared here: an #include would make PlatformIO's library finder pull the bench library into
+ * every build. */
+void benchUiStarted(app::UiBridge & ui, lv_display_t * disp, net::WifiSetup * wifi);
+void benchUiLoop(uint32_t now_ms);
+#endif
+
 namespace {
 
 /* ---------------- buses + expanders ---------------- */
@@ -213,7 +221,10 @@ void setup()
     d.portal = &portal;
     d.http = &http;
     d.clock = &wallClock;
-    d.bench = BREW_BENCH;
+#if BREW_BENCH
+    d.ui_started = benchUiStarted;   // boards/bench/bench_hooks.cpp
+    d.ui_loop = benchUiLoop;
+#endif
     wifiSettings.begin();
     app::startDisplay(d, uiPort);
     dns.begin();     // after startDisplay: it brought up the network stack

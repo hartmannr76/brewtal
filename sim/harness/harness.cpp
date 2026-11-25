@@ -1,5 +1,4 @@
 #include "harness.h"
-#include "bench_model.h"
 
 #include "brew_layout.h"
 #include "brew_ui.h"
@@ -141,9 +140,7 @@ void Harness::start(uint32_t ui_now)
     const size_t bytes = static_cast<size_t>(size_) * panel_.drawBufferLines() * 2;
     buf1_.assign(bytes, 0);
     buf2_.assign(bytes, 0);
-    lv_display_t * disp = lvgl_.begin(panel_, buf1_.data(), buf2_.data(), bytes, 16);
-    meter_.attach(disp, nullptr);
-    setThrottle(throttle_);   /* frame times come from the throttling profile's model */
+    lvgl_.begin(panel_, buf1_.data(), buf2_.data(), bytes, 16);
     lvgl_.addTouch();
 
     /* Controller first, so the UI's sync request has someone to answer it. */
@@ -207,38 +204,6 @@ void Harness::buildController()
 
 void Harness::frame(uint32_t ui_now)
 {
-    ui_now += clock_offset_;
-    const bool paced = throttle_ != kThrottleNone;
-    if(paced && static_cast<int32_t>(ui_now - busy_until_) < 0) return;   /* the device is still drawing */
-    const uint32_t frames = meter_.frames();
-    frameAt(ui_now);
-    if(paced && meter_.frames() != frames) busy_until_ = ui_ms_ + (meter_.lastFrameUs() + 999) / 1000;
-    if(live_bench_ && live_bench_->done()) {
-        bench_ = nullptr;
-        live_bench_.reset();
-    }
-}
-
-void Harness::setThrottle(int profile)
-{
-    if(profile < 0 || profile >= kThrottleProfileCount) profile = kThrottleNone;
-    throttle_ = profile;
-    busy_until_ = 0;
-    const ThrottleProfile & p = kThrottleProfiles[profile];
-    meter_.setCostModel({ p.base_us, p.us_per_px });
-}
-
-bool Harness::startBench()
-{
-    if(!started_ || bench_) return false;
-    bench_out_.clear();
-    live_bench_ = std::make_unique<app::Bench>(*bridge_, meter_, benchLog, wifi_setup_.get());
-    bench_ = live_bench_.get();
-    return true;
-}
-
-void Harness::frameAt(uint32_t ui_now)
-{
     if(!started_ || ui_now <= ui_ms_) return;
     if(ui_now - ui_ms_ > 250) ui_ms_ = ui_now - 250;   // tab was in the background: don't catch up
 
@@ -257,34 +222,8 @@ void Harness::frameAt(uint32_t ui_now)
     bridge_->poll(ui_ms_);
     wifi_setup_->tick(ui_ms_);
     watchWifi();
-    if(bench_) bench_->step(ui_ms_);
+    if(ui_loop_) ui_loop_(ui_loop_ctx_, ui_ms_);
     lv_timer_handler();
-}
-
-void Harness::benchLog(const char * line)
-{
-    if(!g_harness) return;
-    g_harness->bench_out_ += line;
-    g_harness->bench_out_ += '\n';
-    g_harness->log("%s", line);
-}
-
-std::string Harness::runBench()
-{
-    if(!started_ || bench_) return "";
-    bench_out_.clear();
-    app::Bench b(*bridge_, meter_, benchLog, wifi_setup_.get());
-    bench_ = &b;
-    const uint32_t start = ui_ms_;
-    uint32_t now = ui_ms_;
-    for(int guard = 0; !b.done() && guard < 100000; guard++) {
-        const uint32_t frames = meter_.frames();
-        frameAt(now += 5);
-        if(meter_.frames() != frames) now += (meter_.lastFrameUs() + 999) / 1000;   /* the frame's device time */
-    }
-    bench_ = nullptr;
-    clock_offset_ += ui_ms_ - start;
-    return bench_out_;
 }
 
 /* ------------------------------------------------------------------ WiFi */

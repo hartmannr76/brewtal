@@ -7,16 +7,16 @@
     ... --no-save             don't add the run to the history
     ... --fit                 also fit the host cost model (sim/harness/bench_model.h) to this run
 
-The bench build (env crowpanel21_bench: the demo + lib/app bench.h) waits for boot to settle,
+The bench build (env crowpanel21_bench: the demo + lib/bench) waits for boot to settle,
 then runs a fixed script through the same input path as the knob and logs one line per phase:
-idle, 16 knob steps up, 16 down, the menu opened and closed, and the whole screen redrawn every
-frame. Boot time and internal RAM come from the startup log. Every run is appended to
-bench/results.csv (date, commit, env, phase, metric, value) so the numbers can be followed over
-time; commit that file with the change it measures.
+idle, 16 knob steps up, 16 down, a fast spin, the menu opened and closed, and the whole screen
+redrawn every frame. Boot time and internal RAM come from the startup log. Every run is appended
+to bench/results.csv (date, commit, env, phase, metric, value) so the numbers can be followed
+over time; commit that file with the change it measures.
 
-The host runs the same script without a device (sim/harness bench_check, a ctest, and the web
-harness's Performance card), estimating frame times from the rendered area with the model in
-sim/harness/bench_model.h. --fit prints new constants for it from this run.
+The host runs the same script without a device (sim/harness bench_check, a ctest), estimating
+frame times from the rendered area with the model in sim/harness/bench_model.h. --fit prints new
+constants for it from this run.
 """
 import argparse
 import csv

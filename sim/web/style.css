@@ -623,11 +623,3 @@ input:focus-visible, select:focus-visible { outline: none; }
             text-align: center; color: var(--text-3); font-size: 13px; }
 .wifi-off strong { color: var(--text-2); font-weight: 500; font-size: 14px; }
 @media (max-width: 860px) { .wifi { grid-template-columns: minmax(0, 1fr); } .wifi-phone { margin: 0 auto; } }
-
-/* benchmark card */
-table.bench { width: 100%; border-collapse: collapse; margin: 12px 0 4px; font: 12px/1.4 var(--f-mono); }
-table.bench th { color: var(--text-3); font: 500 11px var(--f-ui); }
-table.bench th, table.bench td { text-align: right; padding: 3px 6px; border-bottom: 1px solid var(--hair); }
-table.bench td { color: var(--text-2); }
-table.bench th:first-child, table.bench td:first-child { text-align: left; }
-.bench-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 10px; }

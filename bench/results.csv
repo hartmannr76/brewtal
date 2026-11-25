@@ -171,3 +171,43 @@ run_at,commit,dirty,env,note,phase,metric,value
 2026-11-25 10:24:21,b0f487d,1,crowpanel21_bench,fade fix (kit_fade_to keeps a running fade),full_redraw,px_per_frame,250726.0
 2026-11-25 10:24:21,b0f487d,1,crowpanel21_bench,fade fix (kit_fade_to keeps a running fade),full_redraw,rendered_px_per_frame,230400.0
 2026-11-25 10:24:21,b0f487d,1,crowpanel21_bench,fade fix (kit_fade_to keeps a running fade),boot,screens_ms,281
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",boot,display_ready_ms,2490
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",boot,internal_free_kb,44
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",boot,largest_block_kb,30
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",idle,frames,144.0
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",idle,fps,28.7
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",idle,avg_ms,8.8
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",idle,max_ms,21.6
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",idle,px_per_frame,2035.0
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",idle,rendered_px_per_frame,1970.0
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",turn_up,frames,115.0
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",turn_up,fps,23.6
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",turn_up,avg_ms,26.2
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",turn_up,max_ms,200.7
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",turn_up,px_per_frame,89030.0
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",turn_up,rendered_px_per_frame,15921.0
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",turn_down,frames,101.0
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",turn_down,fps,21.0
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",turn_down,avg_ms,26.7
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",turn_down,max_ms,201.0
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",turn_down,px_per_frame,94542.0
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",turn_down,rendered_px_per_frame,15612.0
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",spin,frames,17.0
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",spin,fps,9.8
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",spin,avg_ms,67.0
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",spin,max_ms,190.7
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",spin,px_per_frame,293631.0
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",spin,rendered_px_per_frame,45289.0
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",menu,frames,51.0
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",menu,fps,14.5
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",menu,avg_ms,39.9
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",menu,max_ms,225.2
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",menu,px_per_frame,415971.0
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",menu,rendered_px_per_frame,45734.0
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",full_redraw,frames,14.0
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",full_redraw,fps,4.5
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",full_redraw,avg_ms,213.2
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",full_redraw,max_ms,217.6
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",full_redraw,px_per_frame,247581.0
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",full_redraw,rendered_px_per_frame,230400.0
+2026-11-25 10:55:24,b5bbeb0,1,crowpanel21_bench,"bench moved to lib/bench, wired via DisplayConfig hooks",boot,screens_ms,280

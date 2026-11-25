@@ -130,8 +130,7 @@ target_link_libraries(brew_ui PUBLIC brew_ui_model lvgl ${BREW_LIBM})
 # portable half of lib/app (the ESP task runtime is firmware-only)
 add_library(brew_app STATIC
     ${ROOT}/lib/app/src/ui_bridge.cpp
-    ${ROOT}/lib/app/src/lvgl_port.cpp
-    ${ROOT}/lib/app/src/bench.cpp)
+    ${ROOT}/lib/app/src/lvgl_port.cpp)
 target_include_directories(brew_app PUBLIC ${ROOT}/lib/app/include)
 target_link_libraries(brew_app PUBLIC brew_core brew_ui brew_network)
 target_compile_options(brew_app PRIVATE ${BREW_WARN})
@@ -194,8 +193,12 @@ add_test(NAME brew_tests COMMAND brew_tests)
 add_test(NAME harness_check COMMAND harness_check)
 # Presubmit UI benchmark: the device bench script on the host, work per frame vs bench/host_baseline.csv.
 # Intended increases: run  bench_check <ROOT>/bench/host_baseline.csv --update-baseline  and commit it.
-add_executable(bench_check harness/bench_check.cpp harness/web_api.cpp)
-target_link_libraries(bench_check PRIVATE brew_harness)
+add_library(brew_ui_bench STATIC ${ROOT}/lib/bench/src/bench.cpp)
+target_include_directories(brew_ui_bench PUBLIC ${ROOT}/lib/bench/include)
+target_link_libraries(brew_ui_bench PUBLIC brew_app)
+target_compile_options(brew_ui_bench PRIVATE ${BREW_WARN})
+add_executable(bench_check harness/bench_check.cpp)
+target_link_libraries(bench_check PRIVATE brew_harness brew_ui_bench)
 target_compile_options(bench_check PRIVATE ${BREW_WARN})
 add_test(NAME bench_check COMMAND bench_check ${ROOT}/bench/host_baseline.csv)
 if(TARGET check_rules)

@@ -2,7 +2,6 @@
 
 #include "brew/app/runtime.h"
 
-#include "brew/app/bench.h"
 #include "brew/app/lvgl_port.h"
 #include "brew/app/ui_bridge.h"
 #include "brew/local_bus.h"
@@ -84,9 +83,6 @@ struct DisplayCtx {
     KnobInput * knob = nullptr;
     TouchTracker touch;
     SpscRing<InputEvent, 64> events;   // input task -> ui task
-    FrameMeter meter;
-    FrameWindow beat_frames;           // the heartbeat's frame statistics
-    Bench * bench = nullptr;           // cfg.bench: the scripted UI benchmark
 };
 
 DisplayCtx * s_disp;
@@ -105,9 +101,6 @@ void input_task(void *)
         vTaskDelayUntil(&wake, pdMS_TO_TICKS(kInputPeriodMs));
     }
 }
-
-int64_t micros64() { return esp_timer_get_time(); }
-void bench_log(const char * line) { RT_LOG("I", "%s", line); }
 
 const char * phase_name(int p)
 {
@@ -132,27 +125,21 @@ void ui_task(void *)
         loops++;
         if(millis32() - beat >= 5000) {   // heartbeat: if these stop, the UI task is stuck
             beat = millis32();
-            const FrameWindow & fs = d.beat_frames;
-            const unsigned avg_ms = fs.frames ? static_cast<unsigned>(fs.sum_us / fs.frames / 1000u) : 0u;
             if(d.cfg.wifi) {
                 const net::SetupStatus & w = d.cfg.wifi->status();
-                RT_LOG("I", "ui alive (%u loops, %u presses, %u frames: avg %u ms, max %u ms); wifi: %s, %d phone(s), ssid '%s'",
-                       static_cast<unsigned>(loops), static_cast<unsigned>(presses), static_cast<unsigned>(fs.frames), avg_ms,
-                       static_cast<unsigned>(fs.max_us / 1000u), phase_name(static_cast<int>(w.phase)), w.clients, w.ssid);
+                RT_LOG("I", "ui alive (%u loops, %u presses); wifi: %s, %d phone(s), ssid '%s'", static_cast<unsigned>(loops),
+                       static_cast<unsigned>(presses), phase_name(static_cast<int>(w.phase)), w.clients, w.ssid);
             }
             else {
-                RT_LOG("I", "ui alive (%u loops, %u presses, %u frames: avg %u ms, max %u ms)", static_cast<unsigned>(loops),
-                       static_cast<unsigned>(presses), static_cast<unsigned>(fs.frames), avg_ms,
-                       static_cast<unsigned>(fs.max_us / 1000u));
+                RT_LOG("I", "ui alive (%u loops, %u presses)", static_cast<unsigned>(loops), static_cast<unsigned>(presses));
             }
             loops = 0;
-            d.beat_frames.clear();
         }
         const uint32_t now = millis32();
         if(d.cfg.wifi) d.cfg.wifi->tick(now);
         if(d.cfg.portal && d.cfg.http) d.cfg.portal->serve(*d.cfg.http, now);
         d.bridge->poll(now);
-        if(d.bench) d.bench->step(now);
+        if(d.cfg.ui_loop) d.cfg.ui_loop(now);
         const uint32_t wait = lv_timer_handler();
         /* run at least every 5 ms so knob events are applied promptly */
         vTaskDelay(pdMS_TO_TICKS(wait > 5 ? 5 : (wait < 1 ? 1 : wait)));
@@ -200,15 +187,13 @@ void startDisplay(const DisplayConfig & cfg, UiPort & port)
     void * b2 = heap_caps_malloc(bytes, cfg.panel->drawBufferCaps());
     if(!b1 || !b2) fatal("draw buffer allocation failed");
     lv_display_t * disp = d.lvgl.begin(*cfg.panel, b1, b2, bytes, cfg.refresh_ms);
-    d.meter.attach(disp, micros64);
-    d.meter.add(&d.beat_frames);
     if(cfg.touch) d.lvgl.addTouch();
     log_ram("panel + draw buffers");
 
     d.port = new LoggingUiPort(port);
     d.bridge = new UiBridge(*d.port);
     d.bridge->create(lv_screen_active());
-    if(cfg.bench) d.bench = new Bench(*d.bridge, d.meter, bench_log, cfg.wifi);
+    if(cfg.ui_started) cfg.ui_started(*d.bridge, disp, cfg.wifi);
     log_ram("screens");
     if(cfg.wifi) {
         cfg.wifi->begin(millis32());   // starts the radio; opens setup if nothing is saved

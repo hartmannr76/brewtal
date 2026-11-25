@@ -88,7 +88,6 @@
         <button data-style="hairline" class="on">Hairline</button>
         <button data-style="mist">Mist</button>
       </div>
-
       <span class="deck-round">
         <button id="ccw5" class="chip">−5</button>
         <button id="bounce" class="chip" title="One raw encoder count (half a detent): should do nothing">½ detent</button>
@@ -244,25 +243,6 @@
         </div>
       </div>
       <p class="readout" id="link-stats">–</p>
-    </article>
-
-    <article class="card" id="c-perf">
-      <header class="card-h"><h2>Performance</h2><span class="card-sub">display throttling and the UI benchmark</span></header>
-      <div class="field"><label for="throttle">Throttling</label>
-        <select id="throttle"></select></div>
-      <p class="readout" id="throttle-note">–</p>
-      <div class="bench-actions">
-        <button id="bench-run" class="btn primary">Run benchmark</button>
-        <label class="switch-row"><input type="checkbox" class="switch" id="bench-instant"> Instant (don't play it)</label>
-      </div>
-      <p class="readout" id="bench-status" hidden></p>
-      <table class="bench" id="bench-table" hidden>
-        <thead><tr><th>phase</th><th>fps</th><th>ms/frame</th><th>rendered px</th><th>invalidated px</th></tr></thead>
-        <tbody></tbody>
-      </table>
-      <p class="readout">The same script as <code>tools/device_bench.py</code> (idle, knob up and down, menu, full
-        redraw), under the selected throttling. Pixel counts per frame are exact; fps and ms come from the profile.
-        It plays on the dial (~33 s); "Instant" runs it at once and jumps the dial about a minute ahead.</p>
     </article>
 
     <article class="card wide" id="c-wifi">

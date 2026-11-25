@@ -11,8 +11,6 @@
  * Increases need a deliberate --update-baseline in the same commit; improvements pass (and say
  * so, so the baseline can be tightened).
  */
-#include "bench_model.h"
-
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -24,14 +22,9 @@
 #include <utility>
 #include <vector>
 
-extern "C" {
-void bd_start(double);
-void bd_frame(double);
-void bd_set_demo(int);
-void bd_set_throttle(int);
-const char * bd_bench_run();
-const char * bd_next_log();
-}
+#include "bench_model.h"
+#include "brew/bench/bench.h"
+#include "harness.h"
 
 namespace {
 
@@ -109,12 +102,26 @@ int main(int argc, char ** argv)
     const char * path = argv[1];
     const bool update = argc > 2 && std::strcmp(argv[2], "--update-baseline") == 0;
 
-    bd_start(0);
-    bd_set_demo(1);   /* the device bench is a demo build: same pill, same work */
-    bd_set_throttle(brew::sim::kThrottleCrowPanel);   /* the measured profile, whatever the page uses */
-    bd_frame(16);
-    const std::string text = bd_bench_run();
-    while(*bd_next_log()) {}
+    /* The harness drives the real UI; the benchmark hooks in as in the bench firmware, on a clock
+     * paced like the CrowPanel: a frame takes its modelled device time (bench_model.h) plus the
+     * firmware's 5 ms loop delay, so animations drop frames as they would on the board. */
+    brew::sim::Harness h(BREW_UI_DISP_SIZE);
+    h.start(0);
+    h.setDemo(true);   /* the device bench is a demo build: same pill, same work */
+    h.frame(16);
+    brew::bench::FrameMeter meter;
+    meter.attach(h.display(), nullptr);
+    meter.setCostModel({ brew::sim::kBenchBaseUs, brew::sim::kBenchUsPerPx });
+    static std::string text;
+    brew::bench::Bench bench(h.bridge(), meter, [](const char * line) { text += line; text += '\n'; }, h.wifiSetup());
+    h.setUiLoopHook([](void * b, uint32_t now) { static_cast<brew::bench::Bench *>(b)->step(now); }, &bench);
+    uint32_t clock_ms = h.uiMs();
+    for(int guard = 0; !bench.done() && guard < 100000; guard++) {
+        const uint32_t frames = meter.frames();
+        h.frame(clock_ms += 5);
+        if(meter.frames() != frames) clock_ms += (meter.lastFrameUs() + 999) / 1000;   /* the frame's device time */
+    }
+    h.setUiLoopHook(nullptr, nullptr);
     if(text.find("BENCH done") == std::string::npos) {
         std::printf("bench_check: the benchmark did not finish\n%s", text.c_str());
         return 1;
