@@ -188,6 +188,18 @@ void spike(void *)
                     LOG("  %s = %s", c->string, v ? v : "?");
                     cJSON_free(v);
                 }
+            if(const cJSON * dev = cJSON_GetObjectItem(b, "devices")) {
+                char * v = cJSON_PrintUnformatted(dev);
+                print_chunked("devices", v ? std::string(v) : std::string(), 1500);
+                cJSON_free(v);
+            }
+            for(const char * k : { "status", "name", "brewDate" }) {
+                const cJSON * v = cJSON_GetObjectItem(b, k);
+                if(!v) continue;
+                char * s = cJSON_PrintUnformatted(v);
+                LOG("  %s = %s", k, s ? s : "?");
+                cJSON_free(s);
+            }
             const cJSON * recipe = cJSON_GetObjectItem(b, "recipe");
             const cJSON * ferm = recipe ? cJSON_GetObjectItem(recipe, "fermentation") : nullptr;
             if(ferm) {
