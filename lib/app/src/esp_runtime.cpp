@@ -142,6 +142,15 @@ void ui_task(void *)
 
 uint32_t lv_tick_cb() { return millis32(); }
 
+/* Internal RAM left: task stacks, DMA buffers and the WiFi driver all need it, and running out
+ * fails quietly (a task that is never created), so startup reports it at each stage. */
+void log_ram(const char * stage)
+{
+    RT_LOG("I", "internal RAM after %s: %u KB free, largest block %u KB", stage,
+           static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
+           static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024));
+}
+
 [[noreturn]] void fatal(const char * msg)
 {
     RT_LOG("E", "FATAL: %s", msg);
@@ -156,6 +165,7 @@ void startDisplay(const DisplayConfig & cfg, UiPort & port)
     s_disp = new DisplayCtx();
     DisplayCtx & d = *s_disp;
     d.cfg = cfg;
+    log_ram("start");
 
     if(!cfg.panel->begin()) RT_LOG("E", "display panel begin() failed");
     if(cfg.touch && !cfg.touch->begin()) RT_LOG("W", "touch controller not found");
@@ -172,14 +182,17 @@ void startDisplay(const DisplayConfig & cfg, UiPort & port)
     if(!b1 || !b2) fatal("draw buffer allocation failed");
     d.lvgl.begin(*cfg.panel, b1, b2, bytes, cfg.refresh_ms);
     if(cfg.touch) d.lvgl.addTouch();
+    log_ram("panel + draw buffers");
 
     d.port = new LoggingUiPort(port);
     d.bridge = new UiBridge(*d.port);
     d.bridge->create(lv_screen_active());
+    log_ram("screens");
     if(cfg.wifi) {
         cfg.wifi->begin(millis32());   // starts the radio; opens setup if nothing is saved
         d.bridge->attachWifi(cfg.wifi);
         if(cfg.http && !cfg.http->begin()) RT_LOG("E", "setup page server failed to start");
+        log_ram("WiFi + setup page server");
     }
 
     /* First frame before the backlight, so there is no flash of garbage. Give the controller
@@ -199,8 +212,10 @@ void startDisplay(const DisplayConfig & cfg, UiPort & port)
         d.knob->begin();
     }
 
-    xTaskCreatePinnedToCore(input_task, "input", 4096, nullptr, 5, nullptr, 0);
-    xTaskCreatePinnedToCore(ui_task, "ui", 16384, nullptr, 2, nullptr, 1);
+    if(xTaskCreatePinnedToCore(input_task, "input", 4096, nullptr, 5, nullptr, 0) != pdPASS)
+        fatal("no RAM for the input task");
+    if(xTaskCreatePinnedToCore(ui_task, "ui", 16384, nullptr, 2, nullptr, 1) != pdPASS)
+        fatal("no RAM for the UI task: the screen will not respond");
     RT_LOG("I", "display ready (%ux%u, PSRAM free %u KB, internal free %u KB, largest block %u KB)",
              cfg.panel->width(), cfg.panel->height(),
              static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024),
