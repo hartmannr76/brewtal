@@ -110,7 +110,7 @@ target_link_libraries(brew_drivers PUBLIC brew_hal)
 target_compile_options(brew_drivers PRIVATE ${BREW_WARN})
 
 # The UI model (state + rules, no LVGL): shared by every layout, unit-tested on its own.
-add_library(brew_ui_model STATIC ${ROOT}/lib/ui/src/brew_model.c)
+add_library(brew_ui_model STATIC ${ROOT}/lib/ui/src/brew_model.c ${ROOT}/lib/ui/src/brew_bg.c)
 target_include_directories(brew_ui_model PUBLIC ${ROOT}/lib/ui/src)
 target_compile_options(brew_ui_model PRIVATE ${BREW_WARN})
 target_link_libraries(brew_ui_model PUBLIC ${BREW_LIBM})
@@ -121,7 +121,6 @@ add_library(brew_ui STATIC
     ${ROOT}/lib/ui/src/layout_kit.c
     ${ROOT}/lib/ui/src/layout_round.c
     ${ROOT}/lib/ui/src/layout_square.c
-    ${ROOT}/lib/ui/src/brew_bg.c
     ${FONT_SRC})
 target_include_directories(brew_ui PUBLIC ${ROOT}/lib/ui/src)
 target_compile_options(brew_ui PRIVATE ${BREW_WARN})

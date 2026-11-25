@@ -44,6 +44,8 @@ typedef struct {
 } brew_glass_t;
 
 void brew_bg_render_glass(uint16_t * buf, int w, int h, const brew_glass_t * g);
+/** Rows [y0, y1) only, so a caller can spread the work out (rendering all rows = the above). */
+void brew_bg_render_glass_rows(uint16_t * buf, int w, int h, const brew_glass_t * g, int y0, int y1);
 
 /**
  * Turn a list of data points into a dense polyline using the same

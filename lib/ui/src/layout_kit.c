@@ -230,14 +230,42 @@ static int grad_id(brew_vstate_t vs)
 }
 static const brew_vstate_t s_gid_vs[KIT_NGRAD] = { BREW_VS_COOL, BREW_VS_HEAT, BREW_VS_CRASH, BREW_VS_PAUSE, BREW_VS_OK };
 
-static uint16_t * bg_get(int gid)
+/* Rendering a background takes a while on the MCU, so startup renders only the one it shows
+ * first; the rest are filled in a few rows at a time while the UI is idle. A state change
+ * that needs one before then finishes it on the spot. */
+static int s_bg_rows[KIT_NGRAD];        /* rows rendered so far (KIT_DISP = ready) */
+static lv_timer_t * s_bg_timer;
+#define KIT_BG_IDLE_ROWS 24             /* per idle step */
+#define KIT_BG_IDLE_MS   30
+
+static void bg_render(int gid, int rows)
 {
     if(!s_bg_cache[gid]) {
         s_bg_cache[gid] = BREW_UI_ALLOC((size_t)KIT_DISP * KIT_DISP * 2);
         LV_ASSERT_MALLOC(s_bg_cache[gid]);
-        brew_bg_render_glass(s_bg_cache[gid], KIT_DISP, KIT_DISP, &s_glass[s_gid_vs[gid]]);
+        s_bg_rows[gid] = 0;
     }
+    const int y0 = s_bg_rows[gid], y1 = y0 + rows < KIT_DISP ? y0 + rows : KIT_DISP;
+    if(y1 <= y0) return;
+    brew_bg_render_glass_rows(s_bg_cache[gid], KIT_DISP, KIT_DISP, &s_glass[s_gid_vs[gid]], y0, y1);
+    s_bg_rows[gid] = y1;
+}
+
+static uint16_t * bg_get(int gid)
+{
+    bg_render(gid, KIT_DISP);
     return s_bg_cache[gid];
+}
+
+static void bg_idle_cb(lv_timer_t * t)
+{
+    for(int g = 0; g < KIT_NGRAD; g++) {
+        if(s_bg_cache[g] && s_bg_rows[g] >= KIT_DISP) continue;
+        bg_render(g, KIT_BG_IDLE_ROWS);
+        return;
+    }
+    lv_timer_delete(t);   /* all ready */
+    s_bg_timer = NULL;
 }
 
 static void bg_fade_done(kit_bg_t * b)
@@ -254,7 +282,8 @@ void kit_bg_create(kit_bg_t * b, lv_obj_t * parent)
 {
     b->front = 0;
     b->gid = -1;
-    for(int g = 0; g < KIT_NGRAD; g++) bg_get(g);   /* pre-render now so state changes never stall */
+    bg_get(0);   /* what the canvases show until the first state; the others render when idle */
+    if(!s_bg_timer) s_bg_timer = lv_timer_create(bg_idle_cb, KIT_BG_IDLE_MS, NULL);
     for(int i = 0; i < 2; i++) {
         b->bg[i] = kit_canvas(parent, bg_get(0), KIT_DISP, KIT_DISP, LV_COLOR_FORMAT_RGB565);
         lv_obj_set_pos(b->bg[i], 0, 0);

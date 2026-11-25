@@ -81,70 +81,115 @@ void brew_bg_render(uint16_t * buf, int w, int h, const brew_grad_t * g)
 
 static inline float chan(uint32_t c, int sh) { return (float)((c >> sh) & 0xFF); }
 
+/* Dither one pixel to RGB565: (v + d*8)/8 written as v/8 + d (the same value: /8 is exact). */
+static inline uint16_t dither565(float r, float gg, float b, float d)
+{
+    int r5 = (int)(r * 0.125f + d);
+    int g6 = (int)(gg * 0.25f + d);
+    int b5 = (int)(b * 0.125f + d);
+    if(r5 > 31) r5 = 31;
+    if(g6 > 63) g6 = 63;
+    if(b5 > 31) b5 = 31;
+    return (uint16_t)((r5 << 11) | (g6 << 5) | b5);
+}
+
 void brew_bg_render_glass(uint16_t * buf, int w, int h, const brew_glass_t * g)
 {
+    brew_bg_render_glass_rows(buf, w, h, g, 0, h);
+}
+
+/*
+ * Rows [y0, y1) of the glass. Kept fast because the dial renders one per state colour at
+ * startup on a 240 MHz MCU: per-row terms are hoisted, divisions are multiplications, square
+ * roots are skipped where the term can't apply, and when the light is centred (cx = 0.5, every
+ * glass today) the picture is mirror-symmetric, so each colour is computed once for x and
+ * w-1-x (only the dither differs).
+ */
+void brew_bg_render_glass_rows(uint16_t * buf, int w, int h, const brew_glass_t * g, int y0, int y1)
+{
     const float gx = g->cx * (float)w, gy = g->cy * (float)h, gr = g->radius * (float)w;
+    const float inv_gr = 1.0f / gr, gr2 = gr * gr;
     const float vr = (float)(w < h ? w : h) * 0.5f;            /* vignette: 55%..100% of the half width */
+    const float inv_vr = 1.0f / vr, vin2 = (0.55f * vr) * (0.55f * vr);
     const float shx = (float)w * 0.5f, shy = (float)h * 0.1875f;  /* sheen ellipse (mockup: 240,90 / 200x120) */
-    const float shrx = (float)w * 0.4167f, shry = (float)h * 0.25f;
-    for(int y = 0; y < h; y++) {
+    const float inv_shrx = 1.0f / ((float)w * 0.4167f), inv_shry = 1.0f / ((float)h * 0.25f);
+    const float half_w = (float)w * 0.5f, half_h = (float)h * 0.5f;
+    const float br = chan(g->base, 16), bgc = chan(g->base, 8), bb = chan(g->base, 0);
+    const float sr = chan(g->s, 16), sg = chan(g->s, 8), sb = chan(g->s, 0);
+    const float dr = chan(g->deep, 16), dg = chan(g->deep, 8), db = chan(g->deep, 0);
+    const float st = g->strength;
+    const bool mirror = g->cx == 0.5f;
+    const int xe = mirror ? (w + 1) / 2 : w;
+    if(y0 < 0) y0 = 0;
+    if(y1 > h) y1 = h;
+
+    for(int y = y0; y < y1; y++) {
         uint16_t * row = buf + (size_t)y * (size_t)w;
         const float py = (float)y + 0.5f;
-        for(int x = 0; x < w; x++) {
+        const float dy = py - gy, dy2 = dy * dy;
+        const float ey = py - half_h, ey2 = ey * ey;
+        const float sy = (py - shy) * inv_shry, sy2 = sy * sy;
+        const float sheen_row = 0.05f * clampf(1.0f - py / half_h, 0.0f, 1.0f);
+        const bool light_row = dy2 < gr2, sheen_on = sheen_row > 0.0f && sy2 < 1.0f;
+        const uint8_t * bay = s_bayer[y & 3];
+
+        for(int x = 0; x < xe; x++) {
             const float px = (float)x + 0.5f;
-            float r = chan(g->base, 16), gg = chan(g->base, 8), b = chan(g->base, 0);
+            float r = br, gg = bgc, b = bb;
 
             /* the state light: (s, strength) -> (deep, 0.45 strength) at 45% -> nothing */
-            const float dx = px - gx, dy = py - gy;
-            const float t = sqrtf(dx * dx + dy * dy) / gr;
-            if(t < 1.0f) {
-                float a, cr, cg, cb;
-                if(t < 0.45f) {
-                    const float f = t / 0.45f;
-                    a = g->strength * (1.0f - f) + g->strength * 0.45f * f;
-                    cr = chan(g->s, 16) + (chan(g->deep, 16) - chan(g->s, 16)) * f;
-                    cg = chan(g->s, 8) + (chan(g->deep, 8) - chan(g->s, 8)) * f;
-                    cb = chan(g->s, 0) + (chan(g->deep, 0) - chan(g->s, 0)) * f;
+            if(light_row) {
+                const float dx = px - gx, q = dx * dx + dy2;
+                if(q < gr2) {
+                    const float t = sqrtf(q) * inv_gr;
+                    float a, cr, cg, cb;
+                    if(t < 0.45f) {
+                        const float f = t * (1.0f / 0.45f);
+                        a = st * (1.0f - f) + st * 0.45f * f;
+                        cr = sr + (dr - sr) * f;
+                        cg = sg + (dg - sg) * f;
+                        cb = sb + (db - sb) * f;
+                    }
+                    else {
+                        a = st * 0.45f * (1.0f - (t - 0.45f) * (1.0f / 0.55f));
+                        cr = dr;
+                        cg = dg;
+                        cb = db;
+                    }
+                    r += (cr - r) * a;
+                    gg += (cg - gg) * a;
+                    b += (cb - b) * a;
                 }
-                else {
-                    a = g->strength * 0.45f * (1.0f - (t - 0.45f) / 0.55f);
-                    cr = chan(g->deep, 16);
-                    cg = chan(g->deep, 8);
-                    cb = chan(g->deep, 0);
-                }
-                r += (cr - r) * a;
-                gg += (cg - gg) * a;
-                b += (cb - b) * a;
             }
 
             /* edge vignette */
-            const float ex = px - (float)w * 0.5f, ey = py - (float)h * 0.5f;
-            const float vt = (sqrtf(ex * ex + ey * ey) / vr - 0.55f) / 0.45f;
-            if(vt > 0.0f) {
-                const float k = 1.0f - 0.55f * clampf(vt, 0.0f, 1.0f);
-                r *= k;
-                gg *= k;
-                b *= k;
+            const float ex = px - half_w, v2 = ex * ex + ey2;
+            if(v2 > vin2) {
+                const float vt = (sqrtf(v2) * inv_vr - 0.55f) * (1.0f / 0.45f);
+                if(vt > 0.0f) {
+                    const float k = 1.0f - 0.55f * clampf(vt, 0.0f, 1.0f);
+                    r *= k;
+                    gg *= k;
+                    b *= k;
+                }
             }
 
             /* sheen: white 5% at the top, fading out by mid-height, inside an ellipse */
-            const float sx = (px - shx) / shrx, sy = (py - shy) / shry;
-            const float se = sx * sx + sy * sy;
-            if(se < 1.0f) {   /* soft rim: no visible ellipse edge */
-                const float a = 0.05f * clampf(1.0f - py / ((float)h * 0.5f), 0.0f, 1.0f) * (1.0f - se);
-                r += (255.0f - r) * a;
-                gg += (255.0f - gg) * a;
-                b += (255.0f - b) * a;
+            if(sheen_on) {
+                const float sx = (px - shx) * inv_shrx, se = sx * sx + sy2;
+                if(se < 1.0f) {   /* soft rim: no visible ellipse edge */
+                    const float a = sheen_row * (1.0f - se);
+                    r += (255.0f - r) * a;
+                    gg += (255.0f - gg) * a;
+                    b += (255.0f - b) * a;
+                }
             }
 
-            const float d = (float)s_bayer[y & 3][x & 3] / 16.0f;
-            int r5 = (int)((r + d * 8.0f) / 8.0f);
-            int g6 = (int)((gg + d * 4.0f) / 4.0f);
-            int b5 = (int)((b + d * 8.0f) / 8.0f);
-            if(r5 > 31) r5 = 31;
-            if(g6 > 63) g6 = 63;
-            if(b5 > 31) b5 = 31;
-            row[x] = (uint16_t)((r5 << 11) | (g6 << 5) | b5);
+            row[x] = dither565(r, gg, b, (float)bay[x & 3] * (1.0f / 16.0f));
+            if(mirror) {
+                const int xm = w - 1 - x;
+                if(xm != x) row[xm] = dither565(r, gg, b, (float)bay[xm & 3] * (1.0f / 16.0f));
+            }
         }
     }
 }
