@@ -6,8 +6,11 @@
  *   Account check  GET https://api.brewfather.app/v2/batches?status=Fermenting&include=devices
  *                  (Basic auth "userid:apikey"). 200: connected; 401/403: rejected. Our device in a
  *                  batch's devices.stream.items means the readings land on that batch.
- *   Logging        POST https://log.brewfather.net/stream?id=<id> every 15 min (Brewfather
- *                  ignores a device posting more often), then a check to see it land.
+ *   Logging        only for the batch imported on the dial (so readings can't land on another
+ *                  one): POST https://log.brewfather.net/stream?id=<id> every 15 min (Brewfather
+ *                  ignores a device posting more often), then a check to see where it landed.
+ *                  Attaching the device to a batch is a manual step in Brewfather; the check
+ *                  reads where it's attached, and posting stops if that's a different batch.
  *
  *   Import         the check above lists the Fermenting batches; fetchBatch() gets one whole
  *                  (GET /v2/batches/<id>) and turns its fermentation steps into a preview the
@@ -61,6 +64,14 @@ struct BfPreview {
     int64_t modified_unix_ms = 0;  // _timestamp_ms: the batch's last change
 };
 
+/** Logging, for the batch imported on the dial. */
+enum class BfLog : uint8_t {
+    Off,           // no batch imported: nothing is posted
+    NotAttached,   // posting; our device isn't attached to a Fermenting batch yet
+    Attached,      // posting, and Brewfather files it under the imported batch
+    Elsewhere,     // our device is attached to a different batch: not posting
+};
+
 struct BrewfatherStatus {
     BfAccount account = BfAccount::NotSetUp;
     int http = 0;                  // the API's last status (negative: no response)
@@ -79,6 +90,11 @@ struct BrewfatherStatus {
     BfBatch batches[kMaxBatches];   // the Fermenting batches, from the last check
     BfPreview preview;
     uint32_t rev = 0;               // bumped whenever the batches or the preview change
+    /* logging */
+    BfLog log = BfLog::Off;
+    char logging_id[40] = { 0 };    // the imported batch...
+    char logging[48] = { 0 };       // ..."#18 Pale Ale"
+    char elsewhere[64] = { 0 };     // the batch our device is attached to instead (BfLog::Elsewhere)
 };
 
 class Brewfather {
@@ -107,10 +123,13 @@ public:
     void checkNow(uint32_t now_ms);
     /** Fetch batch `i` of status().batches for import (status().preview shows how it goes). */
     void fetchBatch(int i, uint32_t now_ms);
-    /** The preview was imported: remember the batch (and its version) to keep it in sync. */
-    void imported();
+    /** The preview was imported: remember the batch (and its version) to keep it in sync, and log
+     *  to it from now on. */
+    void imported(uint32_t now_ms);
+    /** Log to batch `id` ("#18 Pale Ale"): posting starts shortly, a check finds where it lands. */
+    void startLogging(const char * id, const char * label, uint32_t now_ms);
     /** The batch imported last ("" if none). */
-    const char * importedId() const { return imported_id_; }
+    const char * importedId() const { return st_.logging_id; }
 
     /** Brewfather's names, cut for the dial: the batch's name, or the recipe's when the batch is
      *  just "Batch", without Brewfather's "(Modified) " prefix; at most n-1 bytes, whole characters. */
@@ -150,7 +169,6 @@ private:
     char key_upper_[24] = { 0 };   // our device as Brewfather keys it: "BREWDIALCB50"
     Pending pending_ = Pending::None;
     int64_t unix_ms_ = 0;
-    char imported_id_[40] = { 0 };
     uint32_t check_at_ = 0, post_at_ = 0;
     bool fetch_due_ = false;
     bool reading_valid_ = false;

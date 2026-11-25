@@ -112,6 +112,13 @@ void SetupPortal::brewfatherJson(uint32_t now)
     put(b.attached ? "true" : "false");
     put(",\"batch\":");
     putEscaped(b.batch);
+    static const char * const kLog[] = { "off", "not_attached", "attached", "elsewhere" };
+    put(",\"logging\":");
+    putEscaped(kLog[static_cast<int>(b.log)]);
+    put(",\"imported\":");
+    putEscaped(b.logging);
+    put(",\"elsewhere\":");
+    putEscaped(b.elsewhere);
     const long post_age = b.last_post_ms ? static_cast<long>((now - b.last_post_ms) / 1000u) : -1L;
     std::snprintf(num, sizeof(num), ",\"last_log_age_s\":%ld,\"last_post_age_s\":%ld,\"last_post_http\":%d}",
                   static_cast<long>(bf_->lastLogAgeS()), post_age, b.last_post_http);

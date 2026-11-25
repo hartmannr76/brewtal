@@ -75,6 +75,13 @@ typedef struct {
     int hold_h;
 } brew_bf_step_t;
 
+typedef enum {
+    BREW_BF_LOG_OFF = 0,          /* no batch imported */
+    BREW_BF_LOG_NOT_ATTACHED,     /* posting; attach the device to the batch in Brewfather */
+    BREW_BF_LOG_ATTACHED,
+    BREW_BF_LOG_ELSEWHERE,        /* attached to another batch: not posting */
+} brew_bf_log_t;
+
 typedef struct {
     brew_bf_account_t account;
     bool logging;          /* a Custom Stream id is saved */
@@ -91,6 +98,11 @@ typedef struct {
     brew_bf_step_t preview_steps[BREW_BF_STEPS_MAX];
     int today_day;         /* the batch's day today (1 = its first), -1: no start date */
     int today_step;        /* the step running today (0-based), -1: none (not started / past the last) */
+    /* logging, for the imported batch */
+    const char * device;   /* our Custom Stream device: "BrewDialCB50" */
+    int imported_index;    /* the imported batch in `batches`, -1 if it isn't listed */
+    brew_bf_log_t log;
+    const char * elsewhere;   /* BREW_BF_LOG_ELSEWHERE: the batch it's attached to instead */
 } brew_bf_t;
 
 /** Controller settings the user can change from Settings › Heat / Cool. */

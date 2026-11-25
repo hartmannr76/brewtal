@@ -172,7 +172,15 @@ TEST(brewfather_posts_every_15_minutes_and_checks_it_landed)
     run(bf, http, now, 60000);
     CHECK(http.reqs.empty());                                    // no reading yet: nothing to post
     bf.setReading(true, 19.44f, 20.0f, "heating");
-    run(bf, http, now, 100);
+    run(bf, http, now, 60000);
+    CHECK(http.reqs.empty());                                    // no batch imported: nothing to post
+    CHECK(bf.status().log == BfLog::Off);
+    bf.startLogging("ZEo", "#18 Pale Ale", now);                 // "Run this profile" on the dial
+    CHECK(bf.status().log == BfLog::NotAttached);
+    CHECK(store.s["bf_batch"] == "ZEo" && store.s["bf_blabel"] == "#18 Pale Ale");
+    run(bf, http, now, 19000);
+    CHECK(http.reqs.empty());
+    run(bf, http, now, 1100);
     CHECK_EQ(http.reqs.size(), static_cast<size_t>(1));
     CHECK(http.reqs[0].method == "POST");
     CHECK(http.reqs[0].url == "https://log.brewfather.net/stream?id=L31X");
@@ -209,6 +217,32 @@ TEST(brewfather_posts_every_15_minutes_and_checks_it_landed)
     http.respond(200, kAttached);
     run(bf, http, now, 100);
     CHECK(bf.status().attached);
+    CHECK(bf.status().log == BfLog::Attached);                   // to the imported batch
+
+    /* attached to a different batch: stops posting (readings would land there), says where */
+    bf.checkNow(now);
+    run(bf, http, now, 100);
+    std::string other = kAttached;
+    other.replace(other.find("\"ZEo\""), 5, "\"Q9x\"");
+    other.replace(other.find("18"), 2, "21");
+    http.respond(200, other);
+    run(bf, http, now, 100);
+    CHECK(bf.status().log == BfLog::Elsewhere);
+    CHECK(std::string(bf.status().elsewhere) == "#21 Pale Ale");
+    const size_t e = http.reqs.size();
+    run(bf, http, now, 20u * 60u * 1000u);
+    for(size_t i = e; i < http.reqs.size(); i++) CHECK(http.reqs[i].method != "POST");
+    /* re-attached in Brewfather: the next check finds it and posting resumes */
+    bf.checkNow(now);
+    run(bf, http, now, 100);
+    http.respond(200, kAttached);
+    run(bf, http, now, 100);
+    CHECK(bf.status().log == BfLog::Attached);
+    const size_t r = http.reqs.size();
+    run(bf, http, now, 16u * 60u * 1000u);
+    CHECK(http.reqs.size() > r && http.reqs[r].method == "POST");
+    http.respond(200);
+    run(bf, http, now, 100);
 
     /* an invalid reading (no probe) is not posted */
     bf.setReading(false, 0.0f, 20.0f, "idle");
@@ -226,12 +260,18 @@ TEST(brewfather_remembers_and_forgets)
         Brewfather bf(http, &store);
         bf.begin("BrewDialCB50", now);
         bf.setCredentials("uid", "secret", "L31X", now);
+        bf.startLogging("ZEo", "#18 Pale Ale", now);
     }
     Brewfather again(http, &store);
     again.begin("BrewDialCB50", now);
     CHECK(again.status().user_set && again.status().key_set && again.status().stream_set);
     CHECK(again.status().account == BfAccount::Checking);
+    CHECK(std::string(again.status().logging_id) == "ZEo");      // still logging to the batch after a restart
+    CHECK(std::string(again.status().logging) == "#18 Pale Ale");
+    CHECK(again.status().log == BfLog::NotAttached);              // until a check says where it lands
     again.forget();
+    CHECK(again.status().log == BfLog::Off);
+    CHECK(store.s["bf_batch"].empty());
     CHECK(again.status().account == BfAccount::NotSetUp);
     CHECK(!again.status().key_set);
     CHECK(std::string(again.status().device) == "BrewDialCB50");
@@ -239,6 +279,28 @@ TEST(brewfather_remembers_and_forgets)
     again.setReading(true, 20.0f, 20.0f, "idle");
     run(again, http, now, 60u * 60u * 1000u);
     CHECK(http.reqs.empty());
+}
+
+TEST(brewfather_logging_prefers_the_running_batch)
+{
+    FakeHttp http;
+    Store store;
+    store.s["bf_batch"] = "ZEo";                 // imported before labels were saved
+    Brewfather bf(http, &store);
+    uint32_t now = 1000;
+    bf.begin("BrewDialCB50", now);
+    bf.setCredentials("uid", "secret", "L31X", now);
+    run(bf, http, now, 100);
+    /* attached to #21 and to #18 (the one running): it's logging to #18 */
+    std::string other = kAttached;
+    other.replace(other.find("\"ZEo\""), 5, "\"Q9x\"");
+    other.replace(other.find("18"), 2, "21");
+    const std::string both = other.substr(0, other.size() - 1) + "," + std::string(kAttached).substr(1);
+    http.respond(200, both);
+    run(bf, http, now, 100);
+    CHECK(bf.status().log == BfLog::Attached);
+    CHECK(std::string(bf.status().batch) == "#18 Pale Ale");
+    CHECK(std::string(bf.status().logging) == "#18 Pale Ale");   // the label, from the list
 }
 
 TEST(brewfather_short_names)

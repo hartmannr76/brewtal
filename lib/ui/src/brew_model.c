@@ -30,7 +30,8 @@ void brew_model_init(brew_model_t * m, const brew_ui_cbs_t * cbs)
     m->sched.nsteps = 0;
     m->bf_last_log_min = -1;
     m->bf_today_day = -1;
-    m->bf_today_step = -1;   /* empty until the user builds one */
+    m->bf_today_step = -1;
+    m->bf_imported_index = -1;   /* empty until the user builds one */
 }
 
 void brew_model_free(brew_model_t * m)
@@ -190,15 +191,17 @@ void brew_model_detail_text(const brew_model_t * m, char * buf, size_t n)
             else snprintf(buf, n, "Step %d/%d \xC2\xB7 your target", s->step + 1, s->nsteps);
             return;
         }
+        /* the step's target with it: "Step 1/2 · 66.0° for 7 d", "Step 2/2 · ramp to 53.0° in 1 d" */
         const brew_step_t * st = &s->steps[s->step];
-        char r[16], h[16];
+        char r[16], h[16], t[16];
+        brew_model_fmt_temp(m, t, sizeof(t), st->temp_f);
         fmt_dur(h, sizeof(h), st->hold_h);
         if(st->ramp_h > 0) {
             fmt_dur(r, sizeof(r), st->ramp_h);
-            snprintf(buf, n, "Step %d/%d \xC2\xB7 ramp %s \xC2\xB7 hold %s", s->step + 1, s->nsteps, r, h);
+            snprintf(buf, n, "Step %d/%d \xC2\xB7 ramp to %s\xC2\xB0 in %s", s->step + 1, s->nsteps, t, r);
         }
         else {
-            snprintf(buf, n, "Step %d/%d \xC2\xB7 hold %s", s->step + 1, s->nsteps, h);
+            snprintf(buf, n, "Step %d/%d \xC2\xB7 %s\xC2\xB0 for %s", s->step + 1, s->nsteps, t, h);
         }
         return;
     }
@@ -219,7 +222,7 @@ float brew_model_hist_val(const brew_model_t * m, int i) { return i < m->hist_n 
 enum {
     ACT_NONE, ACT_FERMENT, ACT_CRASH, ACT_PAUSE, ACT_OPEN, ACT_BACK, ACT_UNITS, ACT_WIFI_SETUP, ACT_WIFI_FORGET,
     ACT_EDIT, ACT_CONSTANT, ACT_RESET_DAY, ACT_STEP, ACT_ADD_STEP, ACT_USE_SCHEDULE, ACT_STOP_SCHEDULE,
-    ACT_REMOVE_STEP, ACT_BF_CHECK, ACT_BF_PICK, ACT_BF_RUN, ACT_BF_RUN_OK,
+    ACT_REMOVE_STEP, ACT_BF_CHECK, ACT_BF_PICK, ACT_BF_RUN, ACT_BF_RUN_OK, ACT_BF_QR,
 };
 
 static void fmt_temp_unit(const brew_model_t * m, char * buf, size_t n, float f)
@@ -230,6 +233,19 @@ static void fmt_temp_unit(const brew_model_t * m, char * buf, size_t n, float f)
 static void fmt_diff_unit(const brew_model_t * m, char * buf, size_t n, float d_f)
 {
     snprintf(buf, n, "%.1f%s", (double)(m->celsius ? d_f * 5.0f / 9.0f : d_f), brew_model_unit(m));
+}
+
+/* the Brewfather phone page can be reached: on the home WiFi, with an address */
+static bool bf_page_ready(const brew_model_t * m) { return m->wifi_phase == BREW_WIFI_CONNECTED && m->wifi_address[0]; }
+
+/* "just now", "12 min ago", "3 h ago", "2 days ago"; "" when unknown */
+static void bf_ago(int min, char * buf, size_t n)
+{
+    if(min < 0) buf[0] = '\0';
+    else if(min < 2) snprintf(buf, n, "just now");
+    else if(min < 90) snprintf(buf, n, "%d min ago", min);
+    else if(min < 48 * 60) snprintf(buf, n, "%d h ago", (min + 30) / 60);
+    else snprintf(buf, n, "%d days ago", (min + 720) / 1440);
 }
 
 static const char * bf_account_short(brew_bf_account_t a)
@@ -285,7 +301,10 @@ static int build(const brew_model_t * m, brew_list_t l, brew_list_item_t * it)
             break;
         case BREW_LIST_BREWFATHER:
             if(m->bf_account == BREW_BF_NOT_SET_UP) break;
-            for(int i = 0; i < m->bf_nbatches; i++) add(it, &n, m->bf_batches[i], BREW_IC_BEER, ACT_BF_PICK, (uint8_t)i);
+            for(int i = 0; i < m->bf_nbatches; i++) {
+                x = add(it, &n, m->bf_batches[i], BREW_IC_BEER, ACT_BF_PICK, (uint8_t)i);
+                x->mark = i == m->bf_imported_index ? BREW_MARK_ACTIVE : BREW_MARK_NONE;   /* the one running */
+            }
             add(it, &n, "Refresh", BREW_IC_NONE, ACT_BF_CHECK, 0);
             break;
         case BREW_LIST_BF_PREVIEW:
@@ -311,22 +330,9 @@ static int build(const brew_model_t * m, brew_list_t l, brew_list_item_t * it)
         case BREW_LIST_BF_NOTICE:
             add(it, &n, "OK", BREW_IC_NONE, ACT_BF_RUN_OK, 0);
             return n;   /* no Previous: OK is the only way on */
-        case BREW_LIST_BF_ACCOUNT:
-            x = add(it, &n, "Account", BREW_IC_NONE, ACT_NONE, 0);
+        case BREW_LIST_BF_ACCOUNT:   /* pressing Account shows the phone page's QR code */
+            x = add(it, &n, "Account", BREW_IC_NONE, bf_page_ready(m) ? ACT_BF_QR : ACT_NONE, 0);
             snprintf(x->value, sizeof(x->value), "%s", bf_account_short(m->bf_account));
-            x = add(it, &n, "Logging", BREW_IC_NONE, ACT_NONE, 0);
-            if(!m->bf_logging) snprintf(x->value, sizeof(x->value), "off");
-            else if(m->bf_attached) snprintf(x->value, sizeof(x->value), "%.18s%s", m->bf_batch, strlen(m->bf_batch) > 18 ? "..." : "");
-            else if(m->bf_account == BREW_BF_CONNECTED) snprintf(x->value, sizeof(x->value), "not attached");
-            else snprintf(x->value, sizeof(x->value), "on");
-            if(m->bf_last_log_min >= 0) {
-                x = add(it, &n, "Last reading", BREW_IC_NONE, ACT_NONE, 0);
-                const int mi = m->bf_last_log_min;
-                if(mi < 2) snprintf(x->value, sizeof(x->value), "just now");
-                else if(mi < 90) snprintf(x->value, sizeof(x->value), "%d min ago", mi);
-                else if(mi < 48 * 60) snprintf(x->value, sizeof(x->value), "%d h ago", (mi + 30) / 60);
-                else snprintf(x->value, sizeof(x->value), "%d days ago", (mi + 720) / 1440);
-            }
             if(m->bf_account != BREW_BF_NOT_SET_UP) add(it, &n, "Check now", BREW_IC_NONE, ACT_BF_CHECK, 0);
             break;
         case BREW_LIST_WIFI:
@@ -467,11 +473,20 @@ void brew_model_list_note(const brew_model_t * m, char * buf, size_t n)
             }
             break;
         case BREW_LIST_BREWFATHER:
-            if(m->bf_account == BREW_BF_NOT_SET_UP) snprintf(buf, n, "Set up in Settings \xC2\xBB Brewfather");
-            else if(m->bf_nbatches > 0) snprintf(buf, n, "Fermenting in Brewfather");
-            else if(m->bf_account == BREW_BF_CONNECTED) snprintf(buf, n, "No Fermenting batches in Brewfather");
-            else if(m->bf_account == BREW_BF_CHECKING) snprintf(buf, n, "Checking Brewfather...");
-            else snprintf(buf, n, "Can't reach Brewfather");
+            if(m->bf_account == BREW_BF_NOT_SET_UP) { snprintf(buf, n, "Set up in Settings \xC2\xBB Brewfather"); break; }
+            /* logging, for the batch that's running (marked in the list) */
+            if(m->bf_logging && m->bf_log == BREW_BF_LOG_ATTACHED) {
+                char ago[24];
+                bf_ago(m->bf_last_log_min, ago, sizeof(ago));
+                if(ago[0]) snprintf(buf, n, "Logging \xC2\xB7 last reading %s", ago);
+                else snprintf(buf, n, "Logging");
+                break;
+            }
+            if(m->bf_logging && m->bf_log == BREW_BF_LOG_NOT_ATTACHED) { snprintf(buf, n, "Attach %s to this batch\nin Brewfather to log", m->bf_device); break; }
+            if(m->bf_logging && m->bf_log == BREW_BF_LOG_ELSEWHERE) { snprintf(buf, n, "Not logging: %s is\nattached to %s", m->bf_device, m->bf_elsewhere); break; }
+            if(m->bf_nbatches == 0 && m->bf_account == BREW_BF_CONNECTED) snprintf(buf, n, "No Fermenting batches in Brewfather");
+            else if(m->bf_nbatches == 0 && m->bf_account == BREW_BF_CHECKING) snprintf(buf, n, "Checking Brewfather...");
+            else if(m->bf_nbatches == 0) snprintf(buf, n, "Can't reach Brewfather");
             break;
         case BREW_LIST_BF_PREVIEW:
             if(m->bf_preview == BREW_BF_PREVIEW_LOADING) snprintf(buf, n, "Loading %s...", m->bf_preview_label);
@@ -482,8 +497,7 @@ void brew_model_list_note(const brew_model_t * m, char * buf, size_t n)
             break;
         case BREW_LIST_BF_NOTICE: snprintf(buf, n, "Only the first %d steps are imported", BREW_STEPS_MAX); break;
         case BREW_LIST_BF_ACCOUNT:
-            if(m->wifi_phase != BREW_WIFI_CONNECTED || !m->wifi_address[0]) snprintf(buf, n, "Needs WiFi");
-            else snprintf(buf, n, "Set up on your phone:\n%s/brewfather", m->wifi_address);
+            if(!bf_page_ready(m)) snprintf(buf, n, "Needs WiFi");
             break;
         case BREW_LIST_SCHEDULE: {
             const brew_schedule_t * s = &m->sched;
@@ -595,6 +609,7 @@ void brew_model_edit_text(const brew_model_t * m, brew_edit_text_t * t)
 
 static uint32_t open_list(brew_model_t * m, brew_list_t l, int idx)
 {
+    m->bf_qr = false;
     m->view = BREW_VIEW_LIST;
     m->list = l;
     m->list_idx = idx;
@@ -660,6 +675,7 @@ const char * brew_model_press_hint(const brew_model_t * m)
                 case ACT_BF_PICK:     return "Open";
                 case ACT_BF_RUN:      return "Run";
                 case ACT_BF_RUN_OK:   return "OK";
+                case ACT_BF_QR:       return "Show";
                 case ACT_EDIT:        return "Edit";
                 case ACT_CONSTANT:    return "Use";
                 case ACT_STEP:        return "Edit";
@@ -673,6 +689,7 @@ const char * brew_model_press_hint(const brew_model_t * m)
         }
         case BREW_VIEW_WIFI:
             switch(brew_model_wifi_screen(m)) {
+                case BREW_WIFI_SCREEN_BF_PAGE: return "Back";
                 case BREW_WIFI_SCREEN_JOIN: return "Skip";
                 case BREW_WIFI_SCREEN_DONE: return "Done";
                 default:                    return "Cancel";
@@ -715,6 +732,7 @@ bool brew_model_wifi_setup_open(const brew_model_t * m) { return setup_phase(m->
 
 brew_wifi_screen_t brew_model_wifi_screen(const brew_model_t * m)
 {
+    if(m->bf_qr) return BREW_WIFI_SCREEN_BF_PAGE;
     switch(m->wifi_phase) {
         case BREW_WIFI_CONNECTING: return BREW_WIFI_SCREEN_TRYING;
         case BREW_WIFI_CONNECTED:  return BREW_WIFI_SCREEN_DONE;
@@ -758,6 +776,13 @@ void brew_model_wifi_text(const brew_model_t * m, brew_wifi_text_t * t)
             snprintf(t->line2, sizeof(t->line2), "Try again on your phone");
             snprintf(t->foot, sizeof(t->foot), "PRESS TO CANCEL");
             break;
+        case BREW_WIFI_SCREEN_BF_PAGE:
+            snprintf(t->pill, sizeof(t->pill), "BREWFATHER");
+            snprintf(t->title, sizeof(t->title), "Scan to manage");
+            snprintf(t->line1, sizeof(t->line1), "%s/brewfather", m->wifi_address);
+            snprintf(t->foot, sizeof(t->foot), "PRESS TO GO BACK");
+            snprintf(t->qr, sizeof(t->qr), "http://%s/brewfather", m->wifi_address);
+            break;
         case BREW_WIFI_SCREEN_DONE:
             snprintf(t->pill, sizeof(t->pill), "CONNECTED");
             snprintf(t->title, sizeof(t->title), "%s", m->wifi_ssid);
@@ -788,6 +813,10 @@ uint32_t brew_model_set_brewfather(brew_model_t * m, const brew_bf_t * b)
     }
     m->bf_today_day = b->today_day;
     m->bf_today_step = b->today_step;
+    snprintf(m->bf_device, sizeof(m->bf_device), "%s", b->device ? b->device : "");
+    m->bf_imported_index = b->imported_index;
+    m->bf_log = b->log;
+    snprintf(m->bf_elsewhere, sizeof(m->bf_elsewhere), "%s", b->elsewhere ? b->elsewhere : "");
     return BREW_CH_REFRESH;
 }
 
@@ -804,6 +833,11 @@ uint32_t brew_model_set_wifi(brew_model_t * m, const brew_wifi_t * w)
     const bool open = setup_phase(w->phase);
 
     uint32_t ch = BREW_CH_REFRESH;
+    if(open && !was_open) m->bf_qr = false;   /* setup takes the screen */
+    if(m->bf_qr && !bf_page_ready(m)) {      /* the WiFi went: the page's address with it */
+        m->bf_qr = false;
+        if(m->view == BREW_VIEW_WIFI) return ch | set_view(m, BREW_VIEW_HOME);
+    }
     if(open && !was_open && m->view != BREW_VIEW_WIFI) {
         /* setup started (first start, or the menu): show it; a half-made adjustment is dropped */
         const bool dropped = m->setting;
@@ -956,6 +990,7 @@ uint32_t brew_model_push_history(brew_model_t * m, float f)
 static uint32_t set_view(brew_model_t * m, brew_view_t v)
 {
     if(v == BREW_VIEW_LIST) return open_list(m, BREW_LIST_MENU, 0);
+    if(v != BREW_VIEW_WIFI) m->bf_qr = false;
     m->view = v;
     return BREW_CH_VIEW | BREW_CH_REFRESH;
 }
@@ -1062,6 +1097,10 @@ static uint32_t press_item(brew_model_t * m, const brew_list_item_t * it)
             snprintf(m->bf_preview_label, sizeof(m->bf_preview_label), "%s", m->bf_batches[it->arg]);
             if(m->cbs.on_bf_pick) m->cbs.on_bf_pick(it->arg, m->cbs.user);
             return open_list(m, BREW_LIST_BF_PREVIEW, 0);
+        case ACT_BF_QR:
+            m->bf_qr = true;
+            m->view = BREW_VIEW_WIFI;
+            return BREW_CH_VIEW | BREW_CH_REFRESH;
         case ACT_BF_RUN:
             if(m->bf_preview_total > BREW_STEPS_MAX) return open_list(m, BREW_LIST_BF_NOTICE, 0);
             /* fall through */
@@ -1136,6 +1175,10 @@ uint32_t brew_model_press(brew_model_t * m)
         case BREW_VIEW_EDIT:
             return save_edit(m);
         case BREW_VIEW_WIFI:
+            if(m->bf_qr) {   /* the Brewfather page's QR code: back to Settings › Brewfather */
+                m->bf_qr = false;
+                return open_list(m, BREW_LIST_BF_ACCOUNT, 0) | BREW_CH_VIEW;
+            }
             /* skip / cancel setup, or dismiss "Connected"; either way back to the dial */
             if(m->wifi_phase != BREW_WIFI_CONNECTED && m->cbs.on_wifi_cancel) m->cbs.on_wifi_cancel(m->cbs.user);
             return set_view(m, BREW_VIEW_HOME);

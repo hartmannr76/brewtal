@@ -59,9 +59,9 @@ label.f { display: block; font-size: 13px; color: var(--text-2); margin: 0 0 6px
     <div class="line"><span class="k">Account</span><span class="v" id="acct">…</span></div>
     <div class="line"><span class="k">Logging</span><span class="v" id="log">…</span></div>
     <div class="line"><span class="k">Device name</span><span class="v" id="dev">…</span></div>
-    <div class="hint" id="attach" hidden>To log to a batch: in Brewfather, open the batch (status Fermenting) ›
-      Readings › Devices › <b>Attach</b> <span id="dev2"></span>. Brewfather needs Premium for this. The dial posts every
-      15 minutes; the device appears there after its first post.</div>
+    <div class="hint" id="attach" hidden>In Brewfather, open the batch › Readings › Devices › <b>Attach</b>
+      <span id="dev2"></span> (Brewfather needs Premium for this). The dial posts every 15 minutes; the device
+      appears there after its first post.</div>
   </div>
 
   <form id="f" novalidate style="display:flex;flex-direction:column;gap:16px">
@@ -110,12 +110,13 @@ label.f { display: block; font-size: 13px; color: var(--text-2); margin: 0 0 6px
     set($('acct'), a[0], a[1]);
     var attachHint = false;
     if (!s.stream_set) set($('log'), 'Add your Custom Stream ID', 'muted');
-    else if (s.attached) {
+    else if (s.logging === 'off') set($('log'), 'Starts when you run a Brewfather profile on the dial', 'muted');
+    else if (s.logging === 'attached') {
       var when = ago(s.last_log_age_s);
-      set($('log'), 'To ' + s.batch + (when ? ' · last reading ' + when : ''), 'ok');
-    } else if (s.account === 'connected') { set($('log'), 'Not attached to a Fermenting batch yet', 'warn'); attachHint = true; }
-    else if (s.last_post_age_s >= 0) set($('log'), (s.last_post_http >= 200 && s.last_post_http < 300 ? 'Posted ' : 'Last post failed, ') + ago(s.last_post_age_s), '');
-    else set($('log'), 'Waiting for the first reading', 'muted');
+      set($('log'), 'To ' + s.imported + (when ? ' · last reading ' + when : ''), 'ok');
+    } else if (s.logging === 'elsewhere') {
+      set($('log'), 'Not logging: ' + s.device + ' is attached to ' + s.elsewhere + ', not ' + s.imported, 'warn');
+    } else { set($('log'), 'For ' + s.imported + ': attach ' + s.device + ' to it in Brewfather', 'warn'); attachHint = true; }
     set($('dev'), s.device, '');
     $('dev2').textContent = s.device;
     $('attach').hidden = !attachHint;

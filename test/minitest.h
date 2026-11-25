@@ -56,6 +56,7 @@ inline int run_all()
         const bool ok = failures() == before;
         if(!ok) failed_cases++;
         std::printf("%s %s\n", ok ? "  ok  " : "  FAIL", c.name);
+        std::fflush(stdout);   /* so a crash still shows the cases before it */
     }
     std::printf("\n%d/%d test cases passed\n", static_cast<int>(registry().size()) - failed_cases,
                 static_cast<int>(registry().size()));

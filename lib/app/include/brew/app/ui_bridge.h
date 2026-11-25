@@ -106,6 +106,7 @@ private:
     bool bf_pushed_ = false;
     brew_bf_t bf_shown_ = {};
     char bf_batch_shown_[64] = { 0 };
+    bool simulated_ = false;   // demo plant: its readings are never posted to Brewfather
     uint32_t bf_rev_shown_ = 0;
     void importPreview();
     bool clock_sent_ = false;

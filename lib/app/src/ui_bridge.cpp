@@ -170,7 +170,7 @@ void UiBridge::importPreview()
     int64_t start_s = p.start_unix_ms / 1000;
     if(start_s <= 0 && clock_ && clock_->valid()) start_s = clock_->unixSeconds();   // no start date: now
     port_.send(Command::setBatch(static_cast<uint32_t>(start_s > 0 ? start_s : 0), p.name));
-    bf_->imported();
+    bf_->imported(now_);   /* and log to it from now on */
 }
 
 void UiBridge::onStepCountThunk(int n, void * user)
@@ -214,7 +214,19 @@ void UiBridge::tickBrewfather()
     const int64_t age = bf_->lastLogAgeS();
     u.last_log_min = age < 0 ? -1 : static_cast<int>(age / 60);
     u.nbatches = s.nbatches;
-    for(int i = 0; i < s.nbatches && i < BREW_BF_BATCHES_MAX; i++) u.batches[i] = s.batches[i].label;
+    u.imported_index = -1;
+    for(int i = 0; i < s.nbatches && i < BREW_BF_BATCHES_MAX; i++) {
+        u.batches[i] = s.batches[i].label;
+        if(s.logging_id[0] && std::strcmp(s.batches[i].id, s.logging_id) == 0) u.imported_index = i;
+    }
+    u.device = s.device;
+    switch(s.log) {
+        case net::BfLog::Off:         u.log = BREW_BF_LOG_OFF; break;
+        case net::BfLog::NotAttached: u.log = BREW_BF_LOG_NOT_ATTACHED; break;
+        case net::BfLog::Attached:    u.log = BREW_BF_LOG_ATTACHED; break;
+        case net::BfLog::Elsewhere:   u.log = BREW_BF_LOG_ELSEWHERE; break;
+    }
+    u.elsewhere = s.elsewhere;
     const net::BfPreview & p = s.preview;
     switch(p.state) {
         case net::BfPreview::State::None:    u.preview = BREW_BF_PREVIEW_NONE; break;
@@ -251,7 +263,8 @@ void UiBridge::tickBrewfather()
     }
     if(bf_pushed_ && s.rev == bf_rev_shown_ && u.account == bf_shown_.account && u.logging == bf_shown_.logging &&
        u.attached == bf_shown_.attached && u.last_log_min == bf_shown_.last_log_min && u.today_day == bf_shown_.today_day &&
-       u.today_step == bf_shown_.today_step && std::strcmp(s.batch, bf_batch_shown_) == 0)
+       u.today_step == bf_shown_.today_step && u.log == bf_shown_.log && u.imported_index == bf_shown_.imported_index &&
+       std::strcmp(s.batch, bf_batch_shown_) == 0)
         return;
     bf_rev_shown_ = s.rev;
     bf_shown_ = u;
@@ -307,6 +320,7 @@ void UiBridge::apply(const Settings & s)
 {
     Shown & v = shown_;
     brew_ui_set_demo(s.simulated);   /* no-op unless it changed */
+    simulated_ = s.simulated;
     brew_schedule_t sc = {};
     sc.profile = s.profile == Profile::Schedule ? BREW_PROFILE_SCHEDULE : BREW_PROFILE_CONSTANT;
     sc.step = s.step == Settings::kDone ? BREW_STEP_DONE : s.step;
@@ -363,9 +377,9 @@ void UiBridge::apply(const State & s)
         v.paused = s.paused;
         brew_ui_set_mode(to_ui(s.mode), s.paused);
     }
-    if(bf_) {   /* the latest reading, for the next 15-minute post */
+    if(bf_) {   /* the latest reading, for the next 15-minute post; a simulated (demo) one never goes to a real batch */
         const char * st = s.paused ? "off" : s.action == Action::Heating ? "heating" : s.action == Action::Cooling ? "cooling" : "idle";
-        bf_->setReading(s.temp_valid, s.temp_c, s.setpoint_c[static_cast<int>(s.mode)], st);
+        bf_->setReading(s.temp_valid && !simulated_, s.temp_c, s.setpoint_c[static_cast<int>(s.mode)], st);
     }
     if(s.temp_valid) {
         const float tf = c_to_f(s.temp_c);

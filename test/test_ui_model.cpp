@@ -640,7 +640,7 @@ TEST(ui_model_profile_list_and_brewfather_import)
     brew_model_press(&m);
     CHECK(row(m, 0) == "#18 Pale Ale" && row(m, 1) == "#19 Lager" && row(m, 2) == "Refresh");
     brew_model_list_note(&m, note, sizeof(note));
-    CHECK(std::string(note) == "Fermenting in Brewfather");
+    CHECK(std::string(note).empty());            // nothing running from Brewfather: no note
     go(m, "Refresh");
     brew_model_press(&m);
     CHECK_EQ(c.bf_checks, 1);
@@ -699,6 +699,93 @@ TEST(ui_model_profile_list_and_brewfather_import)
     brew_model_press(&m);
     CHECK_EQ(c.bf_runs, 2);
     CHECK(m.view == BREW_VIEW_HOME);
+
+    /* running #19: it's marked, and the note is about logging to it */
+    bf.preview = BREW_BF_PREVIEW_NONE;
+    bf.logging = true;
+    bf.device = "BrewDialCB50";
+    bf.imported_index = 1;
+    bf.log = BREW_BF_LOG_NOT_ATTACHED;
+    brew_model_set_brewfather(&m, &bf);
+    brew_model_press(&m);
+    go(m, "Settings");
+    brew_model_press(&m);
+    go(m, "Profile");
+    brew_model_press(&m);
+    go(m, "Brewfather");
+    brew_model_press(&m);
+    brew_model_list_item(&m, 0, &it);
+    CHECK(it.mark == BREW_MARK_NONE);
+    brew_model_list_item(&m, 1, &it);
+    CHECK(it.mark == BREW_MARK_ACTIVE);
+    brew_model_list_note(&m, note, sizeof(note));
+    CHECK_EQ(std::string(note), std::string("Attach BrewDialCB50 to this batch\nin Brewfather to log"));
+    bf.log = BREW_BF_LOG_ATTACHED;
+    bf.last_log_min = 12;
+    brew_model_set_brewfather(&m, &bf);
+    brew_model_list_note(&m, note, sizeof(note));
+    CHECK_EQ(std::string(note), std::string("Logging \xC2\xB7 last reading 12 min ago"));
+    bf.log = BREW_BF_LOG_ELSEWHERE;
+    bf.elsewhere = "#18 Pale Ale";
+    brew_model_set_brewfather(&m, &bf);
+    brew_model_list_note(&m, note, sizeof(note));
+    CHECK_EQ(std::string(note), std::string("Not logging: BrewDialCB50 is\nattached to #18 Pale Ale"));
+}
+
+TEST(ui_model_brewfather_account_shows_a_qr_code)
+{
+    Calls c;
+    brew_model_t m;
+    brew_model_init(&m, nullptr);
+    m.cbs = cbs_for(c);
+    brew_bf_t bf = {};
+    bf.account = BREW_BF_CONNECTED;
+    bf.logging = true;
+    bf.last_log_min = 5;
+    bf.today_day = bf.today_step = bf.imported_index = -1;
+    brew_model_set_brewfather(&m, &bf);
+    brew_model_press(&m);
+    go(m, "Settings");
+    brew_model_press(&m);
+    go(m, "Brewfather");
+    brew_model_press(&m);
+    CHECK(m.list == BREW_LIST_BF_ACCOUNT);
+    CHECK(row(m, 0) == "Account = connected" && row(m, 1) == "Check now" && row(m, 2) == "Previous");
+    char note[64];
+    brew_model_list_note(&m, note, sizeof(note));
+    CHECK_EQ(std::string(note), std::string("Needs WiFi"));
+    brew_model_press(&m);                        // Account, no WiFi: nothing to show
+    CHECK(m.view == BREW_VIEW_LIST && m.list == BREW_LIST_BF_ACCOUNT);
+
+    brew_wifi_t w = {};
+    w.phase = BREW_WIFI_CONNECTED;
+    w.ssid = "Home";
+    w.address = "192.168.1.129";
+    brew_model_set_wifi(&m, &w);
+    brew_model_list_note(&m, note, sizeof(note));
+    CHECK(std::string(note).empty());
+    go(m, "Account");
+    brew_model_press(&m);                        // the phone page's QR code
+    CHECK(m.view == BREW_VIEW_WIFI);
+    CHECK(brew_model_wifi_screen(&m) == BREW_WIFI_SCREEN_BF_PAGE);
+    brew_wifi_text_t t;
+    brew_model_wifi_text(&m, &t);
+    CHECK_EQ(std::string(t.qr), std::string("http://192.168.1.129/brewfather"));
+    CHECK_EQ(std::string(t.line1), std::string("192.168.1.129/brewfather"));
+    CHECK_EQ(std::string(brew_model_press_hint(&m)), std::string("Back"));
+    brew_model_press(&m);                        // back where it was opened
+    CHECK(m.view == BREW_VIEW_LIST && m.list == BREW_LIST_BF_ACCOUNT);
+    CHECK_EQ(c.wifi_cancels, 0);                 // never cancels WiFi setup
+
+    /* the WiFi drops while it's shown: back to the dial */
+    go(m, "Account");
+    brew_model_press(&m);
+    CHECK(m.view == BREW_VIEW_WIFI);
+    w.phase = BREW_WIFI_OFFLINE;
+    w.address = "";
+    brew_model_set_wifi(&m, &w);
+    CHECK(m.view == BREW_VIEW_HOME);
+    CHECK(brew_model_wifi_screen(&m) != BREW_WIFI_SCREEN_BF_PAGE);
 }
 
 TEST(ui_model_schedule_lists_editors_and_home_text)
@@ -812,7 +899,7 @@ TEST(ui_model_schedule_lists_editors_and_home_text)
     brew_schedule_t s = m.sched;
     s.step = 0;
     brew_model_set_schedule(&m, &s);
-    CHECK(detail() == "Step 1/2 \xC2\xB7 ramp 2 d \xC2\xB7 hold 5 d");
+    CHECK_EQ(detail(), std::string("Step 1/2 \xC2\xB7 ramp to 68.0\xC2\xB0 in 2 d"));   // the step's target with it
     s.steps[1].ramp_h = 0;
     s.override_on = true;
     brew_model_set_schedule(&m, &s);
@@ -820,7 +907,7 @@ TEST(ui_model_schedule_lists_editors_and_home_text)
     s.override_on = false;
     s.step = 1;
     brew_model_set_schedule(&m, &s);
-    CHECK(detail() == "Step 2/2 \xC2\xB7 hold 5 d");                    // a jump: no ramp shown
+    CHECK_EQ(detail(), std::string("Step 2/2 \xC2\xB7 68.0\xC2\xB0 for 5 d"));   // a jump: no ramp shown
     s.step = BREW_STEP_DONE;
     brew_model_set_schedule(&m, &s);
     CHECK(detail() == "Schedule done");

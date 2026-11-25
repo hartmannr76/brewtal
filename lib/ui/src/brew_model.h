@@ -105,6 +105,7 @@ typedef enum {
     BREW_WIFI_SCREEN_TRYING,    /* connecting */
     BREW_WIFI_SCREEN_FAILED,    /* wrong password / not found */
     BREW_WIFI_SCREEN_DONE,      /* connected */
+    BREW_WIFI_SCREEN_BF_PAGE,   /* not WiFi: a QR code for the Brewfather phone page (Settings › Brewfather) */
 } brew_wifi_screen_t;
 
 typedef struct {
@@ -174,6 +175,11 @@ typedef struct {
     brew_step_t bf_preview_steps[BREW_STEPS_MAX];
     char bf_preview_types[BREW_STEPS_MAX][16];
     int bf_today_day, bf_today_step;
+    char bf_device[24];
+    int bf_imported_index;
+    brew_bf_log_t bf_log;
+    char bf_elsewhere[64];
+    bool bf_qr;               /* the WiFi view shows the Brewfather page's QR code */
 
     /* controller settings (Settings › Heat / Cool) */
     float heat_diff_f;        /* a difference, F */
@@ -257,8 +263,9 @@ void brew_model_batch_text(const brew_model_t * m, char * buf, size_t n);
 /** The status as a short word for a pill: "COOLING", "HOLDING", "HEATING", "CRASHING", "PAUSED",
  *  "COOLING IN 3 MIN" while held off, "SET TARGET" while adjusting. */
 void brew_model_pill_text(const brew_model_t * m, char * buf, size_t n);
-/** The line under the reading: "Target 66.0° · Manual · Day 4"; with a schedule "Step 2/3 · ramp 1 d ·
- *  hold 3 d" (or "... · your target until step 3", "Schedule done"); or the adjust hint. */
+/** The line under the reading: "Target 66.0° · Manual · Day 4"; with a schedule "Step 2/3 · 66.0° for 3 d"
+ *  or "Step 2/3 · ramp to 53.0° in 1 d" (or "... · your target until step 3", "Schedule done"); or the
+ *  adjust hint. */
 void brew_model_detail_text(const brew_model_t * m, char * buf, size_t n);
 /** The unit after a reading: "°F" or "°C". */
 const char * brew_model_unit(const brew_model_t * m);

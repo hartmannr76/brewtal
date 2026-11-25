@@ -13,6 +13,7 @@ constexpr const char * kKeyKey = "bf_key";
 constexpr const char * kKeyStream = "bf_stream";
 constexpr const char * kKeyBatch = "bf_batch";     // the imported batch's id
 constexpr const char * kKeyBatchMod = "bf_bmod";   // ...and its _timestamp_ms then (decimal text)
+constexpr const char * kKeyBatchLabel = "bf_blabel"; // ...and its label, "#18 Pale Ale"
 
 /* Has `t` been reached? Unsigned millis: right across the 49-day wrap. */
 bool reached(uint32_t now, uint32_t t) { return static_cast<int32_t>(now - t) >= 0; }
@@ -74,8 +75,10 @@ void Brewfather::begin(const char * device, uint32_t now)
         if(!store_->getStr(kKeyUser, user_, sizeof(user_))) user_[0] = '\0';
         if(!store_->getStr(kKeyKey, key_, sizeof(key_))) key_[0] = '\0';
         if(!store_->getStr(kKeyStream, stream_, sizeof(stream_))) stream_[0] = '\0';
-        if(!store_->getStr(kKeyBatch, imported_id_, sizeof(imported_id_))) imported_id_[0] = '\0';
+        if(!store_->getStr(kKeyBatch, st_.logging_id, sizeof(st_.logging_id))) st_.logging_id[0] = '\0';
+        if(!store_->getStr(kKeyBatchLabel, st_.logging, sizeof(st_.logging))) st_.logging[0] = '\0';
     }
+    st_.log = st_.logging_id[0] ? BfLog::NotAttached : BfLog::Off;   // until a check says where it lands
     st_.user_set = user_[0] != '\0';
     st_.key_set = key_[0] != '\0';
     st_.stream_set = stream_[0] != '\0';
@@ -119,6 +122,15 @@ void Brewfather::forget()
 {
     user_[0] = key_[0] = stream_[0] = '\0';
     save();
+    st_.logging_id[0] = st_.logging[0] = st_.elsewhere[0] = '\0';
+    st_.log = BfLog::Off;
+    st_.rev++;
+    if(store_) {
+        store_->setStr(kKeyBatch, "");
+        store_->setStr(kKeyBatchLabel, "");
+        store_->setStr(kKeyBatchMod, "");
+        store_->commit();
+    }
     const BrewfatherStatus fresh;
     char device[sizeof(st_.device)];
     copy(device, sizeof(device), st_.device);
@@ -145,16 +157,30 @@ void Brewfather::fetchBatch(int i, uint32_t now)
     st_.rev++;
 }
 
-void Brewfather::imported()
+void Brewfather::imported(uint32_t now)
 {
     const BfPreview & p = st_.preview;
     if(p.state != BfPreview::State::Ready) return;
-    copy(imported_id_, sizeof(imported_id_), p.id);
+    startLogging(p.id, p.label, now);
     if(!store_) return;
     char mod[24];
     std::snprintf(mod, sizeof(mod), "%lld", static_cast<long long>(p.modified_unix_ms));
-    store_->setStr(kKeyBatch, imported_id_);
     store_->setStr(kKeyBatchMod, mod);
+    store_->commit();
+}
+
+void Brewfather::startLogging(const char * id, const char * label, uint32_t now)
+{
+    copy(st_.logging_id, sizeof(st_.logging_id), id);
+    copy(st_.logging, sizeof(st_.logging), label);
+    st_.elsewhere[0] = '\0';
+    st_.log = st_.logging_id[0] ? BfLog::NotAttached : BfLog::Off;
+    st_.rev++;
+    post_at_ = now + cfg_.first_post_ms;
+    check_at_ = now;   /* find out where it's attached */
+    if(!store_) return;
+    store_->setStr(kKeyBatch, st_.logging_id);
+    store_->setStr(kKeyBatchLabel, st_.logging);
     store_->commit();
 }
 
@@ -211,7 +237,8 @@ void Brewfather::tick(uint32_t now, bool online, int64_t unix_ms)
         }
     }
     else if(haveAccount() && reached(now, check_at_)) startCheck(now);
-    else if(stream_[0] && reading_valid_ && reached(now, post_at_)) startPost(now);
+    else if(stream_[0] && st_.logging_id[0] && st_.log != BfLog::Elsewhere && reading_valid_ && reached(now, post_at_))
+        startPost(now);
 }
 
 bool Brewfather::startGet(const char * url)
@@ -290,6 +317,7 @@ void Brewfather::finishCheck(const hal::HttpClientResult & r, uint32_t now)
     check_at_ = now + cfg_.check_every_ms;
     st_.attached = false;
     st_.batch[0] = '\0';
+    char attached_id[40] = { 0 };
     const json::Value list = json::parse(r.body, r.body_len);
     /* the Fermenting batches, for Profile › Brewfather */
     st_.nbatches = 0;
@@ -304,11 +332,16 @@ void Brewfather::finishCheck(const hal::HttpClientResult & r, uint32_t now)
         const json::Value no = json::get(b, "batchNo");
         if(json::isNumber(no)) std::snprintf(o.label, sizeof(o.label), "#%d %s", static_cast<int>(json::number(no)), name);
         else copy(o.label, sizeof(o.label), name);
+        if(!st_.logging[0] && std::strcmp(o.id, st_.logging_id) == 0) copy(st_.logging, sizeof(st_.logging), o.label);
         st_.nbatches++;
     }
     st_.rev++;
-    for(size_t i = 0, n = json::size(list); i < n && !st_.attached; i++) {
+    /* where our device is attached; the running batch wins if it's on more than one */
+    for(size_t i = 0, n = json::size(list); i < n; i++) {
         const json::Value b = json::at(list, i);
+        char id[40] = { 0 };
+        json::string(json::get(b, "_id"), id, sizeof(id));
+        if(st_.attached && std::strcmp(id, st_.logging_id) != 0) continue;
         const json::Value items = json::get(json::get(json::get(b, "devices"), "stream"), "items");
         for(size_t j = 0, m = json::size(items); j < m; j++) {
             const json::Value dev = json::at(items, j);
@@ -323,8 +356,18 @@ void Brewfather::finishCheck(const hal::HttpClientResult & r, uint32_t now)
             else copy(st_.batch, sizeof(st_.batch), name);
             const double last = json::number(json::get(dev, "lastLog"), 0.0);
             if(last > 0.0) st_.last_log_unix_ms = static_cast<int64_t>(last);
+            copy(attached_id, sizeof(attached_id), id);
             break;
         }
+    }
+    /* logging: is Brewfather filing our readings under the imported batch? */
+    st_.elsewhere[0] = '\0';
+    if(!st_.logging_id[0]) st_.log = BfLog::Off;
+    else if(!st_.attached) st_.log = BfLog::NotAttached;
+    else if(std::strcmp(attached_id, st_.logging_id) == 0) st_.log = BfLog::Attached;
+    else {
+        st_.log = BfLog::Elsewhere;
+        copy(st_.elsewhere, sizeof(st_.elsewhere), st_.batch);
     }
 }
 
