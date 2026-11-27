@@ -85,6 +85,9 @@ void brew_ui_press(void);
 /* ---- for tests and the harness ---- */
 /** The status line as shown: "Cooling to 66°", "Cooling in 4 min", ... */
 void brew_ui_status_text(char * buf, size_t n);
+/** Turn to the row of the open list whose label starts with `label` (as a knob turn would);
+ *  false if there's no such row. Lets scripted sessions survive lists gaining rows. */
+bool brew_ui_go(const char * label);
 
 #ifdef __cplusplus
 }

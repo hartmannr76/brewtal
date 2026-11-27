@@ -11,6 +11,7 @@
 #include "sim_panel.h"
 
 #include "brew_layout.h"
+#include "brew_ui.h"
 #include "lvgl.h"
 
 #include <cstdio>
@@ -64,6 +65,20 @@ sim::SimPanel panel(N, N);
 LocalBus bus;
 LoggingPort port(bus);
 FakePlant plant(frozen());
+/* The plant, read as a plain probe: these frames show the UI (README screenshots), not a demo build,
+ * so no DEMO pill. */
+class ProbeView final : public hal::TempSensor {
+public:
+    explicit ProbeView(hal::TempSensor & s) : s_(s) {}
+    bool begin() override { return s_.begin(); }
+    void update(uint32_t now_ms) override { s_.update(now_ms); }
+    hal::TempReading latest() const override { return s_.latest(); }
+    const char * name() const override { return s_.name(); }
+
+private:
+    hal::TempSensor & s_;
+};
+ProbeView probe(plant);
 DeadbandLaw law(0.3f * 5.0f / 9.0f);
 OutputGuard guard(&plant.heat(), &plant.cool(), {});
 Controller::Config ctlConfig()
@@ -71,7 +86,7 @@ Controller::Config ctlConfig()
     Controller::Config c;
     return c;
 }
-Controller ctl(bus, plant, law, guard, nullptr, ctlConfig());
+Controller ctl(bus, probe, law, guard, nullptr, ctlConfig());
 app::UiBridge bridge(port);
 
 void run(uint32_t ms)
@@ -101,6 +116,23 @@ void snap(const char * name)
 
 void turn(int d) { bridge.handle(InputEvent::rotate(d)); }
 void press() { bridge.handle(InputEvent::press()); }
+
+/* Turn to a row by its label, so the script doesn't break when a list gains rows. */
+void go(const char * label)
+{
+    if(!brew_ui_go(label)) {
+        std::fprintf(stderr, "brew_sim: no \"%s\" row here; the script is out of date\n", label);
+        std::exit(1);
+    }
+}
+/* Go to a row and press it. */
+void pick(const char * label, uint32_t settle_ms = 500)
+{
+    go(label);
+    run(300);
+    press();
+    run(settle_ms);
+}
 
 void setTemp(float f)
 {
@@ -162,15 +194,9 @@ int main(int argc, char ** argv)
     snap("06_menu_cold_crash_selected");
 
     /* settings: heat differential */
-    turn(2);                      /* Cold crash -> Settings */
-    run(400);
-    press();
-    run(600);
+    pick("Settings", 600);
     snap("07_settings");
-    turn(2);                      /* Heat */
-    run(400);
-    press();
-    run(600);
+    pick("Heat", 600);
     snap("08_settings_heat");
     press();                      /* edit the differential */
     run(600);
@@ -179,9 +205,9 @@ int main(int argc, char ** argv)
     snap("08b_edit_heat_differential");
     press();                      /* save: back to the Heat list */
     run(600);
-    turn(2); run(300); press(); run(500);   /* Previous -> Settings */
-    turn(3); run(300); press(); run(500);   /* Previous -> menu */
-    turn(1); run(300); press(); run(600);   /* Previous -> home */
+    pick("Previous");             /* -> Settings */
+    pick("Previous");             /* -> menu */
+    pick("Previous", 600);        /* -> home */
 
     /* heating */
     setHistory(66.1f, 68.0f, -2.2f);
@@ -193,29 +219,23 @@ int main(int argc, char ** argv)
     setHistory(41.2f, 34.0f, 22.0f);
     setTemp(41.2f);
     press(); run(500);
-    turn(1); run(500);
-    press(); run(1200);
+    pick("Cold crash", 1200);
     snap("10_cold_crash");
 
     /* pause */
     press(); run(500);
-    turn(2); run(500);
-    press(); run(1200);
+    pick("Pause", 1200);
     snap("11_paused");
 
     /* resume + celsius */
     press(); run(500);
-    turn(2); run(500);
-    press(); run(1000);           /* resume */
+    pick("Resume", 1000);
     press(); run(500);
-    turn(3); run(500);
-    press(); run(500);            /* Settings */
-    press(); run(300);            /* Units: toggles in place */
+    pick("Settings");
+    pick("Units", 300);           /* toggles in place */
     snap("12a_settings_units_celsius");
-    turn(5); run(400);
-    press(); run(500);            /* Previous -> menu */
-    turn(-3); run(500);
-    press(); run(1200);           /* Ferment */
+    pick("Previous");             /* -> menu */
+    pick("Ferment", 1200);
     snap("12_ferment_celsius");
 
     const State & s = ctl.state();

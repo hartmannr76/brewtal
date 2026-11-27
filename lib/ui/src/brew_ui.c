@@ -7,6 +7,8 @@
 #include "brew_layout.h"
 #include "brew_model.h"
 
+#include <string.h>
+
 static struct {
     brew_model_t m;
     lv_obj_t * screen;
@@ -100,3 +102,17 @@ void brew_ui_encoder(int detents) { apply(brew_model_encoder(&S.m, detents)); }
 void brew_ui_press(void) { apply(brew_model_press(&S.m)); }
 
 void brew_ui_status_text(char * buf, size_t n) { brew_model_status_text(&S.m, buf, n); }
+
+bool brew_ui_go(const char * label)
+{
+    if(S.m.view != BREW_VIEW_LIST) return false;
+    for(int i = 0; i < brew_model_list_count(&S.m); i++) {
+        brew_list_item_t it;
+        brew_model_list_item(&S.m, i, &it);
+        if(strncmp(it.label, label, strlen(label)) == 0) {
+            if(i != S.m.list_idx) brew_ui_encoder(i - S.m.list_idx);
+            return true;
+        }
+    }
+    return false;
+}
